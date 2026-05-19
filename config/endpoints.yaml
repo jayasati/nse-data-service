@@ -1,0 +1,12 @@
+endpoints:
+  announcements_equity:
+    collector: nse_data.collectors.announcements:Announcements
+    url: /api/corporate-announcements
+    params:
+      index: equities
+    referer: https://www.nseindia.com/companies-listing/corporate-filings-announcements
+    response: json
+    cadence: 5m
+    active_hours: "08:00-19:00"
+    table: raw_announcements
+    enabled: true

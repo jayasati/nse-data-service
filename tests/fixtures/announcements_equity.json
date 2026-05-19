@@ -1,0 +1,38 @@
+[
+  {
+    "symbol": "RELIANCE",
+    "sm_name": "Reliance Industries Limited",
+    "desc": "Outcome of Board Meeting",
+    "attchmntFile": "/archives/equities/anndet/20251120_RIL_BM.pdf",
+    "attchmntText": "Board has approved interim dividend of Rs 10 per share",
+    "an_dt": "20-Nov-2025 16:30:00",
+    "dt": "20-Nov-2025 16:32:11",
+    "dissemDT": "20-Nov-2025 16:35:04"
+  },
+  {
+    "symbol": "TCS",
+    "sm_name": "Tata Consultancy Services Limited",
+    "desc": "Press Release",
+    "attchmntFile": "/archives/equities/anndet/20251120_TCS_PR.pdf",
+    "attchmntText": "TCS wins large deal with European retailer",
+    "an_dt": "20-Nov-2025 14:15:00",
+    "dt": "20-Nov-2025 14:15:30",
+    "dissemDT": "20-Nov-2025 14:18:22"
+  },
+  {
+    "symbol": "INFY",
+    "sm_name": "Infosys Limited",
+    "desc": "Investor Presentation",
+    "attchmntFile": "/archives/equities/anndet/20251120_INFY_IP.pdf",
+    "attchmntText": null,
+    "an_dt": "20-Nov-2025 11:00:00",
+    "dt": "20-Nov-2025 11:01:18",
+    "dissemDT": "20-Nov-2025 11:03:45"
+  },
+  {
+    "symbol": "",
+    "sm_name": "Malformed entry",
+    "desc": "",
+    "an_dt": ""
+  }
+]

@@ -25,13 +25,13 @@ from typing import Any
 import httpx
 
 from .circuit import CircuitBreaker, CircuitOpenError
-from .headers import NSE_ORIGIN, build_headers
+from .headers import NSE_ORIGIN, build_api_headers, build_warmup_headers
 from .rate_limit import GlobalConcurrencyLimit, PerEndpointRateLimiter
 
 log = logging.getLogger(__name__)
 
 COOKIE_TTL_SEC = 15 * 60
-WARMUP_TIMEOUT = 10.0
+WARMUP_TIMEOUT = 20.0
 REQUEST_TIMEOUT = 20.0
 MAX_RETRIES_ON_AUTH = 1
 MAX_RETRIES_ON_429 = 3
@@ -121,14 +121,14 @@ class SessionManager:
             try:
                 self._client.cookies.clear()
                 r1 = self._client.get(
-                    "/", headers=build_headers(), timeout=WARMUP_TIMEOUT
+                    "/", headers=build_warmup_headers(), timeout=WARMUP_TIMEOUT
                 )
                 r1.raise_for_status()
                 # Second hop: some endpoints (notably option-chain) only work after
                 # the bm_* cookies set by a real market-data page have been seen.
                 self._client.get(
                     "/market-data/live-equity-market",
-                    headers=build_headers(referer=NSE_ORIGIN + "/"),
+                    headers=build_warmup_headers(),
                     timeout=WARMUP_TIMEOUT,
                 )
                 self._cookies_valid_until = time.monotonic() + COOKIE_TTL_SEC
@@ -177,7 +177,7 @@ class SessionManager:
         backoff = 1.0
 
         while True:
-            headers = build_headers(referer=referer)
+            headers = build_api_headers(referer=referer)
             resp = self._client.request(method, path_or_url, headers=headers, params=params)
 
             if resp.status_code in (401, 403):

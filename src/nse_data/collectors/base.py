@@ -279,10 +279,18 @@ class EventCollector(Collector):
 
     Each row has a deterministic fingerprint. Re-running yields zero new rows
     if NSE returned the same events; one new row if a new event appeared.
+
+    Optional Redis hot-set: set `dedup_cache` on an instance and persist() will
+    skip rows already known to the cache. SQLite remains the source of truth —
+    cache loss never causes duplicates, only extra SELECTs.
+
     Used by: announcements, board_meetings, large_deals, corporate_actions,
     financial_results, primary_market, ...
     """
     fingerprint_col: str = "fingerprint"
+    # Optional — set on the instance from main.py after Redis is up.
+    # Type is DedupCache | None but kept untyped here to avoid storage import.
+    dedup_cache = None
 
     def fingerprint(self, row: Row) -> str:
         raise NotImplementedError(
@@ -290,11 +298,43 @@ class EventCollector(Collector):
         )
 
     def persist(self, db, rows: list[Row]) -> PersistResult:
+        # Stamp fingerprints first
         for row in rows:
             row.setdefault(self.fingerprint_col, self.fingerprint(row))
-        from ..storage import models
-        return models.insert_ignore(db, self.table, rows, [self.fingerprint_col])
 
+        cache_hits = 0
+        rows_to_write = rows
+
+        # Fast path: skip rows already in the cache
+        if self.dedup_cache is not None:
+            fps = [r[self.fingerprint_col] for r in rows]
+            known = self.dedup_cache.contains_many(fps)
+            if known:
+                rows_to_write = [
+                    r for r in rows if r[self.fingerprint_col] not in known
+                ]
+                cache_hits = len(known)
+
+        if not rows_to_write:
+            return PersistResult(deduped=cache_hits)
+
+        from ..storage import models
+        result = models.insert_ignore(
+            db, self.table, rows_to_write, [self.fingerprint_col]
+        )
+
+        # Everything that made it through SQLite is durably stored — cache it all.
+        # This includes rows insert_ignore deduped against SQLite (they're already
+        # in the DB) and rows it just inserted.
+        if self.dedup_cache is not None:
+            self.dedup_cache.add_many(
+                [r[self.fingerprint_col] for r in rows_to_write]
+            )
+
+        return PersistResult(
+            inserted=result.inserted,
+            deduped=result.deduped + cache_hits,
+        )
 
 class CsvCollector(Collector):
     """
