@@ -164,3 +164,43 @@ endpoints:
     market_hours_only: true
     table: raw_most_active_fno
     enabled: true
+
+  board_meetings:
+      collector: nse_data.collectors.board_meetings:BoardMeetings
+      response: json
+      cadence: 30m
+      active_hours: "08:00-19:00"
+      table: raw_board_meetings
+      enabled: true
+
+  corporate_actions:
+    collector: nse_data.collectors.corporate_actions:CorporateActions
+    response: json
+    cadence: 1h
+    active_hours: "08:00-19:00"
+    table: raw_corporate_actions
+    enabled: true
+
+  financial_results:
+    collector: nse_data.collectors.financial_results:FinancialResults
+    response: json
+    cadence: 1h
+    active_hours: "08:00-19:00"
+    table: raw_financial_results
+    enabled: true
+
+  large_deals:
+    collector: nse_data.collectors.large_deals:LargeDeals
+    response: json
+    cadence: 30m
+    active_hours: "08:00-19:00"
+    table: raw_large_deals
+    enabled: true
+
+  insider_trading:
+    collector: nse_data.collectors.insider_trading:InsiderTrading
+    response: json
+    cadence: 1h
+    active_hours: "08:00-19:00"
+    table: raw_insider_trading
+    enabled: true

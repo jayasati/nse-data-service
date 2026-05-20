@@ -301,8 +301,91 @@ INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gate
 INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/live-analysis-oi-spurts-underlyings "HTTP/1.1 200 OK"
 {"collector": "oi_spurts", "started_at": "2026-05-20T09:55:20.536988+00:00", "finished_at": "2026-05-20T09:55:21.242711+00:00", "duration_ms": 705, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 214, "persist": {"inserted": 214, "updated": 0, "deduped": 0, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T09:55:21.242917Z"}
 INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:00:20 UTC)" executed successfully
-ly
-INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:30:00 IST)" (scheduled at 2026-05-20 15:25:00+05:30)
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:35:00 IST)" (scheduled at 2026-05-20 15:30:00+05:30)
 INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
-{"collector": "announcements_equity", "started_at": "2026-05-20T09:55:00.001904+00:00", "finished_at": "2026-05-20T09:55:00.736407+00:00", "duration_ms": 734, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 6, "updated": 0, "deduped": 13, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T09:55:00.736546Z"}
-INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:30:00 IST)" executed successfully
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:00:00.002237+00:00", "finished_at": "2026-05-20T10:00:00.755039+00:00", "duration_ms": 752, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 1, "updated": 0, "deduped": 17, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:00:00.755254Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:35:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:05:20 UTC)" (scheduled at 2026-05-20 10:00:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:05:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:40:00 IST)" (scheduled at 2026-05-20 15:35:00+05:30)
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:05:00.003457+00:00", "finished_at": "2026-05-20T10:05:00.473564+00:00", "duration_ms": 470, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 7, "updated": 0, "deduped": 12, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:05:00.473896Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:40:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:10:20 UTC)" (scheduled at 2026-05-20 10:05:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:10:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:45:00 IST)" (scheduled at 2026-05-20 15:40:00+05:30)
+INFO:nse_data.session.manager:warming nse session
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/ "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/market-data/live-equity-market "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:10:00.007909+00:00", "finished_at": "2026-05-20T10:10:01.099908+00:00", "duration_ms": 1091, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 0, "updated": 0, "deduped": 19, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:10:01.100220Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:45:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:15:20 UTC)" (scheduled at 2026-05-20 10:10:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:15:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:50:00 IST)" (scheduled at 2026-05-20 15:45:00+05:30)
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:15:00.025930+00:00", "finished_at": "2026-05-20T10:15:00.545141+00:00", "duration_ms": 519, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 0, "updated": 0, "deduped": 20, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:15:00.545453Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:50:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:20:20 UTC)" (scheduled at 2026-05-20 10:15:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:20:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:55:00 IST)" (scheduled at 2026-05-20 15:50:00+05:30)
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:20:00.024223+00:00", "finished_at": "2026-05-20T10:20:00.563632+00:00", "duration_ms": 539, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 0, "updated": 0, "deduped": 20, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:20:00.564033Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 15:55:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:25:20 UTC)" (scheduled at 2026-05-20 10:20:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:25:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:00:00 IST)" (scheduled at 2026-05-20 15:55:00+05:30)
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:25:00.004827+00:00", "finished_at": "2026-05-20T10:25:00.527731+00:00", "duration_ms": 522, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 6, "updated": 0, "deduped": 14, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:25:00.528152Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:00:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:30:20 UTC)" (scheduled at 2026-05-20 10:25:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:30:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:05:00 IST)" (scheduled at 2026-05-20 16:00:00+05:30)
+INFO:nse_data.session.manager:warming nse session
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/ "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/market-data/live-equity-market "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:30:00.005380+00:00", "finished_at": "2026-05-20T10:30:03.415248+00:00", "duration_ms": 3409, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 0, "updated": 0, "deduped": 20, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:30:03.415906Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:05:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:35:20 UTC)" (scheduled at 2026-05-20 10:30:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:35:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:10:00 IST)" (scheduled at 2026-05-20 16:05:00+05:30)
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:35:00.025700+00:00", "finished_at": "2026-05-20T10:35:00.501528+00:00", "duration_ms": 475, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 0, "updated": 0, "deduped": 20, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:35:00.501846Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:10:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:40:20 UTC)" (scheduled at 2026-05-20 10:35:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:40:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:15:00 IST)" (scheduled at 2026-05-20 16:10:00+05:30)
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:40:00.031909+00:00", "finished_at": "2026-05-20T10:40:01.870159+00:00", "duration_ms": 1838, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 0, "updated": 0, "deduped": 20, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:40:01.870615Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:15:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:45:20 UTC)" (scheduled at 2026-05-20 10:40:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:45:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:20:00 IST)" (scheduled at 2026-05-20 16:15:00+05:30)
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:45:00.004277+00:00", "finished_at": "2026-05-20T10:45:00.433041+00:00", "duration_ms": 428, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 3, "updated": 0, "deduped": 17, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:45:00.433345Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:20:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:50:20 UTC)" (scheduled at 2026-05-20 10:45:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:50:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:25:00 IST)" (scheduled at 2026-05-20 16:20:00+05:30)
+INFO:nse_data.session.manager:warming nse session
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/ "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/market-data/live-equity-market "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T10:50:00.005293+00:00", "finished_at": "2026-05-20T10:50:00.874926+00:00", "duration_ms": 869, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 0, "updated": 0, "deduped": 20, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T10:50:00.875165Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:25:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:55:20 UTC)" (scheduled at 2026-05-20 10:50:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 10:55:20 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:40:00 IST)" (scheduled at 2026-05-20 16:35:00+05:30)
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 11:10:20 UTC)" (scheduled at 2026-05-20 11:05:20.535097+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 11:10:20 UTC)" executed successfully
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T11:05:20.687739+00:00", "finished_at": "2026-05-20T11:05:21.200815+00:00", "duration_ms": 513, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 0, "updated": 0, "deduped": 20, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T11:05:21.201150Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:40:00 IST)" executed successfully
+ult:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:25:00 IST)" executed successfully
+INFO:apscheduler.executors.default:Running job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 11:09:47 UTC)" (scheduled at 2026-05-20 11:04:47.724332+00:00)
+INFO:apscheduler.executors.default:Job "_market_hours_gate.<locals>.gated (trigger: interval[0:05:00], next run at: 2026-05-20 11:09:47 UTC)" executed successfully
+INFO:apscheduler.executors.default:Running job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:40:00 IST)" (scheduled at 2026-05-20 16:35:00+05:30)
+INFO:httpx:HTTP Request: GET https://www.nseindia.com/api/corporate-announcements?index=equities "HTTP/1.1 200 OK"
+{"collector": "announcements_equity", "started_at": "2026-05-20T11:05:08.412089+00:00", "finished_at": "2026-05-20T11:05:09.366829+00:00", "duration_ms": 954, "fetched": 1, "succeeded": 1, "failed": 0, "rows_seen": 20, "persist": {"inserted": 19, "updated": 0, "deduped": 1, "removed": 0, "unchanged": 0}, "errors": [], "event": "collector_run", "level": "info", "timestamp": "2026-05-20T11:05:09.367241Z"}
+INFO:apscheduler.executors.default:Job "_make_runner.<locals>.run_collector (trigger: cron[hour='8-19', minute='*/5'], next run at: 2026-05-20 16:40:00 IST)" executed successfully
