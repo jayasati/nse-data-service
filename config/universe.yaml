@@ -12,3 +12,34 @@ option_chain:
   # How many expiries to fetch per symbol. 1 = nearest only (cheapest, covers PCR
   # and max-pain). Bump to 2 when traders are mid-rollover and you want both.
   n_expiries: 1
+
+
+index_members:
+  # Indices whose constituent lists we capture weekly. Each entry triggers one
+  # HTTP fan-out call. ReferenceCollector with diff_upsert tracks rebalances
+  # (rare but happen every ~6 months when NSE reconstitutes indices).
+  indices:
+    - NIFTY 50
+    - NIFTY 100
+    - NIFTY 500
+    - NIFTY BANK
+    - NIFTY IT
+    - NIFTY AUTO
+    - NIFTY PHARMA
+    - NIFTY FMCG
+    - NIFTY FINANCIAL SERVICES
+    - NIFTY ENERGY
+    - NIFTY METAL
+    - NIFTY REALTY
+
+
+watchlist:
+  # Symbols we want full per-stock attention on. Used by quote_metadata
+  # (fan-out per symbol weekly) and any future per-stock signal collectors.
+  # The F&O list (~209 symbols) automatically gets included by quote_metadata;
+  # this list is for stocks you specifically care about beyond the F&O default.
+  - RELIANCE
+  - TCS
+  - HDFCBANK
+  - INFY
+  - ICICIBANK

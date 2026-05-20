@@ -228,3 +228,43 @@ endpoints:
     run_at: "19:00"
     table: raw_fii_dii
     enabled: true
+
+  fno_list:
+      collector: nse_data.collectors.fno_list:FnoList
+      response: json
+      cadence: weekly
+      run_at: "Sun 06:00"
+      table: raw_fno_list
+      enabled: true
+
+  index_members:
+    collector: nse_data.collectors.index_members:IndexMembers
+    response: json
+    cadence: weekly
+    run_at: "Sun 06:30"
+    table: raw_index_members
+    enabled: true
+
+  new_listings:
+    collector: nse_data.collectors.new_listings:NewListings
+    response: json
+    cadence: daily
+    run_at: "09:00"
+    table: raw_new_listings
+    enabled: true
+
+  primary_market:
+    collector: nse_data.collectors.primary_market:PrimaryMarket
+    response: json
+    cadence: daily
+    run_at: "07:00"
+    table: raw_primary_issues
+    enabled: true
+
+  quote_metadata:
+    collector: nse_data.collectors.quote_metadata:QuoteMetadata
+    response: json
+    cadence: weekly
+    run_at: "Sun 07:00"
+    table: raw_quote_metadata
+    enabled: true

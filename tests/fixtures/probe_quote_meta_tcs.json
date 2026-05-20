@@ -1,0 +1,211 @@
+{
+  "info": {
+    "symbol": "TCS",
+    "companyName": "Tata Consultancy Services Limited",
+    "industry": "Computers - Software & Consulting",
+    "activeSeries": [
+      "EQ",
+      "T0"
+    ],
+    "debtSeries": [],
+    "isFNOSec": true,
+    "isCASec": false,
+    "isSLBSec": true,
+    "isDebtSec": false,
+    "isSuspended": false,
+    "tempSuspendedSeries": [],
+    "isETFSec": false,
+    "isDelisted": false,
+    "isin": "INE467B01029",
+    "slb_isin": "INE467B01029",
+    "listingDate": "2004-08-25",
+    "isMunicipalBond": false,
+    "isHybridSymbol": false,
+    "segment": "EQUITY",
+    "isTop10": false,
+    "identifier": "TCSEQN"
+  },
+  "metadata": {
+    "series": "EQ",
+    "symbol": "TCS",
+    "isin": "INE467B01029",
+    "status": "Listed",
+    "listingDate": "25-Aug-2004",
+    "industry": "Computers - Software & Consulting",
+    "lastUpdateTime": "20-May-2026 16:00:00",
+    "pdSectorPe": 15.92,
+    "pdSymbolPe": 17.03,
+    "pdSectorInd": "NIFTY 50",
+    "pdSectorIndAll": [
+      "NIFTY 50",
+      "NIFTY500 SHARIAH",
+      "NIFTY LARGEMIDCAP 250",
+      "NIFTY QUALITY LOW-VOLATILITY 30",
+      "NIFTY100 ESG",
+      "NIFTY100 ENHANCED ESG",
+      "NIFTY100 QUALITY 30",
+      "NIFTY200 QUALITY 30",
+      "NIFTY50 EQUAL WEIGHT",
+      "NIFTY 100",
+      "NIFTY 200",
+      "NIFTY 500",
+      "NIFTY CONGLOMERATE 50",
+      "NIFTY DIVIDEND OPPORTUNITIES 50",
+      "NIFTY GROWTH SECTORS 15",
+      "NIFTY IT",
+      "NIFTY INDIA CORPORATE GROUP INDEX - TATA GROUP",
+      "NIFTY INDIA CORPORATE GROUP INDEX - TATA GROUP 25% CAP",
+      "NIFTY INDIA DIGITAL",
+      "NIFTY INDIA FPI 150",
+      "NIFTY INDIA SELECT 5 CORPORATE GROUPS (MAATR)",
+      "NIFTY LOW VOLATILITY 50",
+      "NIFTY SERVICES SECTOR",
+      "NIFTY SHARIAH 25",
+      "NIFTY TOP 10 EQUAL WEIGHT",
+      "NIFTY TOP 15 EQUAL WEIGHT",
+      "NIFTY TOP 20 EQUAL WEIGHT",
+      "NIFTY TOTAL MARKET",
+      "NIFTY100 ESG SECTOR LEADERS",
+      "NIFTY100 EQUAL WEIGHT",
+      "NIFTY100 LOW VOLATILITY 30",
+      "NIFTY50 SHARIAH",
+      "NIFTY50 VALUE 20",
+      "NIFTY500 EQUAL WEIGHT",
+      "NIFTY500 FLEXICAP QUALITY 30",
+      "NIFTY500 LARGEMIDSMALL EQUAL-CAP WEIGHTED",
+      "NIFTY500 LOW VOLATILITY 50",
+      "NIFTY500 MULTICAP 50:25:25",
+      "NIFTY500 MULTIFACTOR MQVLV 50",
+      "NIFTY500 QUALITY 50",
+      "NIFTY ALPHA QUALITY LOW-VOLATILITY 30",
+      "NIFTY ALPHA QUALITY VALUE LOW-VOLATILITY 30"
+    ]
+  },
+  "securityInfo": {
+    "boardStatus": "Main",
+    "tradingStatus": "Active",
+    "tradingSegment": "Normal Market",
+    "sessionNo": "-",
+    "slb": "Yes",
+    "classOfShare": "Equity",
+    "derivatives": "Yes",
+    "surveillance": {
+      "surv": null,
+      "desc": null
+    },
+    "faceValue": 1,
+    "issuedSize": 3618087518
+  },
+  "sddDetails": {
+    "SDDAuditor": "-",
+    "SDDStatus": "-"
+  },
+  "currentMarketType": "NM",
+  "priceInfo": {
+    "lastPrice": 2324.1,
+    "change": -3,
+    "pChange": -0.12891581797086504,
+    "previousClose": 2327.1,
+    "open": 2323.9,
+    "close": 2327.4,
+    "vwap": 2332.6,
+    "stockIndClosePrice": 0,
+    "lowerCP": "2094.70",
+    "upperCP": "2560.10",
+    "pPriceBand": "No Band",
+    "basePrice": 2327.1,
+    "intraDayHighLow": {
+      "min": 2317.8,
+      "max": 2342,
+      "value": 2324.1
+    },
+    "weekHighLow": {
+      "min": 2206.4,
+      "minDate": "14-May-2026",
+      "max": 3558,
+      "maxDate": "20-May-2025",
+      "value": 2324.1
+    },
+    "iNavValue": null,
+    "checkINAV": false,
+    "tickSize": 0.1,
+    "ieq": ""
+  },
+  "industryInfo": {
+    "macro": "Information Technology",
+    "sector": "Information Technology",
+    "industry": "IT - Software",
+    "basicIndustry": "Computers - Software & Consulting"
+  },
+  "preOpenMarket": {
+    "preopen": [
+      {
+        "price": 2322,
+        "buyQty": 384,
+        "sellQty": 0
+      },
+      {
+        "price": 2322.1,
+        "buyQty": 100,
+        "sellQty": 0
+      },
+      {
+        "price": 2322.4,
+        "buyQty": 5,
+        "sellQty": 0
+      },
+      {
+        "price": 2323,
+        "buyQty": 15,
+        "sellQty": 0
+      },
+      {
+        "price": 2323.1,
+        "buyQty": 100,
+        "sellQty": 0
+      },
+      {
+        "price": 2323.8,
+        "buyQty": 0,
+        "sellQty": 443
+      },
+      {
+        "price": 2323.9,
+        "buyQty": 0,
+        "sellQty": 127,
+        "iep": true
+      },
+      {
+        "price": 2324,
+        "buyQty": 0,
+        "sellQty": 1080
+      },
+      {
+        "price": 2324.7,
+        "buyQty": 0,
+        "sellQty": 1800
+      },
+      {
+        "price": 2325,
+        "buyQty": 0,
+        "sellQty": 325
+      }
+    ],
+    "ato": {
+      "buy": 0,
+      "sell": 0
+    },
+    "IEP": 2323.9,
+    "totalTradedVolume": 11405,
+    "finalPrice": 2323.9,
+    "finalQuantity": 11405,
+    "lastUpdateTime": "20-May-2026 09:07:40",
+    "totalBuyQuantity": 54054,
+    "totalSellQuantity": 84117,
+    "atoBuyQty": 0,
+    "atoSellQty": 0,
+    "Change": -3.2,
+    "perChange": -0.14,
+    "prevClose": 2327.1
+  }
+}

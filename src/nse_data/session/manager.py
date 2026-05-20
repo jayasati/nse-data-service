@@ -88,8 +88,29 @@ class SessionManager:
         referer: str | None = None,
         params: dict[str, Any] | None = None,
     ) -> Any:
-        return self._request("GET", endpoint_name, path, referer, params, absolute=False).json()
+        """
+        Returns parsed JSON, or None if NSE returned an empty body.
 
+        NSE sometimes serves 200 OK with a literally-empty payload on
+        endpoints where the natural meaning is "no data right now"
+        (e.g. /api/new-listing-today on days with no new listings).
+        Callers' normalize() then sees None and returns [] gracefully.
+        Discovered Phase 7 Day 5 / 2026-05-20.
+        """
+        resp = self._request("GET", endpoint_name, path, referer, params, absolute=False)
+        text = resp.text
+        if not text or not text.strip():
+            return None
+        try:
+            return resp.json()
+        except ValueError:
+            # Body looked non-empty but JSON parse still failed.
+            # Treat as "no data" rather than propagating; let normalize() decide.
+            log.warning(
+                "get_json: non-JSON response from %s (%d bytes); returning None",
+                endpoint_name, len(text),
+            )
+            return None
     def get_text(
         self,
         endpoint_name: str,

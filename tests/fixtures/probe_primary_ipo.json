@@ -1,0 +1,26 @@
+[
+  {
+    "symbol": "QLINE",
+    "companyName": "Q-Line Biotech Limited",
+    "issueStartDate": "21-May-2026",
+    "issueEndDate": "25-May-2026",
+    "issueSize": "4472000",
+    "issuePrice": "Rs.326 to Rs.343",
+    "lotSize": "400",
+    "priceBand": "Rs.326 to Rs.343",
+    "series": "SME",
+    "status": "Forthcoming"
+  },
+  {
+    "symbol": "BMLL",
+    "companyName": "Bio Medica Laboratories Limited",
+    "issueStartDate": "21-May-2026",
+    "issueEndDate": "25-May-2026",
+    "issueSize": "3772000",
+    "issuePrice": "Rs.132 to Rs.139",
+    "lotSize": "1000",
+    "priceBand": "Rs.132 to Rs.139",
+    "series": "SME",
+    "status": "Forthcoming"
+  }
+]
