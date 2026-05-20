@@ -116,3 +116,51 @@ endpoints:
     market_hours_only: true
     table: raw_most_active
     enabled: true
+
+  high_52w:
+      collector: nse_data.collectors.high_low_52w:High52W
+      response: json
+      cadence: 10m
+      market_hours_only: true
+      table: raw_high_low_52w
+      enabled: true
+
+  low_52w:
+    collector: nse_data.collectors.high_low_52w:Low52W
+    response: json
+    cadence: 10m
+    market_hours_only: true
+    table: raw_high_low_52w
+    enabled: true
+
+  price_band_upper:
+    collector: nse_data.collectors.price_band:UpperBandHits
+    response: json
+    cadence: 3m
+    market_hours_only: true
+    table: raw_band_hits
+    enabled: true
+
+  price_band_lower:
+    collector: nse_data.collectors.price_band:LowerBandHits
+    response: json
+    cadence: 3m
+    market_hours_only: true
+    table: raw_band_hits
+    enabled: true
+
+  most_active_fno_volume:
+    collector: nse_data.collectors.most_active_fno:MostActiveFnoByVolume
+    response: json
+    cadence: 5m
+    market_hours_only: true
+    table: raw_most_active_fno
+    enabled: true
+
+  most_active_fno_value:
+    collector: nse_data.collectors.most_active_fno:MostActiveFnoByValue
+    response: json
+    cadence: 5m
+    market_hours_only: true
+    table: raw_most_active_fno
+    enabled: true

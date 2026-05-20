@@ -1,0 +1,381 @@
+{
+  "timestamp": "20-May-2026 15:13:14",
+  "dataLtpGreater20": [
+    {
+      "symbol": "ACSTECH",
+      "comapnyName": "ACS Technologies Limited",
+      "new52WHL": 32.67,
+      "prev52WHL": 33.15,
+      "prevHLDate": "19-May-2026",
+      "ltp": 33.45,
+      "prevClose": "     33.28",
+      "change": 0.17,
+      "pChange": 0.5108173076923077
+    },
+    {
+      "symbol": "APOLLOTYRE",
+      "comapnyName": "Apollo Tyres Limited",
+      "new52WHL": 365.3,
+      "prev52WHL": 370,
+      "prevHLDate": "19-May-2026",
+      "ltp": 376.35,
+      "prevClose": "    371.90",
+      "change": 4.45,
+      "pChange": 1.19655821457381
+    },
+    {
+      "symbol": "DISAQ",
+      "comapnyName": "Disa India Limited",
+      "new52WHL": 11527,
+      "prev52WHL": 11751,
+      "prevHLDate": "04-May-2026",
+      "ltp": 11621,
+      "prevClose": "  12112.00",
+      "change": -491,
+      "pChange": -4.053830911492734
+    },
+    {
+      "symbol": "DPABHUSHAN",
+      "comapnyName": "D. P. Abhushan Limited",
+      "new52WHL": 866.1,
+      "prev52WHL": 872.6,
+      "prevHLDate": "19-May-2026",
+      "ltp": 892.9,
+      "prevClose": "    889.60",
+      "change": 3.3,
+      "pChange": 0.37095323741007197
+    },
+    {
+      "symbol": "ELCIDIN",
+      "comapnyName": "EL CID Investments Limited",
+      "new52WHL": 115560,
+      "prev52WHL": 116015,
+      "prevHLDate": "19-May-2026",
+      "ltp": 118500,
+      "prevClose": " 116490.00",
+      "change": 2010,
+      "pChange": 1.7254699974246717
+    },
+    {
+      "symbol": "FIBERWEB",
+      "comapnyName": "Fiberweb (India) Limited",
+      "new52WHL": 29.77,
+      "prev52WHL": 30.11,
+      "prevHLDate": "01-Apr-2026",
+      "ltp": 29.77,
+      "prevClose": "     31.33",
+      "change": -1.56,
+      "pChange": -4.979253112033195
+    },
+    {
+      "symbol": "GRAUWEIL",
+      "comapnyName": "Grauer & Weil India Limited",
+      "new52WHL": 62.09,
+      "prev52WHL": 62.55,
+      "prevHLDate": "18-May-2026",
+      "ltp": 63.85,
+      "prevClose": "     64.61",
+      "change": -0.76,
+      "pChange": -1.1762885002321621
+    },
+    {
+      "symbol": "GSEC10IETF",
+      "comapnyName": "ICICI Pru Mutual Fund-ICICI Prudential Nifty 10 yr Benchmark G-Sec ETF",
+      "new52WHL": 252.23,
+      "prev52WHL": 252.93,
+      "prevHLDate": "06-Apr-2026",
+      "ltp": 256,
+      "prevClose": "    258.00",
+      "change": -2,
+      "pChange": -0.7751937984496124
+    },
+    {
+      "symbol": "JYOTICNC",
+      "comapnyName": "Jyoti CNC Automation Limited",
+      "new52WHL": 659,
+      "prev52WHL": 675.6,
+      "prevHLDate": "19-May-2026",
+      "ltp": 670.3,
+      "prevClose": "    679.15",
+      "change": -8.85,
+      "pChange": -1.3030994625634984
+    },
+    {
+      "symbol": "KAYNES",
+      "comapnyName": "Kaynes Technology India Limited",
+      "new52WHL": 2995.1,
+      "prev52WHL": 3072,
+      "prevHLDate": "19-May-2026",
+      "ltp": 3000,
+      "prevClose": "   3091.60",
+      "change": -91.6,
+      "pChange": -2.9628671238193816
+    },
+    {
+      "symbol": "KIRANVYPAR",
+      "comapnyName": "Kiran Vyapar Limited",
+      "new52WHL": 172.25,
+      "prev52WHL": 176,
+      "prevHLDate": "19-May-2026",
+      "ltp": 186.02,
+      "prevClose": "    178.95",
+      "change": 7.07,
+      "pChange": 3.9508242525845207
+    },
+    {
+      "symbol": "KIRLFER",
+      "comapnyName": "Kirloskar Ferrous Industries Limited",
+      "new52WHL": 410.25,
+      "prev52WHL": 415,
+      "prevHLDate": "19-May-2026",
+      "ltp": 419.1,
+      "prevClose": "    422.10",
+      "change": -3,
+      "pChange": -0.7107320540156361
+    },
+    {
+      "symbol": "KLBRENG-B",
+      "comapnyName": "Kilburn Engineering Limited",
+      "new52WHL": 470.55,
+      "prev52WHL": 472.85,
+      "prevHLDate": "18-May-2026",
+      "ltp": 479,
+      "prevClose": "    477.60",
+      "change": 1.4,
+      "pChange": 0.2931323283082077
+    },
+    {
+      "symbol": "LAHOTIOV",
+      "comapnyName": "Lahoti Overseas Limited",
+      "new52WHL": 34.06,
+      "prev52WHL": 41.93,
+      "prevHLDate": "18-May-2026",
+      "ltp": 42.42,
+      "prevClose": "     42.57",
+      "change": -0.15,
+      "pChange": -0.3523608174770965
+    },
+    {
+      "symbol": "MHRIL",
+      "comapnyName": "Mahindra Holidays & Resorts India Limited",
+      "new52WHL": 218.5,
+      "prev52WHL": 220.3,
+      "prevHLDate": "13-May-2026",
+      "ltp": 220.85,
+      "prevClose": "    223.51",
+      "change": -2.66,
+      "pChange": -1.1901033510804886
+    },
+    {
+      "symbol": "NIITMTS",
+      "comapnyName": "NIIT Learning Systems Limited",
+      "new52WHL": 230,
+      "prev52WHL": 230,
+      "prevHLDate": "18-May-2026",
+      "ltp": 232.05,
+      "prevClose": "    238.75",
+      "change": -6.7,
+      "pChange": -2.806282722513089
+    },
+    {
+      "symbol": "PINELABS",
+      "comapnyName": "Pine Labs Limited",
+      "new52WHL": 143.34,
+      "prev52WHL": 147.5,
+      "prevHLDate": "18-May-2026",
+      "ltp": 149.29,
+      "prevClose": "    149.39",
+      "change": -0.1,
+      "pChange": -0.06693888479817926
+    },
+    {
+      "symbol": "PML",
+      "comapnyName": "Paul Merchants Limited",
+      "new52WHL": 531,
+      "prev52WHL": 543,
+      "prevHLDate": "18-May-2026",
+      "ltp": 545,
+      "prevClose": "    556.00",
+      "change": -11,
+      "pChange": -1.9784172661870503
+    },
+    {
+      "symbol": "PREMCO",
+      "comapnyName": "Premco Global Limited",
+      "new52WHL": 385,
+      "prev52WHL": 385,
+      "prevHLDate": "18-May-2026",
+      "ltp": 392,
+      "prevClose": "    392.40",
+      "change": -0.4,
+      "pChange": -0.1019367991845056
+    },
+    {
+      "symbol": "RAYMONDLSL",
+      "comapnyName": "Raymond Lifestyle Limited",
+      "new52WHL": 722,
+      "prev52WHL": 725.2,
+      "prevHLDate": "30-Mar-2026",
+      "ltp": 727.7,
+      "prevClose": "    743.65",
+      "change": -15.95,
+      "pChange": -2.1448261951186716
+    },
+    {
+      "symbol": "SAHLIBHFI",
+      "comapnyName": "Shalibhadra Finance Limited",
+      "new52WHL": 71.5,
+      "prev52WHL": 71.6,
+      "prevHLDate": "19-May-2026",
+      "ltp": 72.2,
+      "prevClose": "     72.60",
+      "change": -0.4,
+      "pChange": -0.5509641873278237
+    },
+    {
+      "symbol": "SHBAJRG",
+      "comapnyName": "Shri Bajrang Alliance Limited",
+      "new52WHL": 159,
+      "prev52WHL": 160,
+      "prevHLDate": "19-May-2026",
+      "ltp": 160,
+      "prevClose": "    169.90",
+      "change": -9.9,
+      "pChange": -5.826957033549147
+    },
+    {
+      "symbol": "SONAL",
+      "comapnyName": "Sonal Mercantile Limited",
+      "new52WHL": 87.69,
+      "prev52WHL": 92.25,
+      "prevHLDate": "13-May-2026",
+      "ltp": 92,
+      "prevClose": "     92.30",
+      "change": -0.3,
+      "pChange": -0.3250270855904659
+    },
+    {
+      "symbol": "TATACAP",
+      "comapnyName": "Tata Capital Limited",
+      "new52WHL": 298,
+      "prev52WHL": 300.15,
+      "prevHLDate": "02-Apr-2026",
+      "ltp": 300.55,
+      "prevClose": "    302.75",
+      "change": -2.2,
+      "pChange": -0.726672171758877
+    },
+    {
+      "symbol": "UBL",
+      "comapnyName": "United Breweries Limited",
+      "new52WHL": 1332.1,
+      "prev52WHL": 1337.8,
+      "prevHLDate": "18-May-2026",
+      "ltp": 1349,
+      "prevClose": "   1348.30",
+      "change": 0.7,
+      "pChange": 0.05191722910331529
+    },
+    {
+      "symbol": "ZSARACOM",
+      "comapnyName": "Saraswati Commercial India Limited",
+      "new52WHL": 9163,
+      "prev52WHL": 9305.5,
+      "prevHLDate": "15-May-2026",
+      "ltp": 9780,
+      "prevClose": "   9425.00",
+      "change": 355,
+      "pChange": 3.7665782493368702
+    }
+  ],
+  "dataLtpLess20": [
+    {
+      "symbol": "ARSHIYA",
+      "comapnyName": "Arshiya Limited",
+      "new52WHL": 1.14,
+      "prev52WHL": 1.14,
+      "prevHLDate": "19-May-2026",
+      "ltp": 1.19,
+      "prevClose": "      1.17",
+      "change": 0.02,
+      "pChange": 1.7094017094017093
+    },
+    {
+      "symbol": "AVROIND",
+      "comapnyName": "AVRO INDIA LIMITED",
+      "new52WHL": 10,
+      "prev52WHL": 10.01,
+      "prevHLDate": "14-May-2026",
+      "ltp": 10.33,
+      "prevClose": "     10.12",
+      "change": 0.21,
+      "pChange": 2.075098814229249
+    },
+    {
+      "symbol": "CEREBRAINT",
+      "comapnyName": "Cerebra Integrated Technologies Limited",
+      "new52WHL": 3.13,
+      "prev52WHL": 3.29,
+      "prevHLDate": "19-May-2026",
+      "ltp": 3.13,
+      "prevClose": "      3.29",
+      "change": -0.16,
+      "pChange": -4.86322188449848
+    },
+    {
+      "symbol": "EQUIPPP",
+      "comapnyName": "Equippp Social Impact Technologies Limited",
+      "new52WHL": 13.85,
+      "prev52WHL": 13.97,
+      "prevHLDate": "02-Apr-2026",
+      "ltp": 14.95,
+      "prevClose": "     14.32",
+      "change": 0.63,
+      "pChange": 4.399441340782123
+    },
+    {
+      "symbol": "GRADIENTE",
+      "comapnyName": "Gradiente Infotainment Limited",
+      "new52WHL": 5.96,
+      "prev52WHL": 6.27,
+      "prevHLDate": "19-May-2026",
+      "ltp": 5.96,
+      "prevClose": "      6.27",
+      "change": -0.31,
+      "pChange": -4.944178628389155
+    },
+    {
+      "symbol": "PARSVNATH",
+      "comapnyName": "Parsvnath Developers Limited",
+      "new52WHL": 4.64,
+      "prev52WHL": 4.88,
+      "prevHLDate": "19-May-2026",
+      "ltp": 4.64,
+      "prevClose": "      4.88",
+      "change": -0.24,
+      "pChange": -4.918032786885246
+    },
+    {
+      "symbol": "RNBDENIMS",
+      "comapnyName": "R&B Denims Limited",
+      "new52WHL": 11.28,
+      "prev52WHL": 11.28,
+      "prevHLDate": "19-May-2026",
+      "ltp": 11.49,
+      "prevClose": "     11.69",
+      "change": -0.2,
+      "pChange": -1.7108639863130881
+    },
+    {
+      "symbol": "SHRENIK",
+      "comapnyName": "Shrenik Limited",
+      "new52WHL": 0.36,
+      "prev52WHL": 0.36,
+      "prevHLDate": "01-Apr-2026",
+      "ltp": 0.37,
+      "prevClose": "       .37",
+      "change": 0,
+      "pChange": 0
+    }
+  ]
+}
