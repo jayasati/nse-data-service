@@ -1,0 +1,14 @@
+option_chain:
+  # type → list of symbols. The collector fetches each as a separate call.
+  # Start small. Each symbol = 2 HTTP calls (expiry + chain) at 5-min cadence.
+  # 4 symbols × 2 calls = 8 fetches per 5-min cycle. Comfortable for rate limiter.
+  indices:
+    - NIFTY
+    - BANKNIFTY
+  equities:
+    - RELIANCE
+    - TCS
+
+  # How many expiries to fetch per symbol. 1 = nearest only (cheapest, covers PCR
+  # and max-pain). Bump to 2 when traders are mid-rollover and you want both.
+  n_expiries: 1

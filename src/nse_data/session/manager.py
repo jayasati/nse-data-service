@@ -131,6 +131,11 @@ class SessionManager:
                     headers=build_warmup_headers(),
                     timeout=WARMUP_TIMEOUT,
                 )
+                self._client.get(
+                    "/option-chain",
+                    headers=build_warmup_headers(),
+                    timeout=WARMUP_TIMEOUT,
+                )
                 self._cookies_valid_until = time.monotonic() + COOKIE_TTL_SEC
                 self._warmup_count += 1 
             except Exception as e:

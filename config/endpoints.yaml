@@ -58,3 +58,11 @@ endpoints:
     run_at: "20:10"
     table: raw_surveillance_asm_st
     enabled: true
+
+  option_chain:
+    collector: nse_data.collectors.option_chain:OptionChain
+    response: json
+    cadence: 5m
+    market_hours_only: true
+    table: raw_option_chain
+    enabled: true
