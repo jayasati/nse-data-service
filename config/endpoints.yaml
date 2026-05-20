@@ -28,3 +28,33 @@ endpoints:
     run_at: "18:00"
     table: raw_bhavcopy_cm
     enabled: true
+
+  surveillance_gsm:
+    collector: nse_data.collectors.surveillance:GsmSurveillance
+    url: /api/reportGSM
+    referer: https://www.nseindia.com/market-data/price-bands-surveillance-actions
+    response: json
+    cadence: daily
+    run_at: "20:00"
+    table: raw_surveillance_gsm
+    enabled: true
+
+  surveillance_asm_lt:
+    collector: nse_data.collectors.surveillance:AsmLongTermSurveillance
+    url: /api/reportASM
+    referer: https://www.nseindia.com/market-data/price-bands-surveillance-actions
+    response: json
+    cadence: daily
+    run_at: "20:05"          # 5 min later, stagger to be polite to NSE
+    table: raw_surveillance_asm_lt
+    enabled: true
+
+  surveillance_asm_st:
+    collector: nse_data.collectors.surveillance:AsmShortTermSurveillance
+    url: /api/reportASM
+    referer: https://www.nseindia.com/market-data/price-bands-surveillance-actions
+    response: json
+    cadence: daily
+    run_at: "20:10"
+    table: raw_surveillance_asm_st
+    enabled: true

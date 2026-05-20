@@ -1,0 +1,43 @@
+{
+  "longterm": {
+    "data": [
+      {
+        "symbol": "21STCENMGM",
+        "series": null,
+        "companyName": "21st Century Management Services Limited",
+        "isin": "INE253B01015",
+        "asmSurvIndicator": "Stage I",
+        "asmTime": "20-May-2026",
+        "survCode": "LTASM - I (13)",
+        "survDesc": "Long Term Additional Surveillance Measure (LTASM) - Stage I",
+        "srno": 1
+      },
+      {
+        "symbol": "ACE",
+        "series": "EQ",
+        "companyName": "Action Construction Equipment Limited",
+        "isin": "INE731H01025",
+        "asmSurvIndicator": "Stage II",
+        "asmTime": "20-May-2026",
+        "survCode": "LTASM - II (5)",
+        "survDesc": "Long Term Additional Surveillance Measure (LTASM) - Stage II",
+        "srno": 2
+      }
+    ]
+  },
+  "shortterm": {
+    "data": [
+      {
+        "symbol": "63MOONS",
+        "series": null,
+        "companyName": "63 moons technologies limited",
+        "isin": "INE111B01023",
+        "asmSurvIndicator": "Stage I",
+        "asmTime": "20-May-2026",
+        "survCode": "STASM - I (11)",
+        "survDesc": "Short Term Additional Surveillance Measure (STASM) - Stage I",
+        "srno": 1
+      }
+    ]
+  }
+}

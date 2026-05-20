@@ -1,0 +1,40 @@
+[
+  {
+    "symbol": "ANKITMETAL",
+    "companyName": "Ankit Metal & Power Limited",
+    "isin": "INE106I01010",
+    "gsmStage": "LXII",
+    "gsmTime": "20-May-2026 08:06:03",
+    "survCode": "IBC - Receipt & GSM 0 (62)",
+    "survDesc": "Insolvency and Bankruptcy Code (IBC) - Receipt of Disclosure or Recommenced scrip and GSM stage 0",
+    "srno": 1
+  },
+  {
+    "symbol": "ANSALAPI",
+    "companyName": "Ansal Properties & Infrastructure Limited",
+    "isin": "INE436A01026",
+    "gsmStage": "LXIV",
+    "gsmTime": "20-May-2026 08:06:03",
+    "survCode": "GSM II & IBC - Receipt (64)",
+    "survDesc": "GSM stage II and Insolvency and Bankruptcy Code (IBC) - Receipt of Disclosure or Recommenced scrip",
+    "srno": 2
+  },
+  {
+    "symbol": "ASIL",
+    "companyName": "Amit Spinning Industries Limited",
+    "isin": "INE988A01026",
+    "gsmStage": "VI",
+    "gsmTime": "20-May-2026 08:06:03",
+    "survCode": "GSM - VI (6)",
+    "survDesc": "GSM stage VI",
+    "srno": 3
+  },
+  {
+    "symbol": "",
+    "companyName": "Malformed",
+    "isin": null,
+    "gsmStage": null,
+    "gsmTime": null,
+    "srno": 4
+  }
+]
