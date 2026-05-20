@@ -1,0 +1,52 @@
+{
+  "data": [
+    {
+      "symbol": "ZYDUSLIFE",
+      "latestOI": 29321,
+      "prevOI": 21894,
+      "changeInOI": 7427,
+      "avgInOI": 33.92,
+      "volume": 116778,
+      "futValue": 127224.20709,
+      "optValue": 97621043985,
+      "total": 141947.81694,
+      "premValue": 14723.60985,
+      "underlyingValue": 1017
+    },
+    {
+      "symbol": "RELIANCE",
+      "latestOI": 145000,
+      "prevOI": 142500,
+      "changeInOI": 2500,
+      "avgInOI": 1.75,
+      "volume": 890000,
+      "futValue": 412000.0,
+      "optValue": 2.1e11,
+      "total": 532000.0,
+      "premValue": 18000.0,
+      "underlyingValue": 2895.5
+    },
+    {
+      "symbol": "TCS",
+      "latestOI": 67000,
+      "prevOI": 70200,
+      "changeInOI": -3200,
+      "avgInOI": -4.56,
+      "volume": 220000,
+      "futValue": 215000.0,
+      "optValue": 9.8e10,
+      "total": 287000.0,
+      "premValue": 12000.0,
+      "underlyingValue": 3812.0
+    },
+    {
+      "symbol": "",
+      "latestOI": 1000,
+      "prevOI": 900,
+      "changeInOI": 100,
+      "avgInOI": 11.1,
+      "volume": 5000,
+      "underlyingValue": 100
+    }
+  ]
+}

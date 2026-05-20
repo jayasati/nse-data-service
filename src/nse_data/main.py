@@ -26,19 +26,26 @@ from .storage.db import apply_migrations, open_db
 log = structlog.get_logger()
 
 
-def _make_runner(session, db, dedup_cache):
+def _make_runner(session, db_path, dedup_cache):
     """
     Returns the callable APScheduler invokes per job.
-    Injects the dedup_cache into EventCollectors at run time.
+
+    Connection-per-run is required because APScheduler runs jobs in a
+    ThreadPoolExecutor; SQLite's default connection rejects use from a
+    thread other than the one that opened it. Opening fresh here also
+    gives us automatic cleanup — no long-lived handles on the WAL.
     """
     def run_collector(collector):
         if isinstance(collector, EventCollector):
             collector.dedup_cache = dedup_cache
+        conn = open_db(db_path)
         try:
-            report = collector.run(session, db)
+            report = collector.run(session, conn)
             log.info("collector_run", **report.to_dict())
         except Exception:
             log.exception("collector_failed", collector=collector.name)
+        finally:
+            conn.close()
     return run_collector
 
 
@@ -66,8 +73,15 @@ def main() -> int:
     )
 
     endpoints = load_endpoints("config/endpoints.yaml")
-    db = open_db("data/nse.db")
-    newly = apply_migrations(db)
+
+    # One-time migration pass at startup. Use a dedicated connection that's
+    # closed immediately — the long-lived `db` of before is gone, because
+    # APScheduler runs jobs in worker threads and SQLite connections aren't
+    # thread-portable. See _make_runner: each job opens its own connection.
+    db_path = "data/nse.db"
+    mig_conn = open_db(db_path)
+    newly = apply_migrations(mig_conn)
+    mig_conn.close()
     if newly:
         log.info("migrations_applied", files=newly)
 
@@ -76,7 +90,7 @@ def main() -> int:
 
     scheduler = make_scheduler()
     registered = register_jobs(
-        scheduler, endpoints, _make_runner(session, db, dedup_cache)
+        scheduler, endpoints, _make_runner(session, db_path, dedup_cache)
     )
     log.info("scheduler_starting", jobs=registered)
 
@@ -86,7 +100,6 @@ def main() -> int:
         log.info("scheduler_stopping")
     finally:
         session.close()
-        db.close()
     return 0
 
 

@@ -10,3 +10,13 @@ endpoints:
     active_hours: "08:00-19:00"
     table: raw_announcements
     enabled: true
+
+  oi_spurts:
+    collector: nse_data.collectors.oi_spurts:OiSpurts
+    url: /api/live-analysis-oi-spurts-underlyings
+    referer: https://www.nseindia.com/market-data/oi-spurts
+    response: json
+    cadence: 5m
+    market_hours_only: true
+    table: raw_oi_spurts
+    enabled: true

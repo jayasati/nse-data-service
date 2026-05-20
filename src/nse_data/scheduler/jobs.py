@@ -4,15 +4,27 @@ Translate endpoints.yaml entries into APScheduler jobs.
 Each enabled endpoint becomes one scheduled job whose callable is the
 `runner` passed in by main.py. The runner receives the collector instance
 and is responsible for calling collector.run(session, db) and logging.
+
+Phase 3 addition: entries with market_hours_only: true get their runner
+wrapped in a market-hours gate. The cron trigger still fires every N min,
+but the gate short-circuits to a no-op outside 09:15-15:30 IST on
+trading days. Two layers — trigger decides *when to attempt*, gate
+decides *whether to proceed*.
 """
 
 from __future__ import annotations
 
 import importlib
+import logging
 from typing import Any, Callable, Mapping
 
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from zoneinfo import ZoneInfo
+from .market_hours import is_market_open
+
+IST = ZoneInfo("Asia/Kolkata")
+log = logging.getLogger(__name__)
 
 
 def register_jobs(
@@ -34,9 +46,15 @@ def register_jobs(
         # consistent with config (used for circuit/rate-limit keys in Layer 1).
         collector.name = name
 
+        # Wrap the runner if this endpoint is market-hours-only
+        if cfg.get("market_hours_only"):
+            wrapped = _market_hours_gate(runner, name)
+        else:
+            wrapped = runner
+
         trigger = _trigger_for(cfg)
         scheduler.add_job(
-            func=runner,
+            func=wrapped,
             args=(collector,),
             trigger=trigger,
             id=name,
@@ -45,6 +63,24 @@ def register_jobs(
         )
         registered.append(name)
     return registered
+
+
+def _market_hours_gate(runner: Callable, name: str) -> Callable:
+    """
+    Wrap a runner so it no-ops outside NSE market hours.
+
+    Why a gate and not a fancier cron expression: APScheduler's cron parser
+    doesn't speak NSE holidays. Encoding "every 5 minutes on trading days"
+    into cron alone would require duplicating the holiday list inside the
+    cron expression. Cleaner to let the trigger be naive and the gate be
+    smart — single source of truth in market_hours.py.
+    """
+    def gated(collector):
+        if not is_market_open():
+            log.debug("market_closed_skip endpoint=%s", name)
+            return
+        return runner(collector)
+    return gated
 
 
 def _load_collector(spec: str):
@@ -71,7 +107,7 @@ def _trigger_for(cfg: Mapping[str, Any]):
     if cadence == "daily":
         run_at = cfg.get("run_at") or "00:00"
         h, m = run_at.split(":")
-        return CronTrigger(hour=int(h), minute=int(m))
+        return CronTrigger(hour=int(h), minute=int(m),timezone=IST)
 
     if cadence.endswith("m"):
         every = int(cadence[:-1])
@@ -83,6 +119,7 @@ def _trigger_for(cfg: Mapping[str, Any]):
             return CronTrigger(
                 hour=f"{start_h}-{end_h}",
                 minute=f"*/{every}",
+                timezone=IST,
             )
         return IntervalTrigger(minutes=every)
 
