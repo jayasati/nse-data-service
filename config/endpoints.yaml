@@ -66,3 +66,53 @@ endpoints:
     market_hours_only: true
     table: raw_option_chain
     enabled: true
+
+  live_equity_nifty50:
+      collector: nse_data.collectors.live_equity:LiveEquity
+      response: json
+      cadence: 5m
+      market_hours_only: true
+      table: raw_equity_quotes
+      enabled: true
+      # The collector defaults to NIFTY 50. To poll more indices, copy this
+      # entry and subclass LiveEquity with a different index_name.
+
+  indices:
+    collector: nse_data.collectors.indices:Indices
+    response: json
+    cadence: 5m
+    market_hours_only: true
+    table: raw_indices
+    enabled: true
+
+  gainers:
+    collector: nse_data.collectors.market_movers:Gainers
+    response: json
+    cadence: 5m
+    market_hours_only: true
+    table: raw_market_movers
+    enabled: true
+
+  losers:
+    collector: nse_data.collectors.market_movers:Losers
+    response: json
+    cadence: 5m
+    market_hours_only: true
+    table: raw_market_movers
+    enabled: true
+
+  most_active_volume:
+    collector: nse_data.collectors.most_active:MostActiveByVolume
+    response: json
+    cadence: 5m
+    market_hours_only: true
+    table: raw_most_active
+    enabled: true
+
+  most_active_value:
+    collector: nse_data.collectors.most_active:MostActiveByValue
+    response: json
+    cadence: 5m
+    market_hours_only: true
+    table: raw_most_active
+    enabled: true

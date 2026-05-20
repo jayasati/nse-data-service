@@ -1,0 +1,97 @@
+{
+  "data": {
+    "data": [
+      {
+        "segment": "Equity",
+        "totalVolume": 3785332028,
+        "totalValue": 939864119867.13,
+        "totalOI": 0,
+        "totalTrade": 29419273,
+        "averageTrade": 31947,
+        "noOfOrders": 1069835198,
+        "updatedOn": "2026-05-20 14:50:33"
+      },
+      {
+        "segment": "Equity Derivatives",
+        "totalVolume": 54047097,
+        "totalValue": 1737239728106.8499,
+        "totalOI": 24469780.538461536,
+        "totalTrade": 29990679,
+        "averageTrade": 57926,
+        "noOfOrders": 11031850394,
+        "updatedOn": "2026-05-20 14:51:03"
+      },
+      {
+        "segment": "Currency Derivatives",
+        "totalVolume": 554864,
+        "totalValue": 53608499830.4,
+        "totalOI": 3037967,
+        "totalTrade": 4497,
+        "averageTrade": 11920947,
+        "noOfOrders": 0,
+        "updatedOn": "2026-05-20 14:50:49"
+      },
+      {
+        "segment": "Interest Rate Derivatives",
+        "totalVolume": 16046,
+        "totalValue": 3068692800,
+        "totalOI": 55081,
+        "totalTrade": 163,
+        "averageTrade": 18826336,
+        "noOfOrders": 84271,
+        "updatedOn": "2026-05-20 14:39:24"
+      },
+      {
+        "segment": "Commodity Derivatives",
+        "totalVolume": 4421,
+        "totalValue": 383515291,
+        "totalOI": 4187,
+        "totalTrade": 3465,
+        "averageTrade": 110683,
+        "noOfOrders": 4948240,
+        "updatedOn": "2026-05-20 14:48:17"
+      },
+      {
+        "segment": "Debt",
+        "totalVolume": 0,
+        "totalValue": 154878607294.37,
+        "totalOI": 0,
+        "totalTrade": 13678,
+        "averageTrade": 11323191,
+        "noOfOrders": 0,
+        "updatedOn": "2026-05-20 14:50:46"
+      },
+      {
+        "segment": "Electronic Gold Receipts",
+        "totalVolume": 0,
+        "totalValue": 0,
+        "totalOI": 0,
+        "totalTrade": 0,
+        "averageTrade": 0,
+        "noOfOrders": 104,
+        "updatedOn": "2026-05-20 09:54:03"
+      },
+      {
+        "segment": "Mutual Fund",
+        "totalVolume": 0,
+        "totalValue": 17696165447.25,
+        "totalOI": 0,
+        "totalTrade": 0,
+        "averageTrade": 0,
+        "noOfOrders": 1353182,
+        "updatedOn": "2026-05-20 14:30:00"
+      },
+      {
+        "segment": "Total",
+        "totalVolume": 3839954456,
+        "totalValue": 2906739328637,
+        "totalOI": 27567015.538461536,
+        "totalTrade": 59431755,
+        "averageTrade": 31947,
+        "noOfOrders": 12108071389,
+        "updatedOn": "2026-05-20 14:50:33"
+      }
+    ],
+    "timeStamp": "20-May-2026"
+  }
+}

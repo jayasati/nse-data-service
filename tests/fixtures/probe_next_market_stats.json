@@ -1,0 +1,23 @@
+{
+  "data": {
+    "fiftyTwoWeek": {
+      "high": 61,
+      "low": 44
+    },
+    "circuit": {
+      "upper": 94,
+      "lower": 89
+    },
+    "snapshotCapitalMarket": {
+      "total": 3315,
+      "unchange": 112,
+      "advances": 1624,
+      "declines": 1579
+    },
+    "timestamp": "19-May-2026",
+    "tlMKtCapLacCr": 460.1275057930105,
+    "tlMKtCapTri": 4.751218771128138,
+    "regInvestors": "25,89,36,028",
+    "asOnDate": "20-May-2026 14:52:19"
+  }
+}
