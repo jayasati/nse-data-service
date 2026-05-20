@@ -204,3 +204,27 @@ endpoints:
     active_hours: "08:00-19:00"
     table: raw_insider_trading
     enabled: true
+
+  bhavcopy_fo:
+      collector: nse_data.collectors.bhavcopy_fo:BhavcopyFO
+      response: bytes
+      cadence: daily
+      run_at: "18:00"
+      table: raw_bhavcopy_fo
+      enabled: true
+
+  volatility_report:
+    collector: nse_data.collectors.volatility_report:VolatilityReport
+    response: text
+    cadence: daily
+    run_at: "18:30"
+    table: raw_volatility
+    enabled: true
+
+  fii_dii:
+    collector: nse_data.collectors.fii_dii:FiiDii
+    response: json
+    cadence: daily
+    run_at: "19:00"
+    table: raw_fii_dii
+    enabled: true
