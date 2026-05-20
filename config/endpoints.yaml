@@ -20,3 +20,11 @@ endpoints:
     market_hours_only: true
     table: raw_oi_spurts
     enabled: true
+
+  bhavcopy_cm:
+    collector: nse_data.collectors.bhavcopy:Bhavcopy
+    response: csv
+    cadence: daily
+    run_at: "18:00"
+    table: raw_bhavcopy_cm
+    enabled: true

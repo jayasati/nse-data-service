@@ -13,6 +13,7 @@ import logging
 import sys
 
 import structlog
+import time 
 
 from .collectors.base import EventCollector
 from .scheduler.jobs import register_jobs
@@ -30,18 +31,32 @@ def _make_runner(session, db_path, dedup_cache):
     """
     Returns the callable APScheduler invokes per job.
 
-    Connection-per-run is required because APScheduler runs jobs in a
-    ThreadPoolExecutor; SQLite's default connection rejects use from a
-    thread other than the one that opened it. Opening fresh here also
-    gives us automatic cleanup — no long-lived handles on the WAL.
+    Per-run lifecycle:
+      - Open a fresh SQLite connection (thread-portability fix from Phase 3)
+      - Inject the dedup cache for EventCollectors
+      - Run the collector; if it returns 0 rows AND the collector declares
+        publish-window semantics, retry inside the window
     """
+    from .collectors.bhavcopy import Bhavcopy, PUBLISH_RETRY_MAX, PUBLISH_RETRY_DELAY
+
     def run_collector(collector):
         if isinstance(collector, EventCollector):
             collector.dedup_cache = dedup_cache
+
         conn = open_db(db_path)
         try:
             report = collector.run(session, conn)
             log.info("collector_run", **report.to_dict())
+
+            # Publish-window retry: bhavcopy may 404 for ~30 min after run_at
+            if isinstance(collector, Bhavcopy) and report.rows_seen == 0:
+                for attempt in range(1, PUBLISH_RETRY_MAX):
+                    log.info("bhavcopy_retry", attempt=attempt)
+                    time.sleep(PUBLISH_RETRY_DELAY)
+                    report = collector.run(session, conn)
+                    log.info("collector_run", **report.to_dict())
+                    if report.rows_seen > 0:
+                        break
         except Exception:
             log.exception("collector_failed", collector=collector.name)
         finally:
