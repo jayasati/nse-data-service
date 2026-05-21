@@ -3,3 +3,6 @@ data/
 __pycache__/
 *.pyc
 .env
+
+tests/financial_extraction/fixtures/
+tests/financial_extraction/ground_truth/
