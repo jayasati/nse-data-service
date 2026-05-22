@@ -1,0 +1,23 @@
+# PDF retention policy by priority bucket.
+# Architecture §6 / 7.1 - PDF retention strategy.
+
+pdf_retention:
+  high:
+    keep_pdf: forever
+    archive_subdir: pdfs
+
+  medium:
+    keep_pdf: 30d
+    archive_subdir: pdfs_temp
+
+  low:
+    keep_pdf: false
+    archive_subdir: null
+
+  skip:
+    parse: false
+    keep_pdf: false
+    archive_subdir: null
+
+text_retention:
+  all_priorities: forever
