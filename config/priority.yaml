@@ -1,0 +1,77 @@
+# Announcement subject -> priority mapping.
+# Counts in comments are from raw_announcements as of April 2026.
+# Coverage: ~96% of 24,888 rows. Tail subjects default to 'medium' with
+# a warning logged so we can spot new types weekly.
+
+announcement_priority:
+
+  high:
+    # ---- Results & guidance ----
+    - "Outcome of Board Meeting"                                  # 1957
+    - "Reply to Clarification- Financial results"                # 121
+    - "Clarification - Financial Results"                         # 56
+    - "Integrated Filing- Financial"                              # 38
+
+    # ---- Corporate actions affecting cash/shares ----
+    - "Dividend"                                                  # 610
+    - "Acquisition"                                               # 184
+    - "Amalgamation/Merger"                                       # 37
+    - "Scheme of Arrangement"                                     # 35
+    - "Allotment of Securities"                                   # 123
+
+    # ---- Stake / control changes ----
+    - "Disclosure under SEBI Takeover Regulations"                # 1565
+    - "Change in Management"                                      # 459
+    - "Resignation of Director/KMP/SMP"                           # 296
+    - "Resignation"                                               # 253
+    - "Change in Director(s)"                                     # 257
+    - "Change in Auditors"                                        # 204
+
+    # ---- Business events ----
+    - "Bagging/Receiving of orders/contracts"                     # 193
+    - "Agreements"                                                # 62
+    - "Capacity addition"                                         # 43
+
+    # ---- Distress / regulatory ----
+    - "Corporate Insolvency Resolution Process"                   # 90
+    - "Action(s) taken or orders passed"                          # 125
+    - "Action(s) initiated or orders passed"                      # 85
+    - "Pendency of Litigation(s)/dispute(s) or the outcome impacting the Company"  # 111
+    - "Credit Rating- Revision"                                   # 46
+
+  medium:
+    - "Investor Presentation"                                     # 711
+    - "Press Release"                                             # 1284
+    - "General Updates"                                           # 2332
+    - "Updates"                                                   # 1779
+    - "Appointment"                                               # 523
+    - "Credit Rating"                                             # 183
+    - "Credit Rating- New"                                        # 36
+    - "Spurt in Volume"                                           # 140
+    - "Price movement"                                            # 332
+    - "Disclosure of material issue"                              # 51
+    - "ESOP/ESOS/ESPS"                                            # 284
+    - "Options to purchase securities"                            # 48
+    - "Cessation"                                                 # 159
+    - "Retirement"                                                # 32
+    - "Committee Meeting Updates"                                 # 33
+    - "Amendment to AOA/MOA"                                      # 35
+    - "Monthly Business Updates"                                  # 44
+    - "Record Date"                                               # 352
+    - "Shareholders meeting"                                      # 797
+
+  low:
+    - "Analysts/Institutional Investor Meet/Con. Call Updates"   # 3171
+    - "Copy of Newspaper Publication"                             # 2129
+    - "News Verification"                                         # 53
+    - "Statement of deviation(s) or variation(s) under Reg. 32"  # 113
+    - "Monitoring Agency Report"                                  # 365
+
+  skip:
+    - "Certificate under SEBI (Depositories and Participants) Regulations, 2018"  # 2163
+    - "Trading Window"                                            # 95
+    - "Structural Digital Database"                               # 92
+
+# Subjects not in any list default to this. Phase 2's classify.py will
+# log a warning when an unknown subject is encountered.
+default_priority: medium

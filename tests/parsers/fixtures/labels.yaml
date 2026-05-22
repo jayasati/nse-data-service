@@ -1,0 +1,136 @@
+AUROPHARMA_20260521_18dc6eed:
+  financial:
+    eps: 11.92
+    pat_cr: 692.23
+    revenue_cr: 3000.6
+  pdf_type: hybrid
+  subject: Outcome of Board Meeting
+BANKBARODA_20260423_75acad42:
+  pdf_type: native_text
+  subject: Change in Management
+BHARTIARTL_20260422_1cdba3d8:
+  notes: Disclosure under Regulation 30 of SEBI (Listing Obligations and Disclosure
+  pdf_type: native_text
+  subject: Action(s) taken or orders passed
+BHEL_20260425_229ca8b0:
+  pdf_type: native_text
+  subject: Change in Management
+BSE_20260423_1f2c93fa:
+  pdf_type: native_text
+  subject: Amalgamation/Merger
+COALINDIA_20260427_61eade96:
+  pdf_type: native_text
+  subject: Dividend
+COALINDIA_20260427_637d0465:
+  financial:
+    eps: 17.59
+    revenue_cr: 4649.003
+  pdf_type: hybrid
+  subject: Outcome of Board Meeting
+COALINDIA_20260430_0002fe7e:
+  pdf_type: native_text
+  subject: Bagging/Receiving of orders/contracts
+FORCEMOT_20260423_95902238:
+  pdf_type: native_text
+  subject: Acquisition
+GAIL_20260521_0ca0f5f0:
+  financial:
+    eps: 1.92
+    pat_cr: 126.218
+    revenue_cr: 3479.703
+  notes: it looks scanned in tables but text can be selected
+  pdf_type: hybrid
+  subject: Outcome of Board Meeting
+GAIL_20260521_a66fd95f:
+  financial:
+    eps: 1.92
+    pat_cr: 126.218
+    revenue_cr: 3479.703
+  pdf_type: hybrid
+  subject: Dividend
+INDUSTOWER_20260430_51a58c3f:
+  pdf_type: native_text
+  subject: Outcome of Board Meeting
+INDUSTOWER_20260430_8723c3a3:
+  pdf_type: native_text
+  subject: Dividend
+LODHA_20260424_505df3de:
+  pdf_type: native_text
+  subject: Change in Director(s)
+LODHA_20260424_e28fa6cd:
+  pdf_type: native_text
+  subject: Change in Management
+LUPIN_20260428_0bcde816:
+  pdf_type: scanned
+  subject: Disclosure under SEBI Takeover Regulations
+MPHASIS_20260429_2aebf743:
+  pdf_type: native_text
+  subject: Change in Management
+MPHASIS_20260429_68aab6e7:
+  financial:
+    eps: 26.73
+    revenue_cr: 4242.668
+  pdf_type: native_text
+  subject: Outcome of Board Meeting
+MUTHOOTFIN_20260428_91a4fc78:
+  pdf_type: native_text
+  subject: Disclosure under SEBI Takeover Regulations
+MUTHOOTFIN_20260428_cb5c2abd:
+  pdf_type: native_text
+  subject: Disclosure under SEBI Takeover Regulations
+NAUKRI_20260522_909d151a:
+  financial:
+    eps: 4.77
+    revenue_cr: 805.096
+  pdf_type: hybrid
+  subject: Dividend
+OFSS_20260422_5d00d492:
+  financial:
+    eps: 96.72
+    revenue_cr: 2065.2
+  pdf_type: hybrid
+  subject: Outcome of Board Meeting
+OFSS_20260422_9d0781e7:
+  financial:
+    eps: 2065.2
+    pat_cr: 841.7
+    revenue_cr: 46.5
+  pdf_type: hybrid
+  subject: Dividend
+ONGC_20260425_821d232a:
+  pdf_type: native_text
+  subject: Action(s) initiated or orders passed
+ONGC_20260425_f35382da:
+  pdf_type: native_text
+  subject: Outcome of Board Meeting
+PHOENIXLTD_20260427_478fc11c:
+  financial:
+    eps: 11.39
+    pat_cr: 4854.018
+    revenue_cr: 12331.985
+  pdf_type: hybrid
+  subject: Dividend
+SUNPHARMA_20260522_991c2d18:
+  financial:
+    eps: 2.5
+    pat_cr: 608.7
+    revenue_cr: 4923.88
+  pdf_type: hybrid
+  subject: Dividend
+SUNPHARMA_20260522_aad9e0b6:
+  financial:
+    eps: 11.3
+    pat_cr: 2709.66
+    revenue_cr: 14559.75
+  pdf_type: hybrid
+  subject: Outcome of Board Meeting
+TATASTEEL_20260424_65e23eb0:
+  pdf_type: native_text
+  subject: Pendency of Litigation(s)/dispute(s) or the outcome impacting the Company
+WAAREEENER_20260429_7e73c36e:
+  financial:
+    eps: 36.91
+    pat_cr: 112.626
+    revenue_cr: 848.025
+  pdf_type: hybrid
+  subject: Outcome of Board Meeting

@@ -1,4 +1,7 @@
 """
+
+
+
 Layer 2 base contract — Collector ABC and the five archetypes.
 
 Every NSE source is a Collector subclass of one of:
