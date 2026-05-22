@@ -1,0 +1,6 @@
+# Nightly retention cleanup configuration.
+
+retention_cleanup:
+  temp_pdf_retention_days: 30      # delete pdfs_temp/ files older than this
+  run_at: "02:00"                  # IST, daily
+  enabled: true
