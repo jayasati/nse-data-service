@@ -1,0 +1,157 @@
+# Canonical financial fields and their label variants.
+#
+# Each canonical field name is what the extractor outputs in JSON.
+# The 'aliases' list contains every label variant we've seen in NSE result
+# PDFs that maps to this field. Matching is case-insensitive and fuzzy.
+#
+# Add new variants here when the eval harness shows extraction failures
+# clustering on companies that use non-standard labels.
+
+units_hints:
+  # If the PDF mentions any of these phrases near the table top, units are
+  # detected accordingly. Conversion to Crore happens at extraction time.
+  - phrase: "in million"
+    factor: 0.1          # 1 million = 0.1 Cr
+  - phrase: "in rupees million"
+    factor: 0.1
+  - phrase: "in ₹ million"
+    factor: 0.1
+  - phrase: "in lakh"
+    factor: 0.01         # 1 lakh = 0.01 Cr
+  - phrase: "in lakhs"
+    factor: 0.01
+  - phrase: "in crore"
+    factor: 1.0
+  - phrase: "in crores"
+    factor: 1.0
+  - phrase: "in ₹ crore"
+    factor: 1.0
+
+# Canonical field definitions. Each field's 'aliases' are tried in order;
+# first match wins.
+fields:
+  revenue_cr:
+    description: "Total revenue from operations (Standalone, most recent quarter)"
+    aliases:
+      - "Total revenue from operations"
+      - "Total Revenue from Operations"
+      - "Revenue from operations"
+      - "Revenue from Operations"
+      - "Net Sales / Income from Operations"
+      - "Net sales / Income from Operations"
+      - "Total Income from Operations"
+      - "Total income from operations"
+      - "Income from operations"
+    require_positive: true
+
+  other_income_cr:
+    description: "Total other income (non-operating)"
+    aliases:
+      - "Total other income"
+      - "Total Other Income"
+      - "Other income"
+      - "Other Income"
+
+  total_income_cr:
+    description: "Total income (revenue + other income)"
+    aliases:
+      - "Total income"
+      - "Total Income"
+      - "Total Income (I+II)"
+      - "Total income (I+II)"
+      - "Total income (1+2)"
+      - "Total Income (1+2)"
+
+  total_expenses_cr:
+    description: "Total expenses"
+    aliases:
+      - "Total expenses"
+      - "Total Expenses"
+      - "Total expenses (IV)"
+      - "Total Expenses (IV)"
+
+  pbt_cr:
+    description: "Profit before tax"
+    aliases:
+      - "Profit before tax"
+      - "Profit Before Tax"
+      - "Profit/(loss) before tax"
+      - "Profit / (loss) before tax"
+      - "Profit before tax (V-VI)"
+      - "Profit before tax (5-6)"
+      - "PBT"
+
+  tax_cr:
+    description: "Total tax expense"
+    aliases:
+      - "Total tax expense"
+      - "Total Tax Expense"
+      - "Tax expense"
+      - "Tax Expense"
+      - "Total tax expenses"
+
+  pat_cr:
+    description: "Profit after tax"
+    aliases:
+      - "Profit after tax"
+      - "Profit After Tax"
+      - "Profit/(loss) after tax"
+      - "Profit / (loss) after tax"
+      - "Profit after tax (7-8)"
+      - "Profit after tax (VII-VIII)"
+      - "Net profit"
+      - "Net Profit"
+      - "Net profit / (loss) for the period"
+    require_smaller_than: revenue_cr  # |PAT| should be < |revenue|
+
+  total_comprehensive_income_cr:
+    description: "Total comprehensive income for the period"
+    aliases:
+      - "Total comprehensive income"
+      - "Total Comprehensive Income"
+      - "Total comprehensive income (9+10)"
+      - "Total Comprehensive Income (9+10)"
+
+  eps_basic:
+    description: "Earnings per share, Basic"
+    aliases:
+      - "Earnings per share (Basic)"
+      - "Earnings per equity share (Basic)"
+      - "Earnings Per Share (Basic)"
+      - "EPS (Basic)"
+      - "Basic EPS"
+      - "(a) Basic"
+      - "Basic (in Rs)"
+      - "Basic (in ₹)"
+    unit: "rupees"   # NOT converted to Cr; EPS is per-share rupees
+
+  eps_diluted:
+    description: "Earnings per share, Diluted"
+    aliases:
+      - "Earnings per share (Diluted)"
+      - "Earnings per equity share (Diluted)"
+      - "Earnings Per Share (Diluted)"
+      - "EPS (Diluted)"
+      - "Diluted EPS"
+      - "(b) Diluted"
+      - "Diluted (in Rs)"
+      - "Diluted (in ₹)"
+    unit: "rupees"
+
+# Validation rules — failures DOWNGRADE confidence, don't reject the row.
+validations:
+  - rule: "revenue_cr > 0"
+    severity: "warn"
+    message: "Revenue should be positive"
+
+  - rule: "abs(pat_cr) < abs(revenue_cr) * 1.5"
+    severity: "warn"
+    message: "PAT magnitude exceeds revenue — likely column misalignment"
+
+  - rule: "abs(total_income_cr - (revenue_cr + other_income_cr)) < total_income_cr * 0.05"
+    severity: "warn"
+    message: "Total income != revenue + other_income (within 5%)"
+
+  - rule: "abs(pbt_cr - (total_income_cr - total_expenses_cr)) < pbt_cr * 0.10"
+    severity: "warn"
+    message: "PBT != total_income - total_expenses (within 10%)"

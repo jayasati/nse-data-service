@@ -7,3 +7,5 @@ __pycache__/
 tests/financial_extraction/fixtures/
 tests/financial_extraction/ground_truth/
 tests/parsers/fixtures/pdfs
+tests/financial_extraction/drafts
+tests/financial_extraction
