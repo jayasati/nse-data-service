@@ -1,0 +1,1 @@
+sqlitebrowser data/nse.db

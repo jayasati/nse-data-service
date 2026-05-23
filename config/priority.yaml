@@ -1,14 +1,14 @@
 # Announcement subject -> priority mapping.
 # Counts in comments are from raw_announcements as of April 2026.
-# Coverage: ~96% of 24,888 rows. Tail subjects default to 'medium' with
-# a warning logged so we can spot new types weekly.
+# Initial coverage: top 50 subjects (~96% of 24,888 rows).
+# Extended with 46 additional subjects discovered during Phase 2 backfill.
 
 announcement_priority:
 
   high:
     # ---- Results & guidance ----
     - "Outcome of Board Meeting"                                  # 1957
-    - "Reply to Clarification- Financial results"                # 121
+    - "Reply to Clarification- Financial results"                 # 121
     - "Clarification - Financial Results"                         # 56
     - "Integrated Filing- Financial"                              # 38
 
@@ -18,6 +18,18 @@ announcement_priority:
     - "Amalgamation/Merger"                                       # 37
     - "Scheme of Arrangement"                                     # 35
     - "Allotment of Securities"                                   # 123
+    - "Buyback"                                                   # added in Phase 2
+    - "Bonus"                                                     # added in Phase 2
+    - "Stock split"                                               # added in Phase 2
+    - "Demerger"                                                  # added in Phase 2
+    - "Other Restructuring"                                       # added in Phase 2
+    - "Preferential issue"                                        # added in Phase 2
+    - "Issue of Securities"                                       # added in Phase 2
+    - "Offer for sale"                                            # added in Phase 2
+    - "Public Announcement-Open Offer"                            # added in Phase 2
+    - "Open Offer"                                                # added in Phase 2
+    - "Sale or disposal"                                          # added in Phase 2
+    - "Diversification/Disinvestment"                             # added in Phase 2
 
     # ---- Stake / control changes ----
     - "Disclosure under SEBI Takeover Regulations"                # 1565
@@ -26,11 +38,19 @@ announcement_priority:
     - "Resignation"                                               # 253
     - "Change in Director(s)"                                     # 257
     - "Change in Auditors"                                        # 204
+    - "Resignation of Statutory Auditor"                          # added in Phase 2
+    - "Demise"                                                    # added in Phase 2
 
     # ---- Business events ----
     - "Bagging/Receiving of orders/contracts"                     # 193
     - "Agreements"                                                # 62
     - "Capacity addition"                                         # 43
+    - "Awarding of order(s)/contract(s)"                          # added in Phase 2
+    - "Commencement of commercial production/operations"          # added in Phase 2
+    - "Adoption of new line(s) of business"                       # added in Phase 2
+    - "Product launch"                                            # added in Phase 2
+    - "Memorandum of Understanding/Agreements"                    # added in Phase 2
+    - "Arrangements for strategic, technical, manufacturing, or marketing tie up"  # added in Phase 2
 
     # ---- Distress / regulatory ----
     - "Corporate Insolvency Resolution Process"                   # 90
@@ -38,10 +58,25 @@ announcement_priority:
     - "Action(s) initiated or orders passed"                      # 85
     - "Pendency of Litigation(s)/dispute(s) or the outcome impacting the Company"  # 111
     - "Credit Rating- Revision"                                   # 46
+    - "Credit Rating- Others"                                     # added in Phase 2
+    - "Defaults on Payment of Interest/Principal"                 # added in Phase 2
+    - "Fraud/Default/Arrest"                                      # added in Phase 2
+    - "Suspension of Trading"                                     # added in Phase 2
+    - "Delay/default in the payment of fines/penalties/dues etc. to authority"  # added in Phase 2
+    - "Closure of operations"                                     # added in Phase 2
+    - "Disruption of Operations"                                  # added in Phase 2
+    - "Strikes/Lockouts/Disturbances"                             # added in Phase 2
+    - "Granting/withdrawal/surrender/cancellation/suspension of key licenses/ regulatory approvals"  # added in Phase 2
+
+    # ---- Information events ----
+    - "Rumour Verification - Regulation 30(11)"                   # added in Phase 2
+    - "Related Party Transactions"                                # added in Phase 2
+    - "Giving guarantees/indemnity/ becoming a surety for third party"  # added in Phase 2
 
   medium:
     - "Investor Presentation"                                     # 711
     - "Press Release"                                             # 1284
+    - "Press Release (Revised)"                                   # added in Phase 2
     - "General Updates"                                           # 2332
     - "Updates"                                                   # 1779
     - "Appointment"                                               # 523
@@ -59,13 +94,27 @@ announcement_priority:
     - "Monthly Business Updates"                                  # 44
     - "Record Date"                                               # 352
     - "Shareholders meeting"                                      # 797
+    - "Change in Company Secretary/Compliance Officer"            # added in Phase 2
+    - "Conversion"                                                # added in Phase 2
+    - "Utilisation of Funds"                                      # added in Phase 2
+    - "Amendment(s)"                                              # added in Phase 2
+    - "Corrigendum"                                               # added in Phase 2
+    - "Addendum"                                                  # added in Phase 2
+    - "Name Change"                                               # added in Phase 2
+    - "Name and Symbol Change"                                    # added in Phase 2
+    - "Address Change"                                            # added in Phase 2
+    - "Forfeiture"                                                # added in Phase 2
+    - "Rescission/termination(s)"                                 # added in Phase 2
 
   low:
-    - "Analysts/Institutional Investor Meet/Con. Call Updates"   # 3171
+    - "Analysts/Institutional Investor Meet/Con. Call Updates"    # 3171
     - "Copy of Newspaper Publication"                             # 2129
     - "News Verification"                                         # 53
-    - "Statement of deviation(s) or variation(s) under Reg. 32"  # 113
+    - "Statement of deviation(s) or variation(s) under Reg. 32"   # 113
     - "Monitoring Agency Report"                                  # 365
+    - "Loss of Share Certificates"                                # added in Phase 2
+    - "Registrar & Share Transfer Agent Update"                   # added in Phase 2
+    - "Quarterly Compliance Report on Corporate governance - within 21 days from the end of the quarter"  # added in Phase 2
 
   skip:
     - "Certificate under SEBI (Depositories and Participants) Regulations, 2018"  # 2163

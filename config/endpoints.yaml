@@ -268,3 +268,9 @@ endpoints:
     run_at: "Sun 07:00"
     table: raw_quote_metadata
     enabled: true
+
+  pdf_parser:
+      collector: nse_data.parsers.job:ParserJob
+      cadence: 10m
+      active_hours: "08:00-19:30"
+      enabled: false   # leave disabled for Phase 2 backfill; flip after testing
