@@ -135,7 +135,7 @@ Working inventory of every capability the system needs, mapped against current b
 
 ### External / Macro Sources
 
-- 📋 `yfinance` adapter for USDINR, Brent, Gold, US indices — daily 18:00 (for macro_regime feature)
+- ✅ Macro adapter for USDINR, Brent, Gold, US indices (S&P/Nasdaq/Dow) — daily 18:00 → `raw_macro` (for macro_regime). `MacroCollector` fetches Yahoo's JSON chart API (`query1.finance.yahoo.com/v8/finance/chart/<sym>`) **directly via httpx, not the `yfinance` library** — avoids a heavy scraping dep, httpx is already in the stack. Lives outside the NSE `SessionManager` (Yahoo ≠ NSE; overrides `run()` with per-ticker error isolation). Intentionally **not** `trading_day_only` — global markets move on NSE holidays, which is when macro matters. Keyed (asset, as_of_date); upserts per day. Built + tested 26-May-2026.
 - 📋 `screener_in` scraper — weekly fundamentals (ROE, ROCE, debt/equity, 3y CAGR)
 - 📋 **GIFT Nifty** (NSE IX) — every 30s during 06:30–09:15 IST (research Pillar 2 critical)
 - 📋 **India VIX with expected-range computation** — every poll, derives 1σ and 2σ daily envelopes

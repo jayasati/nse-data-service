@@ -321,6 +321,14 @@ endpoints:
     table: raw_fii_dii
     enabled: true
 
+  macro:
+    collector: nse_data.collectors.macro:MacroCollector
+    response: json        # informational; collector fetches Yahoo via httpx, not the NSE session
+    cadence: daily
+    run_at: "18:00"       # global/macro — intentionally NOT trading_day_only (matters on NSE holidays)
+    table: raw_macro
+    enabled: true
+
   fno_list:
       collector: nse_data.collectors.fno_list:FnoList
       response: json
