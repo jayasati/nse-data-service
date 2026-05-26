@@ -1,0 +1,391 @@
+{
+  "declines": 615,
+  "unchanged": 289,
+  "advances": 1134,
+  "timestamp": "26-May-2026 09:07:03",
+  "totalTradedValue": 3637724040,
+  "totalmarketcap": 214682308721629.5,
+  "totalTradedVolume": 20434491,
+  "data": [
+    {
+      "metadata": {
+        "symbol": "HITECHCORP",
+        "identifier": "HITECHCORPEQN",
+        "series": "EQ",
+        "purpose": null,
+        "lastPrice": 200.16,
+        "change": 33.36,
+        "pChange": 20,
+        "previousClose": 166.8,
+        "finalQuantity": 23967,
+        "totalTurnover": 4797234,
+        "marketCap": "-",
+        "yearHigh": 223.44,
+        "yearLow": 112,
+        "iep": 200.16
+      },
+      "detail": {
+        "preOpenMarket": {
+          "preopen": [
+            {
+              "price": 175.2,
+              "buyQty": 1000,
+              "sellQty": 0
+            },
+            {
+              "price": 176,
+              "buyQty": 200,
+              "sellQty": 0
+            },
+            {
+              "price": 181,
+              "buyQty": 1000,
+              "sellQty": 0
+            },
+            {
+              "price": 200,
+              "buyQty": 2000,
+              "sellQty": 0
+            },
+            {
+              "price": 200.16,
+              "buyQty": 343247,
+              "sellQty": 0,
+              "iep": true
+            }
+          ],
+          "ato": {
+            "totalBuyQuantity": 0,
+            "totalSellQuantity": 0
+          },
+          "IEP": 200.16,
+          "totalTradedVolume": 23967,
+          "finalPrice": 200.16,
+          "finalQuantity": 23967,
+          "lastUpdateTime": "26-May-2026 09:07:13",
+          "totalSellQuantity": 0,
+          "totalBuyQuantity": 350533,
+          "atoBuyQty": 0,
+          "atoSellQty": 0,
+          "Change": 33.36,
+          "perChange": 20,
+          "prevClose": 166.8
+        }
+      }
+    },
+    {
+      "metadata": {
+        "symbol": "TIINDIA",
+        "identifier": "TIINDIAEQN",
+        "series": "EQ",
+        "purpose": null,
+        "lastPrice": 3047.5,
+        "change": -0.1,
+        "pChange": 0,
+        "previousClose": 3047.6,
+        "finalQuantity": 176,
+        "totalTurnover": 536360,
+        "marketCap": "-",
+        "yearHigh": 3419.9,
+        "yearLow": 2164.9,
+        "iep": 3047.5
+      },
+      "detail": {
+        "preOpenMarket": {
+          "preopen": [
+            {
+              "price": 3030,
+              "buyQty": 400,
+              "sellQty": 0
+            },
+            {
+              "price": 3030.8,
+              "buyQty": 100,
+              "sellQty": 0
+            },
+            {
+              "price": 3040,
+              "buyQty": 240,
+              "sellQty": 0
+            },
+            {
+              "price": 3042,
+              "buyQty": 40,
+              "sellQty": 0
+            },
+            {
+              "price": 3045,
+              "buyQty": 129,
+              "sellQty": 0
+            },
+            {
+              "price": 3047.5,
+              "buyQty": 0,
+              "sellQty": 27,
+              "iep": true
+            },
+            {
+              "price": 3047.6,
+              "buyQty": 0,
+              "sellQty": 4
+            },
+            {
+              "price": 3050,
+              "buyQty": 0,
+              "sellQty": 8
+            },
+            {
+              "price": 3053.1,
+              "buyQty": 0,
+              "sellQty": 2
+            },
+            {
+              "price": 3058,
+              "buyQty": 0,
+              "sellQty": 10
+            }
+          ],
+          "ato": {
+            "totalBuyQuantity": 0,
+            "totalSellQuantity": 0
+          },
+          "IEP": 3047.5,
+          "totalTradedVolume": 176,
+          "finalPrice": 3047.5,
+          "finalQuantity": 176,
+          "lastUpdateTime": "26-May-2026 09:07:15",
+          "totalSellQuantity": 4496,
+          "totalBuyQuantity": 2820,
+          "atoBuyQty": 0,
+          "atoSellQty": 0,
+          "Change": -0.1,
+          "perChange": 0,
+          "prevClose": 3047.6
+        }
+      }
+    },
+    {
+      "metadata": {
+        "symbol": "HALDER",
+        "identifier": "HALDEREQN",
+        "series": "EQ",
+        "purpose": null,
+        "lastPrice": 232.79,
+        "change": 15.21,
+        "pChange": 6.99,
+        "previousClose": 217.58,
+        "finalQuantity": 4,
+        "totalTurnover": 931,
+        "marketCap": "-",
+        "yearHigh": 294,
+        "yearLow": 210,
+        "iep": 232.79
+      },
+      "detail": {
+        "preOpenMarket": {
+          "preopen": [
+            {
+              "price": 196.3,
+              "buyQty": 100,
+              "sellQty": 0
+            },
+            {
+              "price": 200.01,
+              "buyQty": 100,
+              "sellQty": 0
+            },
+            {
+              "price": 202,
+              "buyQty": 100,
+              "sellQty": 0
+            },
+            {
+              "price": 232.79,
+              "buyQty": 0,
+              "sellQty": 0,
+              "iep": true
+            },
+            {
+              "price": 232.8,
+              "buyQty": 0,
+              "sellQty": 33
+            }
+          ],
+          "ato": {
+            "totalBuyQuantity": 0,
+            "totalSellQuantity": 0
+          },
+          "IEP": 232.79,
+          "totalTradedVolume": 4,
+          "finalPrice": 232.79,
+          "finalQuantity": 4,
+          "lastUpdateTime": "26-May-2026 09:07:07",
+          "totalSellQuantity": 33,
+          "totalBuyQuantity": 300,
+          "atoBuyQty": 0,
+          "atoSellQty": 100,
+          "Change": 15.21,
+          "perChange": 6.99,
+          "prevClose": 217.58
+        }
+      }
+    },
+    {
+      "metadata": {
+        "symbol": "BROOKS",
+        "identifier": "BROOKSBEN",
+        "series": "BE",
+        "purpose": null,
+        "lastPrice": 59.23,
+        "change": 2.82,
+        "pChange": 5,
+        "previousClose": 56.41,
+        "finalQuantity": 26968,
+        "totalTurnover": 1597314,
+        "marketCap": "-",
+        "yearHigh": 164.02,
+        "yearLow": 36.3,
+        "iep": 59.23
+      },
+      "detail": {
+        "preOpenMarket": {
+          "preopen": [
+            {
+              "price": 57.54,
+              "buyQty": 17010,
+              "sellQty": 0
+            },
+            {
+              "price": 58.4,
+              "buyQty": 3000,
+              "sellQty": 0
+            },
+            {
+              "price": 58.5,
+              "buyQty": 1,
+              "sellQty": 0
+            },
+            {
+              "price": 59,
+              "buyQty": 1,
+              "sellQty": 0
+            },
+            {
+              "price": 59.23,
+              "buyQty": 53922,
+              "sellQty": 0,
+              "iep": true
+            }
+          ],
+          "ato": {
+            "totalBuyQuantity": 0,
+            "totalSellQuantity": 0
+          },
+          "IEP": 59.23,
+          "totalTradedVolume": 26968,
+          "finalPrice": 59.23,
+          "finalQuantity": 26968,
+          "lastUpdateTime": "26-May-2026 09:07:13",
+          "totalSellQuantity": 0,
+          "totalBuyQuantity": 77769,
+          "atoBuyQty": 0,
+          "atoSellQty": 0,
+          "Change": 2.82,
+          "perChange": 5,
+          "prevClose": 56.41
+        }
+      }
+    },
+    {
+      "metadata": {
+        "symbol": "VIVIANA",
+        "identifier": "VIVIANASMN",
+        "series": "SM",
+        "purpose": null,
+        "lastPrice": 950,
+        "change": 111.75,
+        "pChange": 13.33,
+        "previousClose": 838.25,
+        "finalQuantity": 12800,
+        "totalTurnover": 12160000,
+        "marketCap": "-",
+        "yearHigh": 1162.5,
+        "yearLow": 511.25,
+        "iep": 950
+      },
+      "detail": {
+        "preOpenMarket": {
+          "preopen": [
+            {
+              "price": 902,
+              "buyQty": 200,
+              "sellQty": 0
+            },
+            {
+              "price": 905,
+              "buyQty": 200,
+              "sellQty": 0
+            },
+            {
+              "price": 910,
+              "buyQty": 400,
+              "sellQty": 0
+            },
+            {
+              "price": 915,
+              "buyQty": 200,
+              "sellQty": 0
+            },
+            {
+              "price": 922,
+              "buyQty": 800,
+              "sellQty": 0
+            },
+            {
+              "price": 950,
+              "buyQty": 0,
+              "sellQty": 1200,
+              "iep": true
+            },
+            {
+              "price": 968,
+              "buyQty": 0,
+              "sellQty": 200
+            },
+            {
+              "price": 969.9,
+              "buyQty": 0,
+              "sellQty": 400
+            },
+            {
+              "price": 970,
+              "buyQty": 0,
+              "sellQty": 2000
+            },
+            {
+              "price": 972.3,
+              "buyQty": 0,
+              "sellQty": 200
+            }
+          ],
+          "ato": {
+            "totalBuyQuantity": 0,
+            "totalSellQuantity": 0
+          },
+          "IEP": 950,
+          "totalTradedVolume": 12800,
+          "finalPrice": 950,
+          "finalQuantity": 12800,
+          "lastUpdateTime": "26-May-2026 09:07:14",
+          "totalSellQuantity": 14800,
+          "totalBuyQuantity": 23800,
+          "atoBuyQty": 0,
+          "atoSellQty": 0,
+          "Change": 111.75,
+          "perChange": 13.33,
+          "prevClose": 838.25
+        }
+      }
+    }
+  ]
+}

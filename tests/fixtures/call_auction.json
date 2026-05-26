@@ -1,0 +1,54 @@
+{
+  "data": [
+    {
+      "symbol": "MCLEODRUSS",
+      "session1_price": 75.38,
+      "session1_qty": 74612,
+      "session2_price": 75.38,
+      "session2_qty": 61598,
+      "session3_price": 75.38,
+      "session3_qty": 37633,
+      "session4_price": 75.38,
+      "session4_qty": 19733,
+      "session5_price": 75.38,
+      "session5_qty": 9967,
+      "session6_price": 75.38,
+      "session6_qty": 7486,
+      "avg_price": 75.38,
+      "total_volume": 211029,
+      "total_turnover": 15907366.02
+    },
+    {
+      "symbol": "SHANKARA",
+      "session1_price": 127,
+      "session1_qty": 9151,
+      "session2_price": 127,
+      "session2_qty": 958,
+      "session3_price": 127.7,
+      "session3_qty": 2647,
+      "session4_price": 128.5,
+      "session4_qty": 4053,
+      "session5_price": 126,
+      "session5_qty": 4000,
+      "session6_price": 126,
+      "session6_qty": 1830,
+      "avg_price": 127.09,
+      "total_volume": 22639,
+      "total_turnover": 2877190.5100000002
+    },
+    {
+      "symbol": "LLOYDS",
+      "avg_price": 0,
+      "total_volume": 0,
+      "total_turnover": 0
+    }
+  ],
+  "timestamp": "26-May-2026 15:14:10",
+  "final_volume": 1492119,
+  "final_turnover": 32784364.81,
+  "status": {
+    "timestamp": "26-May-2026 15:14:10",
+    "status": "CLOSED",
+    "session": "session 6"
+  }
+}

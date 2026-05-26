@@ -40,6 +40,7 @@ Working inventory of every capability the system needs, mapped against current b
 - ✅ Market-hours gating
 - ✅ Holiday calendar (`scheduler/market_hours._TRADING_HOLIDAYS`)
 - ✅ Thread-portable DB pattern (each runner opens own connection)
+- ✅ **Scheduler job-registration layer** (`scheduler/jobs.py:register_jobs` + `_load_collector`) — maps each enabled `endpoints.yaml` entry → APScheduler `CronTrigger(timezone=IST)`. Handles interval cadences (`3m/5m/10m/30m/1h`, hour-bounded to the active window), daily/weekly `run_at`, and a **multi-time `run_at` list** (one job per time, id-suffixed `@HH:MM` — ready for `call_auction` 09:05 + 10:05). Runtime gate ANDs `market_hours_only` / `trading_day_only` / `active_hours`, evaluated against `now_ist()` so holidays the cron can't see are still skipped. Malformed entries are logged and skipped, not fatal. Tested in `tests/scheduler/test_register_jobs.py`.
 - ✅ Timezone-aware cron triggers (every job carries `ZoneInfo("Asia/Kolkata")`)
 - 📋 New "DBJob" archetype for Layer 3+ (DB → DB jobs, not network → DB)
 - 📋 Yearly NSE holiday refresh automation (currently manual)
@@ -69,8 +70,8 @@ Working inventory of every capability the system needs, mapped against current b
 - ✅ `most_active_volume`, `most_active_value` — 5m
 - ✅ `high_52w`, `low_52w` — 10m
 - ✅ `price_band_upper`, `price_band_lower` — 3m
-- 📋 `pre_open` (`/api/market-data-pre-open?key=ALL`) — 09:08 IST gap detection
-- 📋 `call_auction` — 09:05, 10:05 IST illiquid-stock flagging
+- ✅ `pre_open` (`/api/market-data-pre-open?key=ALL`) — 09:08 IST gap detection; SnapshotCollector → `raw_pre_open`, per-symbol IEP/change/ATO. Scheduled via `register_jobs` (daily 09:08, `trading_day_only`). Built + tested.
+- ✅ `call_auction` (illiquid-securities **list**, `/api/live-watch-call-auction`) — daily ReferenceCollector (diff, `key_cols=(symbol,)`) → `raw_call_auction`, capturing the symbols under periodic call auction + per-session price/qty. Membership add/remove is the "started/stopped being illiquid" signal for Layer 6's exclude-from-signals flag. Scheduled daily 15:45 (`trading_day_only`, after sessions close). Endpoint discovered from the `stocks-in-call-auction` page XHR. Built + tested.
 
 ### Derivatives
 
@@ -510,7 +511,7 @@ Working inventory of every capability the system needs, mapped against current b
 
 ### Daily Kill-Switches
 
-- 📋 –2% day → hard stop, close laptop
+- 📋 –2% day → hard stop, close laptop 
 - 📋 3 consecutive losses → 30-min pause, resume at half size
 - 📋 5 consecutive losses → stop for the day
 - 📋 Weekly: –5% account or 3 losing days → paper-only rest of week
@@ -651,3 +652,4 @@ These are interesting but the research doc / architecture explicitly cautions ag
 ---
 
 **Maintenance rule:** when you ship something, move it from 📋 → ✅. When you find a gap in a shipped feature, move it from ✅ → 🔧 and write the gap inline. Don't delete entries; the history of what didn't make the cut is as valuable as the checklist itself.
+

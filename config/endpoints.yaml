@@ -149,6 +149,30 @@ endpoints:
     table: raw_band_hits
     enabled: true
 
+  pre_open:
+    collector: nse_data.collectors.pre_open:PreOpen
+    url: /api/market-data-pre-open
+    params:
+      key: ALL
+    referer: https://www.nseindia.com/market-data/pre-open-market-cm-and-emerge-market
+    response: json
+    cadence: daily
+    run_at: "09:08"          # one-shot; pre-open book settles 09:00–09:15 IST
+    trading_day_only: true   # daily cron fires every day; gate skips holidays/weekends
+    table: raw_pre_open
+    enabled: true
+
+  call_auction:
+    collector: nse_data.collectors.call_auction:CallAuction
+    url: /api/live-watch-call-auction
+    referer: https://www.nseindia.com/market-data/stocks-in-call-auction
+    response: json
+    cadence: daily
+    run_at: "15:45"          # after the day's six call-auction sessions close
+    trading_day_only: true
+    table: raw_call_auction
+    enabled: true
+
   most_active_fno_volume:
     collector: nse_data.collectors.most_active_fno:MostActiveFnoByVolume
     response: json

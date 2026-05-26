@@ -29,7 +29,10 @@ def no_real_sleep(monkeypatch):
 
 
 def test_warmup_then_fetch_success():
-    # Invariant: cold manager does warm-up (2 hops) before the first call.
+    # Invariant: cold manager does the 3-hop warm-up before the first call.
+    # The /option-chain hop is required — option-chain-class endpoints only
+    # work after the bm_* cookies from a real market-data page are seen
+    # (see SessionManager._ensure_warm).
     calls = []
     def handler(request):
         calls.append(request.url.path)
@@ -41,7 +44,12 @@ def test_warmup_then_fetch_success():
     result = sm.get_json("announcements", "/api/announcements")
 
     assert result == {"data": [1, 2, 3]}
-    assert calls == ["/", "/market-data/live-equity-market", "/api/announcements"]
+    assert calls == [
+        "/",
+        "/market-data/live-equity-market",
+        "/option-chain",
+        "/api/announcements",
+    ]
     assert sm.warmup_count == 1
     sm.close()
 
