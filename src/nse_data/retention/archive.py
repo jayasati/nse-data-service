@@ -1,21 +1,17 @@
 """Move PDF bytes to their final archive location.
 
-Atomic writes — write to a .tmp file then rename. Guarantees no partial
-PDFs sit on disk in archived/ if the process is killed mid-write.
-
-The 'discard' decision is also handled here as a no-op; the caller doesn't
-need to know whether the file was kept.
+Applies a retention decision: writes the PDF atomically (via
+``storage.files.atomic_write_bytes``) when policy says to keep it, and is a
+no-op for the 'discard' decision so the caller doesn't need to know whether
+the file was kept.
 """
 
 from __future__ import annotations
 
-import logging
-import os
 from pathlib import Path
 
 from nse_data.retention.policy import RetentionDecision
-
-LOG = logging.getLogger(__name__)
+from nse_data.storage import files
 
 
 def write_pdf(decision: RetentionDecision, data: bytes) -> Path | None:
@@ -35,20 +31,4 @@ def write_pdf(decision: RetentionDecision, data: bytes) -> Path | None:
         # Shouldn't happen if will_write_file() returned True, but guard anyway
         return None
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_suffix(target.suffix + ".tmp")
-
-    try:
-        tmp.write_bytes(data)
-        # Atomic rename — POSIX guarantees this on the same filesystem
-        os.replace(tmp, target)
-    except OSError:
-        # Clean up partial write
-        if tmp.exists():
-            try:
-                tmp.unlink()
-            except OSError:
-                LOG.warning("failed to clean up partial write at %s", tmp)
-        raise
-
-    return target
+    return files.atomic_write_bytes(target, data)

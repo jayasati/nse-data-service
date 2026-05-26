@@ -25,6 +25,7 @@ from nse_data.parsers.text_extractor import extract_text
 from nse_data.retention.archive import write_pdf
 from nse_data.retention.policy import decide_retention
 from nse_data.session.manager import SessionManager
+from nse_data.storage import files
 
 LOG = logging.getLogger(__name__)
 
@@ -136,7 +137,7 @@ def process_one_row(
             return State.DOWNLOAD_FAILED
     else:
         # 'discard' path — write to scratch, process, delete
-        work_path = archive_root / "scratch" / f"{fingerprint}.pdf"
+        work_path = files.scratch_path(archive_root, fingerprint)
         work_path.parent.mkdir(parents=True, exist_ok=True)
         work_path.write_bytes(dl.data)
 

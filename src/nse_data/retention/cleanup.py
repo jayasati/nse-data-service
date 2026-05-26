@@ -19,6 +19,7 @@ from pathlib import Path
 import yaml
 
 from nse_data.parsers.state import State
+from nse_data.storage import files
 
 LOG = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def cleanup_temp_pdfs(
     cutoff_secs = retention_days * 86400
 
     report = CleanupReport()
-    temp_root = archive_root / "pdfs_temp"
+    temp_root = files.temp_root(archive_root)
     if not temp_root.exists():
         LOG.info("temp archive does not exist at %s; nothing to clean", temp_root)
         return report
@@ -73,7 +74,7 @@ def cleanup_temp_pdfs(
             continue
 
         # File is old enough to delete
-        fingerprint = pdf_file.stem  # filename is <fingerprint>.pdf
+        fingerprint = files.fingerprint_from_path(pdf_file)
 
         try:
             pdf_file.unlink()

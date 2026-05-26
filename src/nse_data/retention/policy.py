@@ -11,12 +11,14 @@ the decision from the I/O makes both trivially testable and lets us run
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 import yaml
+
+from nse_data.storage import files
+
 
 
 @dataclass(frozen=True)
@@ -80,12 +82,11 @@ def decide_retention(
         )
 
     if cfg.get("keep_pdf") == "forever":
-        date_path = _date_subpath(broadcast_dt)
-        target = (
-            archive_root
-            / cfg["archive_subdir"]
-            / date_path
-            / f"{fingerprint}.pdf"
+        target = files.permanent_path(
+            archive_root,
+            fingerprint,
+            broadcast_dt,
+            subdir=cfg["archive_subdir"],
         )
         return RetentionDecision(
             action="archive_permanent",
@@ -94,10 +95,10 @@ def decide_retention(
         )
 
     if cfg.get("keep_pdf") == "30d":
-        target = (
-            archive_root
-            / cfg["archive_subdir"]
-            / f"{fingerprint}.pdf"
+        target = files.temp_path(
+            archive_root,
+            fingerprint,
+            subdir=cfg["archive_subdir"],
         )
         return RetentionDecision(
             action="archive_temp_30d",
@@ -111,12 +112,3 @@ def decide_retention(
         archive_path=None,
         retention_policy_label="low_textonly",
     )
-
-
-def _date_subpath(broadcast_dt: str) -> Path:
-    """Turn NSE broadcast_dt into a YYYY/MM/DD subpath. Fallback safely."""
-    try:
-        dt = datetime.strptime(broadcast_dt.split()[0], "%d-%b-%Y")
-        return Path(dt.strftime("%Y")) / dt.strftime("%m") / dt.strftime("%d")
-    except (ValueError, IndexError, AttributeError):
-        return Path("unknown_date")

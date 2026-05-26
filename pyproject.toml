@@ -20,6 +20,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# Optional: enables the Redis-backed dedup hot-set (storage/cache.py).
+# Without it, main.py falls back to the in-process MemoryDedupCache.
+redis = ["redis>=5.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
