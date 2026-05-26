@@ -379,6 +379,14 @@ endpoints:
     table: raw_shareholding_pattern
     enabled: true
 
+  screener_fundamentals:
+    collector: nse_data.collectors.screener:ScreenerFundamentals
+    response: text        # external scrape of screener.in via httpx (not the NSE session)
+    cadence: weekly
+    run_at: "Sun 08:30"
+    table: raw_fundamentals_screener
+    enabled: true
+
   pdf_parser:
       collector: nse_data.parsers.job:ParserJob
       cadence: 10m
