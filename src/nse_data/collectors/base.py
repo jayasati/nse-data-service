@@ -265,7 +265,7 @@ class SnapshotCollector(Collector):
 
     Each row carries an `as_of` that's part of the PK, so re-running the same
     call later inserts NEW rows rather than overwriting. Used by: oi_spurts,
-    live_equity, gainers_losers, most_active, derivatives_watch, ...
+    live_equity, gainers_losers, most_active, most_active_fno, pre_open, ...
     """
     pk_cols: tuple[str, ...] = ()
 

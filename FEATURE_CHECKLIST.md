@@ -7,6 +7,7 @@ Working inventory of every capability the system needs, mapped against current b
 - 🔧 **Needs polish** — built but has known gaps, edge cases, or refactor debt
 - 📋 **To do — planned** — in architecture spec, not yet built
 - 🔬 **Research / deferred** — flagged in research doc as Phase 9+, deliberately not chasing
+- ❌ **Deprecated / superseded** — was planned, but the need is covered elsewhere or the source died; kept for history
 
 **Phase anchor (as of 20-May-2026):** Layers 1–2 complete (32 collectors live). Layer 3 (PDF parsing + retention) is the active work. Layers 4–7 unblocked but unstarted.
 
@@ -77,15 +78,14 @@ Working inventory of every capability the system needs, mapped against current b
 
 - ✅ `oi_spurts` — 5m (live signal substrate)
 - ✅ `option_chain` (NIFTY, BANKNIFTY, FINNIFTY, watchlist) — 5m via `/api/option-chain-v3`
-- ✅ `most_active_fno_volume`, `most_active_fno_value` — 5m
-- 📋 `derivatives_watch` — was `/api/liveEquity-derivatives` (HTTP 500 — replacement TBD)
-- 📋 Most-active F&O *contracts* (not just underlyings) — 5m, endpoint discovery needed
+- ✅ `most_active_fno_volume`, `most_active_fno_value` — 5m, **per-contract** granularity via `/api/snapshot-derivatives-equity?index=contracts` (rows carry instrument/expiry/strike/option_type → `raw_most_active_fno`). This *is* the "most-active F&O contracts (not underlyings)" item — confirmed live 26-May-2026.
+- ❌ `derivatives_watch` — **deprecated / superseded** (decided 26-May-2026). The original broad live-derivatives snapshot (`/api/liveEquity-derivatives`, no params) is gone: the endpoint now only serves `index=top20_contracts` (+`top20_spread_contracts`) — confirmed via `equityDerivatives.js` — which is redundant with `most_active_fno`. Per-underlying (`index=<SYMBOL>`) → 500; old `/api/quote-derivative?symbol=` → 404; `/api/snapshot-derivatives-equity` only exposes most-active slices. A per-underlying futures watch would need a per-symbol fanout, but the existing surface already covers the need: **`option_chain`** (full chains for watchlist) + **`oi_spurts`** (underlying OI) + **`most_active_fno`** (top contracts). Empty stub `collectors/derivatives_watch.py` removed. Revisit only if a single all-underlyings futures feed reappears or per-symbol futures (LTP/OI/basis) becomes a hard requirement.
 
 ### Large Deals & Flow
 
-- ✅ `large_deals` (live snapshot, 30m)
+- ✅ `large_deals` (live snapshot, 30m) — captures bulk + block + **short** deals from `/api/snapshot-capital-market-largedeal` (`SHORT_DEALS_DATA` → `raw_large_deals` with `deal_type='short'`).
 - ✅ `fii_dii` — daily 19:00
-- 📋 Short selling stats (EOD) — endpoint in arch §5.3 marked `[verify]`
+- ✅ Short selling stats (EOD) — **covered by `large_deals`**, not a separate collector. Verified 26-May-2026: no dedicated endpoint exists (`/api/short-selling` and `/json/short-selling.json` both 404); the data is the `SHORT_DEALS_DATA` block in the large-deals snapshot (per-stock `{date, symbol, name, qty}`, ~92 rows/day, T-1). Query `raw_large_deals WHERE deal_type='short'`. *(If Layer 6 ever needs richer short-interest fields than qty, revisit — but the EOD short qty per stock is captured.)*
 
 ### Corporate Filings
 
@@ -94,11 +94,11 @@ Working inventory of every capability the system needs, mapped against current b
 - ✅ `corporate_actions` — 1h
 - ✅ `financial_results` — 1h (returns ~3,800 row archive each call; dedup handles it)
 - ✅ `insider_trading` — 1h
-- 📋 SME announcements feed (10m)
-- 📋 Debt announcements feed (30m)
-- 📋 MF announcements feed (1h)
-- 📋 `shareholding_pattern` — was `/api/corporate-shareholdings-master`, HTTP 404; rediscover when Layer 6 needs it
-- 📋 Integrated filings (financial + governance) — weekly
+- ✅ SME announcements feed (10m) — `SmeAnnouncements(Announcements)` with `index=sme`/`segment='sme'` → `raw_announcements` (reuses the equity table + Layer 3 PDF pipeline). `Announcements` parameterized on `index`/`segment`; equity behavior unchanged. Built + tested 26-May-2026.
+- ✅ Debt announcements feed (30m) — `DebtAnnouncements` (`index=debt`) → shared table **`raw_nonequity_announcements`** (segment='debt'; migration 015), not `raw_announcements` (whose `symbol` is NOT NULL; debt rows are symbol-null). **Metadata-only** — keeps `attachment_url` but stays out of the Layer 3 PDF pipeline (low equity signal). Built + tested 26-May-2026.
+- ✅ MF announcements feed (1h) — `MfAnnouncements` (`index=mf`) → same `raw_nonequity_announcements` table (segment='mf'). Shares a `_NonEquityAnnouncements` base with debt. Discovery quirks handled: mf ETF rows **do** carry a `symbol` (e.g. `ITBEES`, kept), and the feed **reuses `seq_id`** across an ETF-tagged + untagged variant of one disclosure — so the fingerprint is a content tuple (segment|seq_id|symbol|company|subject|broadcast_dt|attachment), not seq_id alone. Built + tested 26-May-2026.
+- ✅ `shareholding_pattern` — endpoint **found** (the arch path had a typo): `/api/corporate-share-holdings-master?index=equities|sme` (hyphenated `share-holdings`; the old `shareholdings` 404s). `ShareholdingPattern` ReferenceCollector (diff, key=symbol) over both segments → `raw_shareholding_pattern` (migration 017): promoter% (`pr_and_prgrp`) / public% / employee-trust% / qe-date / ISIN / XBRL per symbol (~2,300 equity + SME). Promoter-stake moves surface as `diff` updates; feeds §5 Fundamentals. Weekly Sun 07:30. Built + tested 26-May-2026.
+- ✅ Integrated filings (financial + governance) — weekly. `IntegratedFilings` issues both `type=` requests (`Integrated Filing- Financials` + `…- Governance`) to `/api/integrated-filing-results?size=500` → `raw_integrated_filings` (migration 016), dedup by `filing_type|seq_id`. Each type is a ~20k newest-first archive; pulls the latest `page_size` (500, tunable) per run and dedups, like `financial_results`. Captures iXBRL/XBRL URLs, qe_date, audited/consolidated, Original-vs-Revision. Scheduled `Sun 08:00`. Built + tested 26-May-2026.
 
 ### Surveillance (Blacklist Source)
 

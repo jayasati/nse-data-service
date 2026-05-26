@@ -11,6 +11,42 @@ endpoints:
     table: raw_announcements
     enabled: true
 
+  announcements_sme:
+    collector: nse_data.collectors.announcements:SmeAnnouncements
+    url: /api/corporate-announcements
+    params:
+      index: sme
+    referer: https://www.nseindia.com/companies-listing/corporate-filings-announcements
+    response: json
+    cadence: 10m
+    active_hours: "08:00-19:00"
+    table: raw_announcements
+    enabled: true
+
+  announcements_debt:
+    collector: nse_data.collectors.announcements:DebtAnnouncements
+    url: /api/corporate-announcements
+    params:
+      index: debt
+    referer: https://www.nseindia.com/companies-listing/corporate-filings-announcements
+    response: json
+    cadence: 30m
+    active_hours: "08:00-19:00"
+    table: raw_nonequity_announcements
+    enabled: true
+
+  announcements_mf:
+    collector: nse_data.collectors.announcements:MfAnnouncements
+    url: /api/corporate-announcements
+    params:
+      index: mf
+    referer: https://www.nseindia.com/companies-listing/corporate-filings-announcements
+    response: json
+    cadence: 1h
+    active_hours: "08:00-19:00"
+    table: raw_nonequity_announcements
+    enabled: true
+
   oi_spurts:
     collector: nse_data.collectors.oi_spurts:OiSpurts
     url: /api/live-analysis-oi-spurts-underlyings
@@ -229,6 +265,16 @@ endpoints:
     table: raw_insider_trading
     enabled: true
 
+  integrated_filings:
+    collector: nse_data.collectors.integrated_filings:IntegratedFilings
+    url: /api/integrated-filing-results
+    referer: https://www.nseindia.com/companies-listing/corporate-filings-integrated-filing
+    response: json
+    cadence: weekly
+    run_at: "Sun 08:00"
+    table: raw_integrated_filings
+    enabled: true
+
   bhavcopy_fo:
       collector: nse_data.collectors.bhavcopy_fo:BhavcopyFO
       response: bytes
@@ -291,6 +337,16 @@ endpoints:
     cadence: weekly
     run_at: "Sun 07:00"
     table: raw_quote_metadata
+    enabled: true
+
+  shareholding_pattern:
+    collector: nse_data.collectors.shareholding:ShareholdingPattern
+    url: /api/corporate-share-holdings-master
+    referer: https://www.nseindia.com/companies-listing/corporate-filings-shareholding-pattern
+    response: json
+    cadence: weekly
+    run_at: "Sun 07:30"
+    table: raw_shareholding_pattern
     enabled: true
 
   pdf_parser:

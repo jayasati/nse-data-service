@@ -7,18 +7,14 @@ Why pure: retention decisions are deterministic from priority. Separating
 the decision from the I/O makes both trivially testable and lets us run
 'what would happen' simulations (the --dry-run mode of backfill).
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
-
 import yaml
-
 from nse_data.storage import files
-
 
 
 @dataclass(frozen=True)
