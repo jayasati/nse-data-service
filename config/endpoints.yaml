@@ -143,6 +143,14 @@ endpoints:
     table: raw_indices
     enabled: true
 
+  india_vix:
+    collector: nse_data.collectors.india_vix:IndiaVix
+    response: json        # /api/allIndices — carries INDIA VIX + NIFTY 50 spot
+    cadence: 5m
+    market_hours_only: true   # VIX only ticks during the cash session
+    table: raw_india_vix
+    enabled: true
+
   gainers:
     collector: nse_data.collectors.market_movers:Gainers
     response: json
@@ -327,6 +335,15 @@ endpoints:
     cadence: daily
     run_at: "18:00"       # global/macro — intentionally NOT trading_day_only (matters on NSE holidays)
     table: raw_macro
+    enabled: true
+
+  nsdl_fpi:
+    collector: nse_data.collectors.nsdl_fpi:NsdlFpi
+    response: text        # informational; collector scrapes fpi.nsdl.co.in via httpx, not the NSE session
+    cadence: daily
+    run_at: "20:30"       # EOD — after NSDL posts the day's provisional FPI flow
+    trading_day_only: true
+    table: raw_nsdl_fpi_daily
     enabled: true
 
   gift_nifty:

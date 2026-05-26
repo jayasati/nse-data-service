@@ -104,7 +104,9 @@ def process_one_row(
 
     dl = download_pdf(session, attachment_url)
 
-    if not dl.success:
+    # `success` guarantees `data` is populated, but the two fields are
+    # independent in the type system — narrow `dl.data` to bytes here.
+    if not dl.success or dl.data is None:
         _update_row(db, fingerprint, {
             "pdf_status": State.DOWNLOAD_FAILED,
             "pdf_status_updated_at": int(time.time()),
@@ -133,6 +135,15 @@ def process_one_row(
                 "pdf_status": State.DOWNLOAD_FAILED,
                 "pdf_status_updated_at": int(time.time()),
                 "pdf_error": f"archive_write_failed: {e!r}",
+            })
+            return State.DOWNLOAD_FAILED
+        if work_path is None:
+            # write_pdf returns None when it can't resolve an archive path;
+            # shouldn't happen under will_write_file() but guard regardless.
+            _update_row(db, fingerprint, {
+                "pdf_status": State.DOWNLOAD_FAILED,
+                "pdf_status_updated_at": int(time.time()),
+                "pdf_error": "archive_write_returned_none",
             })
             return State.DOWNLOAD_FAILED
     else:
