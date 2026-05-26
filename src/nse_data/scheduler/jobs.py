@@ -166,6 +166,14 @@ _INTERVAL_MINUTE = {
     "30m": "*/30",
 }
 
+# Sub-minute cadences -> crontab second field. Used by tight pre-open polls
+# (e.g. GIFT Nifty every 30s). Always paired with an active_hours window so the
+# high-frequency fire is confined; the runtime gate still trims the exact edges.
+_INTERVAL_SECOND = {
+    "15s": "*/15",
+    "30s": "*/30",
+}
+
 # Default misfire grace: how late a fire can be and still run (BlockingScheduler
 # can fall behind during a long job). Intraday jobs want a tight grace so a
 # delayed 5-min tick doesn't pile up; daily/weekly jobs tolerate more.
@@ -231,6 +239,12 @@ def build_triggers(cfg: dict) -> list[tuple[str, CronTrigger]]:
     """
     tz = market_hours.IST
     cadence = cfg.get("cadence")
+
+    if cadence in _INTERVAL_SECOND:
+        return [("", CronTrigger(
+            second=_INTERVAL_SECOND[cadence], minute="*",
+            hour=_hour_bound(cfg), timezone=tz,
+        ))]
 
     if cadence in _INTERVAL_MINUTE:
         return [("", CronTrigger(
@@ -352,8 +366,13 @@ def register_jobs(scheduler, endpoints: dict, runner: Callable[[Any], Any]) -> l
             continue
 
         gate = make_gate(cfg)
-        grace = _GRACE_INTERVAL if cfg.get("cadence") in _INTERVAL_MINUTE \
-            or cfg.get("cadence") == "1h" else _GRACE_DAILY
+        cadence = cfg.get("cadence")
+        if cadence in _INTERVAL_SECOND:
+            grace = 15   # tight — a late 30s tick should drop, not pile up
+        elif cadence in _INTERVAL_MINUTE or cadence == "1h":
+            grace = _GRACE_INTERVAL
+        else:
+            grace = _GRACE_DAILY
 
         for suffix, trigger in triggers:
             job_id = f"{name}{suffix}"

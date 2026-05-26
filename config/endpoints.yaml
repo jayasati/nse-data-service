@@ -329,6 +329,15 @@ endpoints:
     table: raw_macro
     enabled: true
 
+  gift_nifty:
+    collector: nse_data.collectors.gift_nifty:GiftNifty
+    response: json        # external NSE IX (nseix.com) via httpx, not the NSE session
+    cadence: 30s
+    active_hours: "06:30-09:15"   # pre-open predictor window
+    trading_day_only: true
+    table: raw_gift_nifty
+    enabled: true
+
   fno_list:
       collector: nse_data.collectors.fno_list:FnoList
       response: json

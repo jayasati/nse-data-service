@@ -63,6 +63,19 @@ def test_interval_hour_bound_to_market_hours():
     assert t.hour == 9   # first fire of the day is in the 9 o'clock hour
 
 
+def test_30s_fires_every_half_minute():
+    (suffix, trig), = build_triggers({"cadence": "30s", "active_hours": "06:30-09:15"})
+    assert suffix == ""
+    t = _next(trig, at(2026, 5, 19, 7, 0))   # next fire after 07:00
+    assert t.second in (0, 30)               # fires on :00/:30 seconds
+
+
+def test_30s_hour_bounded_to_active_window():
+    (_, trig), = build_triggers({"cadence": "30s", "active_hours": "06:30-09:15"})
+    t = _next(trig, at(2026, 5, 19, 3, 0))
+    assert t.hour == 6   # first fire of the day is in the 6 o'clock hour
+
+
 def test_1h_fires_top_of_hour():
     (_, trig), = build_triggers({"cadence": "1h", "active_hours": "08:00-19:00"})
     t = _next(trig, at(2026, 5, 19, 10, 30))
