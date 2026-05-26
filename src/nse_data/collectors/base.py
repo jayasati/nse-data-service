@@ -164,6 +164,12 @@ class Collector(ABC):
                       # endpoint_name for Layer 1's circuit/rate-limit/metrics)
     table: str = ""   # destination SQLite table
 
+    # By default an empty normalize() result skips persist entirely — so a
+    # glitchy empty NSE response can't wipe a reference table. Opt in (True)
+    # only when "empty" is a legitimate state that must clear the table, e.g.
+    # a diff-based watchlist that is frequently empty (UnsolicitedWatchlist).
+    persist_empty: bool = False
+
     # ---- Subclass contract ----
 
     @abstractmethod
@@ -224,7 +230,12 @@ class Collector(ABC):
                     )
                 )
 
-        if all_rows:
+        # Persist when there are rows, or when this collector treats an empty
+        # result as authoritative (persist_empty) and every fetch succeeded —
+        # the failed-fetch guard stops a transient error from clearing a table.
+        if all_rows or (
+            self.persist_empty and report.fetched > 0 and report.failed == 0
+        ):
             try:
                 report.persist = self.persist(db, all_rows)
             except Exception as e:

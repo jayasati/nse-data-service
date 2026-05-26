@@ -106,12 +106,12 @@ Working inventory of every capability the system needs, mapped against current b
 - ✅ `surveillance_asm_lt` — daily 20:05
 - ✅ `surveillance_asm_st` — daily 20:10
 - ✅ `blacklist` SQL view over the three surveillance tables
-- 📋 T2T segment — daily 20:00
-- 📋 Price band stages (2/5/10/20%) — daily 20:00
-- 📋 Unsolicited messages / SEBI pump-dump flags
-- 📋 Suspended securities list
-- 📋 Delisting list
-- 🔧 `blacklist` is a view today (~250 rows); materialize if it ever scales past ~10K
+- ✅ Price band stages (2/5/10/20%) — `PriceBandMaster` ReferenceCollector reads the daily CSV `nsearchives.../content/equities/sec_list.csv` (fixed URL) → `raw_price_bands` (symbol+series, band INT, remarks). Pulled 08:45 pre-open, `trading_day_only`. diff surfaces a security tightening (band 20→2). Built + tested 26-May-2026.
+- ✅ T2T segment — **covered by `raw_price_bands.series`**: the same sec_list.csv carries the trade-for-trade / restricted classification (EQ = rolling; `BE`/`BZ`/`ST` = T2T). Query `raw_price_bands WHERE series IN ('BE','BZ','ST')`. No separate feed needed.
+- ✅ Unsolicited messages / SEBI pump-dump flags — `UnsolicitedWatchlist` reads the XLSX `nsearchives.../inline-files/Current_list_of_symbols_1.xlsx` (openpyxl) → `raw_unsolicited_watchlist`, **unioned into the `blacklist` view** (feed='UNSOLICITED'). Daily 20:15, `trading_day_only`. The watchlist is often empty, so this collector sets `persist_empty=True` (new base flag) — an empty fetch clears the table/blacklist instead of being skipped (guarded against transient fetch failures). Built + tested 26-May-2026. *(Related `/api/rumourVerification` noted but not the same thing.)*
+- 📋 Suspended securities list — daily CSV on the surveillance page (no JSON API). Needs the sec_list-style download URL captured before building (likely a fixed `nsearchives.../content/equities/*.csv`).
+- 📋 Delisting list — same as suspended: a downloadable CSV; needs the file URL.
+- 🔧 `blacklist` stays a SQL view — now unions **4** feeds (GSM + ASM-LT + ASM-ST + UNSOLICITED; migration 019 rebuilt it). Still ~250 rows, far under the ~10K materialize threshold. `raw_price_bands` (~3,300 rows) is a *classification* table, deliberately **not** unioned in — Layer 6 JOINs it for band/series filtering (e.g. exclude band≤2 or T2T series) rather than treating every banded security as blacklisted.
 
 ### Reference Data
 
@@ -652,4 +652,3 @@ These are interesting but the research doc / architecture explicitly cautions ag
 ---
 
 **Maintenance rule:** when you ship something, move it from 📋 → ✅. When you find a gap in a shipped feature, move it from ✅ → 🔧 and write the gap inline. Don't delete entries; the history of what didn't make the cut is as valuable as the checklist itself.
-
