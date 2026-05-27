@@ -1,0 +1,21 @@
+/* Design tokens — the single source of colour for both pages.
+   Toggle by setting data-theme="light|dark" on <html>. */
+:root, [data-theme="dark"] {
+  --bg:#0e1014; --panel:#15181f; --panel2:#1b1f28; --line:#242a35;
+  --txt:#e8ebf2; --txt2:#aeb6c4; --dim:#7e8696; --accent:#00b386;
+  --up:#00b386; --down:#eb5b3c; --hover:#1a1f29; --sel:rgba(0,179,134,.10);
+  --grid:rgba(255,255,255,.035); --thumb:#2c3340; --shadow:0 4px 20px rgba(0,0,0,.45);
+  --upbg:rgba(0,179,134,.14); --downbg:rgba(235,91,60,.14);
+  /* health-page status colours */
+  --ok:#00b386; --stale:#f1c40f; --no_table:#e67e22; --empty:#9b6bd8;
+  --disabled:#5a6273; --unknown:#7f8c8d;
+}
+[data-theme="light"] {
+  --bg:#ffffff; --panel:#ffffff; --panel2:#f6f8fa; --line:#edf0f3;
+  --txt:#11181c; --txt2:#3c4756; --dim:#8a94a3; --accent:#00b386;
+  --up:#00a578; --down:#e04e2e; --hover:#f5f7f9; --sel:#e8f7f1;
+  --grid:rgba(0,0,0,.05); --thumb:#d4dae1; --shadow:0 4px 20px rgba(20,30,50,.10);
+  --upbg:#e6f9f2; --downbg:#fdeaea;
+  --ok:#00a578; --stale:#c79a00; --no_table:#d2761a; --empty:#8b54cf;
+  --disabled:#9aa3b0; --unknown:#7f8c8d;
+}

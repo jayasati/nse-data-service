@@ -51,7 +51,7 @@ def test_fno_list_normalize_extracts_symbols():
 
 def test_fno_list_diff_tracks_changes(db):
     data = _load("probe_fno_list.json")
-    session = FakeSession(json_fixtures={"/api/equity-stockIndices": data})
+    session = FakeSession(json_fixtures={"/api/equity-stock-indices": data})
 
     r1 = FnoList().run(session, db)
     assert r1.persist.inserted > 100

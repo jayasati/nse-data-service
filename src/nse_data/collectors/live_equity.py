@@ -1,7 +1,9 @@
 """
 Live equity quotes — fetch LTP/volume for an index's constituents.
 
-NSE endpoint: /api/equity-stockIndices?index=<NAME>
+NSE endpoint: /api/equity-stock-indices?index=<NAME>
+(NSE renamed this from the camelCase /api/equity-stockIndices around
+2026-05-22; the old path now 404s. Response shape is unchanged.)
 
 Returns ~50 stocks with one row per symbol containing LTP, OHLC of the day,
 volume, value, 52-week high/low. The first row of the response is the index
@@ -32,7 +34,7 @@ class LiveEquity(SnapshotCollector):
 
     def plan(self, context: Mapping[str, Any] | None = None) -> Sequence[Request]:
         return [Request(
-            path_or_url="/api/equity-stockIndices",
+            path_or_url="/api/equity-stock-indices",
             params={"index": self.index_name},
             referer=f"{NSE_BASE}/market-data/live-equity-market",
             response_type="json",
@@ -80,6 +82,18 @@ class LiveEquity(SnapshotCollector):
                 "year_low":    _f(item.get("yearLow")),
             })
         return rows
+
+
+class LiveEquityTotalMarket(LiveEquity):
+    """Live quotes for the NIFTY TOTAL MARKET index — ~750 stocks, i.e. the
+    full liquid tradeable universe, in a single call. Polled at 1-min cadence
+    during market hours to power the dashboard's live broad-market view.
+
+    Shares raw_equity_quotes with LiveEquity; the index_name column keeps the
+    two feeds distinct (NIFTY 50 vs NIFTY TOTAL MARKET)."""
+
+    name = "live_equity_total_market"
+    index_name = "NIFTY TOTAL MARKET"
 
 
 def _f(v):

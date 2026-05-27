@@ -135,6 +135,17 @@ endpoints:
       # The collector defaults to NIFTY 50. To poll more indices, copy this
       # entry and subclass LiveEquity with a different index_name.
 
+  live_equity_total_market:
+      collector: nse_data.collectors.live_equity:LiveEquityTotalMarket
+      response: json
+      cadence: 1m              # broad live universe — one call returns ~750 stocks
+      market_hours_only: true
+      table: raw_equity_quotes
+      enabled: true
+      # NIFTY TOTAL MARKET ≈ the full liquid tradeable universe. Powers the
+      # dashboard's live /stocks view; index_name column keeps it distinct
+      # from the NIFTY 50 feed in the shared table.
+
   indices:
     collector: nse_data.collectors.indices:Indices
     response: json

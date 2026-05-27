@@ -160,6 +160,7 @@ class ParserJob:
 
 # Interval cadences -> crontab minute field. Hours are bounded separately.
 _INTERVAL_MINUTE = {
+    "1m": "*",
     "3m": "*/3",
     "5m": "*/5",
     "10m": "*/10",

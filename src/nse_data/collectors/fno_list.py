@@ -1,7 +1,8 @@
 """
 F&O eligible securities — the ~209 stocks that have futures/options listed.
 
-NSE endpoint: /api/equity-stockIndices?index=SECURITIES IN F&O
+NSE endpoint: /api/equity-stock-indices?index=SECURITIES IN F&O
+(renamed from /api/equity-stockIndices around 2026-05-22; old path 404s.)
 ReferenceCollector with diff_upsert. Weekly cadence. When a stock joins or
 leaves F&O (NSE rebalances every 6 months), diff catches the changes.
 
@@ -27,7 +28,7 @@ class FnoList(ReferenceCollector):
 
     def plan(self, context: Mapping[str, Any] | None = None) -> Sequence[Request]:
         return [Request(
-            path_or_url="/api/equity-stockIndices",
+            path_or_url="/api/equity-stock-indices",
             params={"index": "SECURITIES IN F&O"},
             referer=f"{NSE_BASE}/market-data/live-equity-market",
             response_type="json",

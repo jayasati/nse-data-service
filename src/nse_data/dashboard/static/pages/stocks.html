@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stocks — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/stocks.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <header>
+    <span class="brand">Stocks</span>
+    <div class="searchwrap">
+      <input id="search" placeholder="🔍  Search a stock…  e.g. RELIANCE" autocomplete="off">
+      <div class="dropdown" id="dropdown"></div>
+    </div>
+    <span class="meta" id="meta"></span>
+    <div class="hdr-right">
+      <button class="icon" id="themeBtn" title="Toggle light/dark">☀</button>
+      <a href="/">Health →</a>
+    </div>
+  </header>
+  <div class="wrap">
+    <div class="right" id="right">
+      <div class="ph">
+        <div class="ph-name">
+          <span class="cname" id="name">—</span>
+          <span class="ticker" id="sym"></span>
+          <span class="exch" id="exch">NSE</span>
+          <span class="livedot" id="livedot" style="display:none"></span>
+          <button class="star" id="starBtn" title="Add to watchlist">☆</button>
+        </div>
+        <div class="ph-row" id="phprice">
+          <span class="ltp" id="ltp" aria-live="polite">—</span>
+          <span class="chgpill" id="chgpill"></span>
+          <span class="tftag" id="tftag">1D</span>
+        </div>
+        <div class="ohlc adv-only" id="ohlc"></div>
+      </div>
+      <div class="adv adv-only" id="adv">
+        <div class="seg" id="modes">
+          <button data-m="area" class="on">Line</button>
+          <button data-m="candle">Candle</button>
+          <button data-m="ha">Heikin-Ashi</button>
+        </div>
+        <span class="sep"></span>
+        <div class="chips" id="overlays">
+          <button data-o="vwap">VWAP</button>
+          <button data-o="ema20">EMA20</button>
+          <button data-o="ema50">EMA50</button>
+          <button data-o="ema200">EMA200</button>
+          <button data-o="bb">Bollinger</button>
+        </div>
+        <span class="sep"></span>
+        <div class="chips" id="studies">
+          <button data-s="rsi">RSI</button>
+          <button data-s="macd">MACD</button>
+          <button data-s="adx">ADX</button>
+          <button data-s="chop">Chop</button>
+        </div>
+      </div>
+      <div id="tip"></div>
+      <div id="chart" role="img" aria-label="Price chart"></div>
+      <div id="panes"></div>
+      <div class="bottombar">
+        <div class="seg tfs" id="tfs">
+          <button data-t="1D" class="on">1D</button>
+          <button data-t="1W">1W</button>
+          <button data-t="1M">1M</button>
+          <button data-t="3M">3M</button>
+          <button data-t="6M">6M</button>
+          <button data-t="1Y">1Y</button>
+          <button data-t="3Y">3Y</button>
+          <button data-t="5Y">5Y</button>
+          <button data-t="All">All</button>
+        </div>
+        <button class="iconpill" id="candleBtn" title="Chart type">📈 Line</button>
+        <span id="syminfo"></span>
+        <button class="iconpill termbtn" id="termBtn" title="Toggle advanced terminal">▦ Terminal</button>
+      </div>
+      <div class="funda adv-only collapsed" id="funda">
+        <div class="funda-head" id="fundaHead"><span class="chev">▾</span> Fundamentals</div>
+        <div class="grid" id="fundaGrid"></div>
+      </div>
+      <div class="empty" id="empty">Search for a stock to open its chart.</div>
+    </div>
+  </div>
+  <script type="module" src="/static/js/pages/stocks.js"></script>
+</body>
+</html>

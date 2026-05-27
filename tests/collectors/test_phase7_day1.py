@@ -53,7 +53,7 @@ def test_live_equity_normalize_drops_index_row():
 
 def test_live_equity_runs_end_to_end(db):
     data = _load("live_equity_nifty50.json")
-    session = FakeSession(json_fixtures={"/api/equity-stockIndices": data})
+    session = FakeSession(json_fixtures={"/api/equity-stock-indices": data})
     report = LiveEquity().run(session, db)
     assert report.succeeded == 1
     assert report.persist.inserted >= 40
@@ -64,7 +64,7 @@ def test_live_equity_runs_end_to_end(db):
 
 def test_live_equity_rerun_at_new_timestamp_accumulates(db, monkeypatch):
     data = _load("live_equity_nifty50.json")
-    session = FakeSession(json_fixtures={"/api/equity-stockIndices": data})
+    session = FakeSession(json_fixtures={"/api/equity-stock-indices": data})
 
     fake_now = [1_700_000_000]
     monkeypatch.setattr(time, "time", lambda: fake_now[0])

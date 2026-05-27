@@ -1,7 +1,8 @@
 """
 Index constituents — which stocks are in NIFTY 50, NIFTY 100, etc.
 
-NSE endpoint: /api/equity-stockIndices?index=<NAME>
+NSE endpoint: /api/equity-stock-indices?index=<NAME>
+(renamed from /api/equity-stockIndices around 2026-05-22; old path 404s.)
 Same endpoint as LiveEquity, but used here for reference data:
 weightage rank rather than live LTPs.
 
@@ -65,7 +66,7 @@ class IndexMembers(FanoutCollector):
 
     def plan_one(self, target: str) -> Request:
         return Request(
-            path_or_url="/api/equity-stockIndices",
+            path_or_url="/api/equity-stock-indices",
             params={"index": target},
             referer=f"{NSE_BASE}/market-data/live-equity-market",
             response_type="json",

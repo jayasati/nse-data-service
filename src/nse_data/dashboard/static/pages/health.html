@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NSE Data Service — Health</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/health.css">
+</head>
+<body>
+  <header>
+    <h1>NSE Data Service — Health</h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right">
+      <a class="link" href="/stocks">Top 1000 stocks →</a>
+      <button class="icon" id="themeBtn" title="Toggle light/dark">☀</button>
+    </div>
+  </header>
+  <div class="summary" id="summary"></div>
+  <table>
+    <thead><tr>
+      <th>Status</th><th>Collector</th><th>Table</th><th>Cadence</th>
+      <th class="num">Rows</th><th>Last data</th><th>Lag</th>
+    </tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="footer">Auto-refreshes every 15s · <a class="tbl" href="/api/health">/api/health</a></div>
+  <script type="module" src="/static/js/pages/health.js"></script>
+</body>
+</html>

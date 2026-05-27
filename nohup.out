@@ -1,0 +1,110 @@
+backfilling 1000 symbols · groww · interval=minute · 2025-12-08 → 2026-05-27 · resume on
+  [1/1000] COALINDIA      skip (have 43125)
+  [2/1000] HDFCBANK       skip (have 43125)
+  [3/1000] ATGL           skip (have 43019)
+  [4/1000] JPPOWER        skip (have 43125)
+  [5/1000] ICICIBANK      skip (have 43125)
+  [6/1000] ADANIPOWER     skip (have 43125)
+  [7/1000] APOLLO         skip (have 43061)
+  [8/1000] BSE            skip (have 43125)
+  [9/1000] RELIANCE       skip (have 43125)
+  [10/1000] BHARTIARTL     skip (have 43125)
+  [11/1000] HFCL           skip (have 43123)
+  [12/1000] SUZLON         skip (have 43125)
+  [13/1000] PINELABS       skip (have 42254)
+  [14/1000] ADANIENSOL     skip (have 43116)
+  [15/1000] ADANIENT       skip (have 43125)
+Ready to Groww!
+Traceback (most recent call last):
+  File "/home/jay/nse-data-service/scripts/backfill_intraday.py", line 194, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/jay/nse-data-service/scripts/backfill_intraday.py", line 188, in main
+    return {"login": cmd_login, "token": cmd_token,
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            "groww-token": cmd_groww_token, "groww-check": cmd_groww_check,
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            "progress": cmd_progress, "run": cmd_run}[args.cmd](args)
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/home/jay/nse-data-service/scripts/backfill_intraday.py", line 114, in cmd_run
+    candles = broker.fetch_symbol(sym, args.interval, start, end)
+  File "/home/jay/nse-data-service/src/nse_data/brokers/groww.py", line 160, in fetch_symbol
+    payload = client.get_historical_candle_data(
+        symbol, client.EXCHANGE_NSE, client.SEGMENT_CASH, s, e, mins)
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/growwapi/groww/client.py", line 867, in get_historical_candle_data
+    response = self._request_get(
+        url=url,
+    ...<2 lines>...
+        timeout=timeout,
+    )
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/growwapi/groww/client.py", line 1405, in _request_get
+    return requests.get(
+           ~~~~~~~~~~~~^
+        url,
+        ^^^^
+    ...<3 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/requests/api.py", line 87, in get
+    return request("get", url, params=params, **kwargs)
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/requests/api.py", line 71, in request
+    return session.request(method=method, url=url, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/requests/sessions.py", line 651, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/requests/sessions.py", line 784, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/requests/adapters.py", line 696, in send
+    resp = conn.urlopen(
+        method=request.method,
+    ...<9 lines>...
+        chunked=chunked,
+    )
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/urllib3/connectionpool.py", line 788, in urlopen
+    response = self._make_request(
+        conn,
+    ...<10 lines>...
+        **response_kw,
+    )
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/urllib3/connectionpool.py", line 464, in _make_request
+    self._validate_conn(conn)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/urllib3/connectionpool.py", line 1106, in _validate_conn
+    conn.connect()
+    ~~~~~~~~~~~~^^
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/urllib3/connection.py", line 796, in connect
+    sock_and_verified = _ssl_wrap_socket_and_match_hostname(
+        sock=sock,
+    ...<14 lines>...
+        assert_fingerprint=self.assert_fingerprint,
+    )
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/urllib3/connection.py", line 975, in _ssl_wrap_socket_and_match_hostname
+    ssl_sock = ssl_wrap_socket(
+        sock=sock,
+    ...<8 lines>...
+        tls_in_tls=tls_in_tls,
+    )
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/urllib3/util/ssl_.py", line 433, in ssl_wrap_socket
+    ssl_sock = _ssl_wrap_socket_impl(sock, context, tls_in_tls, server_hostname)
+  File "/home/jay/nse-data-service/.venv/lib/python3.14/site-packages/urllib3/util/ssl_.py", line 477, in _ssl_wrap_socket_impl
+    return ssl_context.wrap_socket(sock, server_hostname=server_hostname)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/ssl.py", line 455, in wrap_socket
+    return self.sslsocket_class._create(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        sock=sock,
+        ^^^^^^^^^^
+    ...<5 lines>...
+        session=session
+        ^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/usr/lib/python3.14/ssl.py", line 1076, in _create
+    self.do_handshake()
+    ~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib/python3.14/ssl.py", line 1372, in do_handshake
+    self._sslobj.do_handshake()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+KeyboardInterrupt
