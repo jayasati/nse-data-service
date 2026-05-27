@@ -292,6 +292,9 @@ def collector_health(
         "data_age_seconds": int((now - last_ts).total_seconds()) if last_ts else None,
         "status": verdict["status"],
         "lag_seconds": verdict["lag_seconds"],
+        # The lag threshold for this cadence, so the UI can draw lag/tolerance as
+        # a freshness bar (ok ≤ tol, stale ≤ 4×tol, down beyond).
+        "tolerance_seconds": tolerance_seconds(cfg.get("cadence", "")),
     }
 
 

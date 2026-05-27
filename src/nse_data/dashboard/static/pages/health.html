@@ -19,15 +19,24 @@
       <button class="icon" id="themeBtn" title="Toggle light/dark">☀</button>
     </div>
   </header>
-  <div class="summary" id="summary"></div>
+  <div class="toolbar">
+    <input id="search" class="search" type="search" placeholder="Filter collectors or tables…" autocomplete="off" spellcheck="false">
+    <div class="summary" id="summary"></div>
+  </div>
+  <div class="tablewrap">
   <table>
     <thead><tr>
-      <th>Status</th><th>Collector</th><th>Table</th><th>Cadence</th>
-      <th class="num">Rows</th><th>Last data</th><th>Lag</th>
+      <th class="sortable" data-sort="name">Collector</th>
+      <th>Table</th>
+      <th class="sortable" data-sort="cadence">Cadence</th>
+      <th class="num sortable" data-sort="rows">Rows</th>
+      <th class="sortable" data-sort="age">Last data</th>
+      <th class="sortable" data-sort="lag">Freshness</th>
     </tr></thead>
     <tbody id="rows"></tbody>
   </table>
-  <div class="footer">Auto-refreshes every 15s · <a class="tbl" href="/api/health">/api/health</a></div>
+  </div>
+  <div class="footer">Auto-refreshes every 15s · click a row to preview · <a class="tbl" href="/api/health">/api/health</a></div>
   <script type="module" src="/static/js/pages/health.js"></script>
 </body>
 </html>

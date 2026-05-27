@@ -13,11 +13,10 @@ import logging
 import sys
 
 import structlog
-import time 
 
-from .collectors.base import EventCollector
+from .scheduler.catchup import run_due
 from .scheduler.jobs import register_jobs
-from .scheduler.runner import make_scheduler
+from .scheduler.runner import make_runner, make_scheduler
 from .session.manager import SessionManager
 from .settings import load_endpoints
 from .storage.cache import MemoryDedupCache, RedisDedupCache
@@ -25,43 +24,6 @@ from .storage.db import apply_migrations, open_db
 
 
 log = structlog.get_logger()
-
-
-def _make_runner(session, db_path, dedup_cache):
-    """
-    Returns the callable APScheduler invokes per job.
-
-    Per-run lifecycle:
-      - Open a fresh SQLite connection (thread-portability fix from Phase 3)
-      - Inject the dedup cache for EventCollectors
-      - Run the collector; if it returns 0 rows AND the collector declares
-        publish-window semantics, retry inside the window
-    """
-    from .collectors.bhavcopy import Bhavcopy, PUBLISH_RETRY_MAX, PUBLISH_RETRY_DELAY
-
-    def run_collector(collector):
-        if isinstance(collector, EventCollector):
-            collector.dedup_cache = dedup_cache
-
-        conn = open_db(db_path)
-        try:
-            report = collector.run(session, conn)
-            log.info("collector_run", **report.to_dict())
-
-            # Publish-window retry: bhavcopy may 404 for ~30 min after run_at
-            if isinstance(collector, Bhavcopy) and report.rows_seen == 0:
-                for attempt in range(1, PUBLISH_RETRY_MAX):
-                    log.info("bhavcopy_retry", attempt=attempt)
-                    time.sleep(PUBLISH_RETRY_DELAY)
-                    report = collector.run(session, conn)
-                    log.info("collector_run", **report.to_dict())
-                    if report.rows_seen > 0:
-                        break
-        except Exception:
-            log.exception("collector_failed", collector=collector.name)
-        finally:
-            conn.close()
-    return run_collector
 
 
 def _build_dedup_cache():
@@ -103,9 +65,21 @@ def main() -> int:
     session = SessionManager()
     dedup_cache = _build_dedup_cache()
 
+    # Catch-up pass: this host isn't always-on, so a daily/weekly run scheduled
+    # while the laptop was asleep never fired. Before starting the live loop,
+    # run any daily/weekly collector whose data lags its last expected run.
+    # (Recovers a missed schedule, not lost history — see scheduler/catchup.py.)
+    cu_conn = open_db(db_path)
+    try:
+        run_due(session, db_path, endpoints, dedup_cache, cu_conn)
+    except Exception:
+        log.exception("catchup_failed")  # never let catch-up block the scheduler
+    finally:
+        cu_conn.close()
+
     scheduler = make_scheduler()
     registered = register_jobs(
-        scheduler, endpoints, _make_runner(session, db_path, dedup_cache)
+        scheduler, endpoints, make_runner(session, db_path, dedup_cache)
     )
     log.info("scheduler_starting", jobs=registered)
 

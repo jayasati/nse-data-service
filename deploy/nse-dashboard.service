@@ -1,0 +1,22 @@
+[Unit]
+# NSE dashboard + API (uvicorn nse_data.api.server:app). Optional — only if you
+# want the web UI / API always reachable. Read-only against the same SQLite DB.
+Description=NSE data dashboard + API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# --- edit these for your host ---
+User=%i
+WorkingDirectory=/opt/nse-data-service
+ExecStart=/opt/nse-data-service/.venv/bin/uvicorn nse_data.api.server:app --host 0.0.0.0 --port 8000
+# --------------------------------
+Restart=on-failure
+RestartSec=10
+EnvironmentFile=-/opt/nse-data-service/.env
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

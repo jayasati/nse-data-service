@@ -55,3 +55,9 @@ A symbol counts as "done" once its stored history reaches the target start (with
 ~7 days), so keep `--days` consistent across runs — picking a window that matches your
 existing data lets resume skip finished symbols instead of re-fetching them to extend
 them further back.
+
+
+  Manual tool too:
+  python scripts/run_collectors.py --due --dry-run   # list overdue
+  python scripts/run_collectors.py --due             # run them
+  python scripts/run_collectors.py fii_dii           # specific feeds

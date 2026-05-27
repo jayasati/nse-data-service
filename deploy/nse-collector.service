@@ -1,0 +1,27 @@
+[Unit]
+# NSE data collector — the scheduler process (python -m nse_data.main).
+# On an always-on host this replaces the "laptop is on during the day" pattern,
+# so evening/weekend daily runs (fii_dii 19:00, surveillance 20:00, …) never get
+# missed. main.py also runs a catch-up pass on every start, so a reboot or brief
+# outage self-heals the same-day misses.
+Description=NSE data collector (scheduler)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# --- edit these three for your host ---
+User=%i
+WorkingDirectory=/opt/nse-data-service
+ExecStart=/opt/nse-data-service/.venv/bin/python -m nse_data.main
+# --------------------------------------
+Restart=on-failure
+RestartSec=10
+# Optional: load secrets (GROWW_*, REDIS_URL, …) from an env file.
+EnvironmentFile=-/opt/nse-data-service/.env
+# Journald captures stdout JSON logs: `journalctl -u nse-collector -f`
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
