@@ -75,9 +75,10 @@ async function loadSrvIndicators() {
   drawSrvOverlays();
 }
 
-// Build one toggle button per (indicator, column) returned by the endpoint.
-// Indicator order follows the registry; column order follows the indicator's
-// output_columns tuple. New backend indicators show up here automatically.
+// Build one toggle button per (indicator, column) for overlays (SMA), or per
+// indicator family for oscillators (RSI, MACD — all columns share one pane).
+// Indicator order follows the registry; new backend indicators show up here
+// automatically.
 //
 // On intraday timeframes (1D) the chart axis is epoch seconds while server
 // indicators carry date strings — they can't align, so we show a one-liner
@@ -86,22 +87,37 @@ function renderSrvButtons() {
   const box = $("srv-indicators"); box.innerHTML = "";
   if (!srv.data || !srv.data.indicators) return;
   if (!tfIsDaily()) {
-    box.innerHTML = `<span style="color:var(--dim);font-size:.8em;align-self:center;padding:0 4px;">daily SMAs — switch to 1W+</span>`;
+    box.innerHTML = `<span style="color:var(--dim);font-size:.8em;align-self:center;padding:0 4px;">daily indicators — switch to 1W+</span>`;
     return;
   }
   let idx = 0;
   for (const [name, block] of Object.entries(srv.data.indicators)) {
-    for (const col of block.columns) {
-      const key = `${name}.${col}`;
+    if (block.pane === "oscillator") {
+      // One button per indicator family. Toggles the entire sub-pane on/off.
+      const key = `${name}.*`;
       const color = chart.srvColor(idx++);
       const on = srv.enabled.has(key);
       const btn = document.createElement("button");
-      btn.textContent = col.toUpperCase();
-      btn.title = `${name} → ${col} (server)`;
+      btn.textContent = name.toUpperCase();
+      btn.title = `${name} (server, oscillator pane)`;
       btn.classList.toggle("on", on);
       if (on) { btn.style.background = color; btn.style.borderColor = color; }
       btn.onclick = () => toggleSrv(key, color, btn);
       box.appendChild(btn);
+    } else {
+      // Overlay: one button per column (SMA20 / SMA50 / SMA200).
+      for (const col of block.columns) {
+        const key = `${name}.${col}`;
+        const color = chart.srvColor(idx++);
+        const on = srv.enabled.has(key);
+        const btn = document.createElement("button");
+        btn.textContent = col.toUpperCase();
+        btn.title = `${name} → ${col} (server)`;
+        btn.classList.toggle("on", on);
+        if (on) { btn.style.background = color; btn.style.borderColor = color; }
+        btn.onclick = () => toggleSrv(key, color, btn);
+        box.appendChild(btn);
+      }
     }
   }
 }
@@ -118,21 +134,36 @@ function toggleSrv(key, color, btn) {
 function drawSrvOverlays() {
   if (!srv.data || !srv.data.indicators) return;
   if (!tfIsDaily()) { chart.clearServerSeries(); return; }
-  // Clip indicator dates to the chart's candle range — otherwise older SMA
-  // values stretch lightweight-charts' time axis to the left, beyond the
-  // first candle, which reads as "broken" on the page.
+  // Clip indicator dates to the chart's candle range — otherwise older values
+  // stretch lightweight-charts' time axis to the left, beyond the first
+  // candle, which reads as "broken" on the page.
   const candleDates = new Set(lastBars.map(b => b.time));
   if (!candleDates.size) { chart.clearServerSeries(); return; }
   let idx = 0;
   for (const [name, block] of Object.entries(srv.data.indicators)) {
-    for (const col of block.columns) {
-      const key = `${name}.${col}`;
+    if (block.pane === "oscillator") {
+      // Oscillator family: one toggle, one sub-pane, all columns inside.
+      const key = `${name}.*`;
       const color = chart.srvColor(idx++);
-      if (!srv.enabled.has(key)) { chart.hideServerSeries(key); continue; }
-      const pts = block.points
-        .filter(p => p[col] != null && isFinite(p[col]) && candleDates.has(p.date))
-        .map(p => ({ time: p.date, value: p[col] }));
-      chart.showServerSeries(key, pts, color);
+      if (!srv.enabled.has(key)) { chart.hideServerOscillator(name); continue; }
+      const pointsByCol = {};
+      for (const col of block.columns) {
+        pointsByCol[col] = block.points
+          .filter(p => p[col] != null && isFinite(p[col]) && candleDates.has(p.date))
+          .map(p => ({ time: p.date, value: p[col] }));
+      }
+      chart.showServerOscillator(name, block.columns, pointsByCol, color);
+    } else {
+      // Overlay: one series per column on the price chart.
+      for (const col of block.columns) {
+        const key = `${name}.${col}`;
+        const color = chart.srvColor(idx++);
+        if (!srv.enabled.has(key)) { chart.hideServerSeries(key); continue; }
+        const pts = block.points
+          .filter(p => p[col] != null && isFinite(p[col]) && candleDates.has(p.date))
+          .map(p => ({ time: p.date, value: p[col] }));
+        chart.showServerSeries(key, pts, color);
+      }
     }
   }
 }

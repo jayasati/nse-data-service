@@ -198,27 +198,59 @@ Working inventory of every capability the system needs, mapped against current b
 
 ## 4. Indicators, Patterns, Levels (Layer 4)
 
-### Technical Indicators
+### Architecture (locked in)
 
-- ✅ `indicators/compute.py` nightly job from `raw_bhavcopy_cm`
+- ✅ `Indicator` ABC with `cadence` (`"eod"` | `"intraday"` | `"session"`) + `pane` (`"overlay"` | `"oscillator"`) — each indicator declares both at class level; the orchestrator + dashboard read these
+- ✅ One file per indicator under `indicators/<family>/`, registered in `indicators/registry.py`
+- ✅ One SQLite table per indicator family (`indicator_*`), populated incrementally — no full-history recompute
+- ✅ Server-side compute is the source of truth for the signal engine (client-side JS indicators are display-only fallback)
+- ✅ Use `pandas-ta-classic` (numpy-2 compatible fork) for the math
+- ✅ `pane` field surfaced on `/api/stocks/{symbol}/indicators` so the dashboard auto-routes overlays vs oscillators
+
+### Build order — bottom-up to live-market Telegram signals
+
+Locked in 2026-05-28: build the intraday indicator stack + scheduler first, then the signal engine + Telegram, so first alerts can fire *during* market hours instead of only at EOD.
+
+1. ✅ Daily EOD indicators (SMA / RSI / MACD landed; see status below)
+2. 🚧 Intraday RSI 14 — `indicator_rsi_5m(symbol, ts, rsi_14)` off `raw_intraday_candles` + live 1-min feed
+3. 🚧 Intraday MACD — `indicator_macd_5m` parallel to RSI
+4. 🚧 Live indicator scheduler — APScheduler job, every minute 09:15–15:30 IST, universe sweep
+5. 📋 Signal engine reads daily + intraday tables; writes `signals` rows
+6. 📋 Telegram dispatcher reads `signals`, posts + marks dispatched
+
+### Technical Indicators — EOD (daily, off `raw_bhavcopy_cm`)
+
+- ✅ `indicators/compute.py` nightly job, incremental per-symbol
 - 🚧 Trend: SMA 20/50/200 ✅, EMA 9/21 📋
-- 📋 Momentum: RSI 14, MACD + signal + histogram
+- ✅ Momentum: RSI 14 ✅, MACD 12/26/9 (line + signal + histogram) ✅
 - 📋 Volatility: ATR 14, Bollinger Bands (upper/lower/width)
 - 📋 Trend strength: ADX 14, DI+, DI−
 - 📋 Volume: volume SMA 20, OBV, volume ratio
-- ✅ Use `pandas-ta-classic` (numpy-2 compatible fork) for the 130+ indicator library
-- ✅ Per-stock incremental compute (don't recompute history nightly)
 - 📋 **Supertrend** — primary trend-flip signal (xyz "Best Trend Following Setup"). ATR-based; cleaner than EMA crosses on Indian large-caps.
 - 📋 **Stochastic RSI** — fast momentum reversals on top of RSI 14
 - 📋 **Parabolic SAR** — trailing-stop / trend-reversal layer
-- 📋 **Pivot Points** (daily + weekly classical) — S/R levels for intraday rules
 - 📋 **Donchian Channels** (20-bar) — breakout signal substrate
 - 📋 **Keltner Channels** — volatility-trend envelope; pairs with BB for squeeze detection
-- 📋 **CMF** (Chaikin Money Flow), **Volume Delta**, **Cumulative Volume Delta** — order-flow proxies on top of bhavcopy + intraday candles
-- 📋 **Volume Profile** (per session: POC, value-area-high/low) — intraday S/R from `raw_intraday_candles`
+- 📋 **CMF** (Chaikin Money Flow) — order-flow proxy on top of bhavcopy
 - 📋 **Ichimoku Cloud** — advanced trend + S/R, single-indicator multi-signal (defer to last; signal-dense)
 - 🔬 Hull MA / McGinley Dynamic — research-only smoothers; track if EMA9/21 underperforms on volatile mid-caps
 - 📋 **Dynamic indicator thresholds** — RSI/MACD thresholds adapt to volatility regime (e.g. RSI 80 still bullish in strong trends, RSI 65 already overbought in compression). Per xyz #64.
+
+### Technical Indicators — Intraday (5-min, off `raw_intraday_candles` + live feed)
+
+Recomputed every minute during market hours. Today-only retention (yesterday's intraday is dropped after EOD bhavcopy load).
+
+- 📋 RSI 14 intraday — `indicator_rsi_5m`
+- 📋 MACD intraday — `indicator_macd_5m`
+- 📋 Supertrend intraday — for live trend-flip alerts
+- 📋 Donchian breakout intraday — breakout substrate during session
+- 📋 **VWAP** (running, per session) — primary intraday anchor
+- 📋 **Volume Delta**, **Cumulative Volume Delta** — intraday order-flow proxies
+
+### Technical Indicators — Session-anchored (per-session, reset daily)
+
+- 📋 **Pivot Points** (daily + weekly classical) — `indicator_pivots(symbol, session_date, p, r1, r2, r3, s1, s2, s3)` derived from prior session's HLC
+- 📋 **Volume Profile** (POC, VAH, VAL per session) — `indicator_volume_profile(symbol, session_date, ...)` from intraday candles
 
 ### Patterns
 
@@ -570,6 +602,8 @@ Working inventory of every capability the system needs, mapped against current b
 ---
 
 ## 13. Bot — Delivery & UX
+
+Build order locked: ships after the intraday indicator stack + signal engine (see §4 "Build order"). Bot itself is small; the work upstream is what makes the messages worth sending.
 
 - 📋 Telegram delivery primary
 - 📋 Email fallback

@@ -13,7 +13,6 @@ we don't want to litter the table with empty rows.
 
 from __future__ import annotations
 
-import math
 import sqlite3
 from typing import Iterable
 
@@ -83,7 +82,9 @@ def _rows_to_write(
 
 
 def _is_null(v) -> bool:
-    return v is None or (isinstance(v, float) and math.isnan(v))
+    # pd.isna handles every pandas missing-value sentinel: None, float NaN,
+    # pd.NA (nullable dtype), pd.NaT. Returning a bool also for scalar input.
+    return bool(pd.isna(v))
 
 
 def _clean(v):

@@ -11,8 +11,12 @@ below, and append an instance to INDICATORS.
 from __future__ import annotations
 
 from .base import Indicator
+from .momentum.macd import MovingAverageConvergenceDivergence
+from .momentum.rsi import RelativeStrengthIndex
 from .trend.sma import SimpleMovingAverage
 
 INDICATORS: tuple[Indicator, ...] = (
     SimpleMovingAverage(),
+    RelativeStrengthIndex(),
+    MovingAverageConvergenceDivergence(),
 )

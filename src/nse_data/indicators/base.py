@@ -27,8 +27,21 @@ skips all-NaN rows so we don't pollute the indicator table with empty rows.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Literal
 
 import pandas as pd
+
+# Where in the chart an indicator should render. `overlay` rides on the price
+# axis (SMA, EMA, Bollinger middle); `oscillator` needs its own sub-pane with
+# an independent y-scale (RSI 0–100, MACD diverges around 0). The dashboard
+# reads this off the `/indicators` payload and routes accordingly.
+Pane = Literal["overlay", "oscillator"]
+
+# When the indicator runs. `eod` = nightly off bhavcopy (the only mode wired
+# today). `intraday` = recomputed every minute during market hours off the
+# live 1-min feed + intraday_candles. `session` = once per session, anchored
+# to that session's intraday data (pivot points, volume profile).
+Cadence = Literal["eod", "intraday", "session"]
 
 
 class Indicator(ABC):
@@ -50,6 +63,13 @@ class Indicator(ABC):
     #: orchestrator pulls this many bars of OHLCV lookback when running
     #: incrementally.
     min_history: int
+
+    #: Render hint for the dashboard chart. See `Pane`.
+    pane: Pane = "overlay"
+
+    #: When to compute. See `Cadence`. Today only "eod" runs; intraday/session
+    #: are reserved for the live-market scanner.
+    cadence: Cadence = "eod"
 
     @abstractmethod
     def compute(self, ohlcv: pd.DataFrame) -> pd.DataFrame:

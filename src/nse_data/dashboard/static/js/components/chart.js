@@ -65,6 +65,11 @@ export class ChartController {
     // line series for indicators the user never enables.
     this.srv = {};
 
+    // Server-computed oscillator sub-panes. Keyed by indicator name ("rsi",
+    // "macd"). Each entry owns a dedicated chart pane below the main one and
+    // a series per output column. Created lazily on first toggle.
+    this.srvPanes = {};
+
     this.allCharts.push(this.chart);
     this._registerSync(this.chart);
     new ResizeObserver(() => this.fit()).observe(this.chartEl);
@@ -94,7 +99,82 @@ export class ChartController {
     s.setData([]);
   }
 
-  clearServerSeries() { for (const k in this.srv) this.srv[k].setData([]); }
+  clearServerSeries() {
+    for (const k in this.srv) this.srv[k].setData([]);
+    for (const k of Object.keys(this.srvPanes)) this.hideServerOscillator(k);
+  }
+
+  // ---- server-computed oscillator sub-panes (RSI, MACD, ...) ----
+  // Each indicator family with pane="oscillator" gets one stacked sub-pane
+  // below the main chart. All output columns of that indicator render inside
+  // the pane on a shared 0-bounded y-scale. Columns ending in "_hist" render
+  // as a colored histogram (red/green by sign), everything else as a line.
+  showServerOscillator(name, columns, pointsByCol, color) {
+    let pane = this.srvPanes[name];
+    if (!pane) pane = this._makeSrvPane(name, columns, color);
+    for (const col of columns) {
+      const series = pane.series[col];
+      const points = pointsByCol[col] || [];
+      if (col.endsWith("_hist")) {
+        // Histogram: each point also carries a sign-based color.
+        series.setData(points.map(p => ({
+          time: p.time, value: p.value,
+          color: p.value >= 0 ? rgba(GREEN, .7) : rgba(RED, .7),
+        })));
+      } else {
+        series.setData(points);
+      }
+    }
+    // Show the latest non-null value in the label for at-a-glance verification.
+    const primary = pane.primaryCol;
+    const last = (pointsByCol[primary] || []).slice(-1)[0];
+    pane.labelEl.textContent = last
+      ? `${name.toUpperCase()}  ${last.value.toFixed(2)}`
+      : name.toUpperCase();
+    this.fit();
+  }
+
+  hideServerOscillator(name) {
+    const pane = this.srvPanes[name]; if (!pane) return;
+    const i = this.allCharts.indexOf(pane.ch); if (i >= 0) this.allCharts.splice(i, 1);
+    pane.ch.remove(); pane.wrap.remove();
+    delete this.srvPanes[name];
+    this.fit();
+  }
+
+  _makeSrvPane(name, columns, color) {
+    const wrap = document.createElement("div"); wrap.className = "pane";
+    const lab = document.createElement("div"); lab.className = "plabel"; lab.textContent = name.toUpperCase();
+    const el = document.createElement("div"); el.className = "pchart";
+    wrap.appendChild(lab); wrap.appendChild(el); this.panesEl.appendChild(wrap);
+    const ch = LW.createChart(el, Object.assign(baseOpts(), {
+      rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.2, bottom: 0.1 }, minimumWidth: AXIS_MIN_WIDTH },
+    }));
+    const series = {};
+    let primaryCol = columns[0];
+    columns.forEach((col, i) => {
+      if (col.endsWith("_hist")) {
+        series[col] = ch.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+      } else {
+        // First non-hist column is "primary" — used for crosshair tooltip + label readout.
+        const c = i === 0 ? color : SRV_COLORS[(SRV_COLORS.indexOf(color) + i) % SRV_COLORS.length];
+        if (!col.endsWith("_hist")) primaryCol = primaryCol.endsWith("_hist") ? col : primaryCol;
+        series[col] = ch.addLineSeries({ color: c, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false });
+      }
+    });
+    // RSI gets the canonical 70/30/50 reference lines so the label panel
+    // gives an instant sense of "is this overbought/oversold".
+    if (name === "rsi") {
+      const ref = series[primaryCol];
+      [[70, RED], [30, GREEN], [50, BBC]].forEach(([p, c]) =>
+        ref.createPriceLine({ price: p, color: c, lineStyle: 2, lineWidth: 1, axisLabelVisible: true }));
+    }
+    new ResizeObserver(() => ch.resize(el.clientWidth, el.clientHeight)).observe(el);
+    const pane = { wrap, el, ch, series, labelEl: lab, primaryCol };
+    this.srvPanes[name] = pane;
+    this.allCharts.push(ch); this._registerSync(ch); this._themeOne(ch);
+    return pane;
+  }
 
   // Stable color per server-series key, so toggling on/off keeps the same hue.
   srvColor(index) { return SRV_COLORS[index % SRV_COLORS.length]; }

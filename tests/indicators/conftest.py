@@ -16,15 +16,20 @@ import pytest
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
 _BHAVCOPY_MIGRATION = MIGRATIONS_DIR / "003_bhavcopy.sql"
-_SMA_MIGRATION = MIGRATIONS_DIR / "026_indicator_sma.sql"
+_INDICATOR_MIGRATIONS = (
+    MIGRATIONS_DIR / "026_indicator_sma.sql",
+    MIGRATIONS_DIR / "027_indicator_rsi.sql",
+    MIGRATIONS_DIR / "028_indicator_macd.sql",
+)
 
 
 @pytest.fixture
 def indicators_db() -> sqlite3.Connection:
-    """In-memory SQLite with raw_bhavcopy_cm + indicator_sma tables."""
+    """In-memory SQLite with raw_bhavcopy_cm + every indicator_* table."""
     conn = sqlite3.connect(":memory:")
     conn.executescript(_BHAVCOPY_MIGRATION.read_text())
-    conn.executescript(_SMA_MIGRATION.read_text())
+    for m in _INDICATOR_MIGRATIONS:
+        conn.executescript(m.read_text())
     conn.commit()
     return conn
 

@@ -143,6 +143,8 @@ class StockService:
             out[ind.name] = {
                 "table": ind.table,
                 "columns": list(ind.output_columns),
+                "pane": ind.pane,         # "overlay" → ride price scale; "oscillator" → sub-pane
+                "cadence": ind.cadence,
                 "count": len(points),
                 "points": points,
             }
