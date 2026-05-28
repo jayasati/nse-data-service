@@ -8,10 +8,21 @@ const GREEN = "#00b386", RED = "#eb5b3c", VWAPC = "#7c6cdb",
       EMA20C = "#f59e0b", EMA50C = "#3b82f6", EMA200C = "#ec4899", BBC = "#94a3b8";
 const LW = window.LightweightCharts;
 
+// Distinct colors for server-computed indicator overlays. Cycles if we ever
+// register more series than this list — fine for visual verification.
+const SRV_COLORS = ["#22d3ee", "#a78bfa", "#fb7185", "#facc15", "#34d399", "#f97316", "#60a5fa"];
+
+// Force every pane's right-axis to reserve the same horizontal space, so the
+// time scale lines up vertically across price + indicator sub-panes. Without
+// this lightweight-charts sizes each pane's axis to its own labels — wide
+// price values (249.62) vs short RSI values (60) push the plot areas to
+// different widths and indicator bars drift sideways from price bars.
+const AXIS_MIN_WIDTH = 64;
+
 const baseOpts = () => ({
   layout: { background: { type: "solid", color: "#0e1014" }, textColor: "#7e8696", fontFamily: "Inter, sans-serif" },
   grid: { vertLines: { visible: false }, horzLines: { color: "rgba(255,255,255,.035)" } },
-  rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.12 } },
+  rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.12 }, minimumWidth: AXIS_MIN_WIDTH },
   timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
   crosshair: { mode: 1, vertLine: { color: "rgba(130,140,160,.5)", width: 1, style: 3, labelBackgroundColor: GREEN },
                horzLine: { color: "rgba(130,140,160,.5)", width: 1, style: 3, labelBackgroundColor: GREEN } },
@@ -49,6 +60,11 @@ export class ChartController {
       bbm: this.chart.addLineSeries({ color: BBC, lineWidth: 1, priceLineVisible: false, lastValueVisible: false }),
       bbl: this.chart.addLineSeries({ color: BBC, lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false }),
     };
+    // Server-computed indicator overlays. Keyed by `${indicator}.${column}`
+    // (e.g. "sma.sma_20"). Created lazily on first toggle so we don't allocate
+    // line series for indicators the user never enables.
+    this.srv = {};
+
     this.allCharts.push(this.chart);
     this._registerSync(this.chart);
     new ResizeObserver(() => this.fit()).observe(this.chartEl);
@@ -56,11 +72,44 @@ export class ChartController {
     this._wireTooltip();
   }
 
+  // ---- server-computed indicator overlays ----
+  // Show one (indicator, column) line drawn from server-side `indicator_*`
+  // tables. Daily-only — `points` carry `date` strings, so they align with
+  // 1d/1w chart bars but not intraday epoch times. The caller is responsible
+  // for hiding these when on an intraday timeframe.
+  showServerSeries(key, points, color) {
+    let s = this.srv[key];
+    if (!s) {
+      s = this.chart.addLineSeries({
+        color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false,
+      });
+      this.srv[key] = s;
+    }
+    s.applyOptions({ color });
+    s.setData(points);
+  }
+
+  hideServerSeries(key) {
+    const s = this.srv[key]; if (!s) return;
+    s.setData([]);
+  }
+
+  clearServerSeries() { for (const k in this.srv) this.srv[k].setData([]); }
+
+  // Stable color per server-series key, so toggling on/off keeps the same hue.
+  srvColor(index) { return SRV_COLORS[index % SRV_COLORS.length]; }
+
   _registerSync(ch) {
-    ch.timeScale().subscribeVisibleLogicalRangeChange(r => {
+    // Sync by *time*, not by logical (bar-index) range. Indicator panes used
+    // to filter null warm-up bars, so their bar counts diverged from the main
+    // chart — propagating a logical range like [50, 200] then meant a
+    // different time slice in each pane, and labels like "27" / "28" landed
+    // at different x-positions. Time-based sync keeps every pane locked to
+    // the same wall-clock window even if their data lengths still differ.
+    ch.timeScale().subscribeVisibleTimeRangeChange(r => {
       if (this.syncing || !r) return;
       this.syncing = true;
-      this.allCharts.forEach(c => { if (c !== ch) try { c.timeScale().setVisibleLogicalRange(r); } catch (e) {} });
+      this.allCharts.forEach(c => { if (c !== ch) try { c.timeScale().setVisibleRange(r); } catch (e) {} });
       this.syncing = false;
     });
   }
@@ -87,7 +136,7 @@ export class ChartController {
     const lab = document.createElement("div"); lab.className = "plabel"; lab.textContent = label;
     const el = document.createElement("div"); el.className = "pchart";
     wrap.appendChild(lab); wrap.appendChild(el); this.panesEl.appendChild(wrap);
-    const ch = LW.createChart(el, Object.assign(baseOpts(), { rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.2, bottom: 0.1 } } }));
+    const ch = LW.createChart(el, Object.assign(baseOpts(), { rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.2, bottom: 0.1 }, minimumWidth: AXIS_MIN_WIDTH } }));
     const series = {};
     if (name === "rsi") {
       series.line = ch.addLineSeries({ color: VWAPC, lineWidth: 1.5, priceLineVisible: false });
@@ -189,7 +238,11 @@ export class ChartController {
     if (P.macd) {
       const { m, sig, hist } = macd(closes);
       P.macd.series.macd.setData(pair(times, m)); P.macd.series.sig.setData(pair(times, sig));
-      P.macd.series.hist.setData(times.map((t, i) => hist[i] == null ? null : { time: t, value: hist[i], color: hist[i] >= 0 ? rgba(GREEN, .7) : rgba(RED, .7) }).filter(Boolean));
+      // Whitespace `{time:t}` for warm-up bars keeps the histogram length equal
+      // to the main chart's bar count, so logical-range sync stays aligned.
+      P.macd.series.hist.setData(times.map((t, i) => hist[i] == null
+        ? { time: t }
+        : { time: t, value: hist[i], color: hist[i] >= 0 ? rgba(GREEN, .7) : rgba(RED, .7) }));
       const pm = pair(times, m); P.macd.valAt = new Map(pm.map(x => [x.time, x.value]));
       const lm = [...m].reverse().find(x => x != null), ls = [...sig].reverse().find(x => x != null);
       P.macd.labelEl.textContent = `MACD${lm != null ? " " + lm.toFixed(2) : ""}${ls != null ? "  Sig " + ls.toFixed(2) : ""}`;

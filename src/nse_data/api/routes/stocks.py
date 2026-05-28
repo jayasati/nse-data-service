@@ -47,6 +47,12 @@ def history(symbol: str, interval: str = Query("1d"),
     return _run(lambda: svc.history(symbol, interval, days))
 
 
+@router.get("/{symbol}/indicators")
+def indicators(symbol: str, days: int = Query(365, ge=1, le=6000),
+               svc: StockService = Depends(get_service)) -> JSONResponse:
+    return _run(lambda: svc.indicators(symbol, days))
+
+
 @router.get("/{symbol}/meta")
 def meta(symbol: str, svc: StockService = Depends(get_service)) -> JSONResponse:
     return _run(lambda: svc.meta(symbol))

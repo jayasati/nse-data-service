@@ -12,6 +12,13 @@ let current = null, tf = "1D", mode = "area", lastBars = [];
 const overlays = { vwap: false, ema20: false, ema50: false, ema200: false, bb: false };
 let wl = new Set(JSON.parse(localStorage.getItem("nse_watchlist") || "[]"));
 
+// Server-side indicators state. `data` is the last /indicators payload for
+// the current symbol; `enabled` is the set of "indicator.column" keys the
+// user has toggled on. Persisted across symbol switches so the user doesn't
+// lose their preferred overlays.
+const srv = { data: null, enabled: new Set(JSON.parse(localStorage.getItem("nse_srv_overlays") || "[]")) };
+const saveSrv = () => localStorage.setItem("nse_srv_overlays", JSON.stringify([...srv.enabled]));
+
 const MODES = ["area", "candle", "ha"];
 const MODE_LABEL = { area: "📈 Line", candle: "📊 Candle", ha: "📊 Heikin-Ashi" };
 const OV_COLOR = { vwap: "#7c6cdb", ema20: "#f59e0b", ema50: "#3b82f6", ema200: "#ec4899", bb: "#94a3b8" };
@@ -19,7 +26,13 @@ const STUDY_LABEL = { rsi: "RSI 14", macd: "MACD", adx: "ADX", chop: "CHOP" };
 
 // timeframe -> {interval, days} fetch plan.
 function plan() {
-  if (tf === "1D") return mode === "area" ? { interval: "1m", days: 4 } : { interval: "5m", days: 4 };
+  // 1D always uses 5-minute bars regardless of render mode. Previously Line
+  // mode used 1-min bars and Candle used 5-min, which silently changed the
+  // basis of every indicator (RSI, MACD, ADX) — RSI 14 on 1-min bars covers
+  // only the last 14 minutes, vs the 70-minute window that TradingView/Groww
+  // show on a 5-min chart. Sticking to 5-min keeps our indicators comparable
+  // with Groww/TV at the same wall-clock moment.
+  if (tf === "1D") return { interval: "5m", days: 4 };
   const d = { "1W": 7, "1M": 23, "3M": 66, "6M": 132, "1Y": 260, "3Y": 1100, "5Y": 1900, "All": 6000 }[tf] || 260;
   return { interval: "1d", days: d };
 }
@@ -38,7 +51,90 @@ async function loadChart() {
   }
   const info = chart.render(lastBars, mode);
   chart.drawIndicators(lastBars, tf, overlays);
+  drawSrvOverlays();
   $("syminfo").innerHTML = `${info.count} bars · <span class="${info.up ? "up" : "down"}">${info.chg >= 0 ? "+" : ""}${info.chg.toFixed(1)}%</span> over ${tf}`;
+}
+
+// ---- server-computed indicator overlays ----
+// Server indicators are daily (`date` strings). Only show on 1d/1w timeframes
+// where the chart's time axis matches; on intraday tf clear all lines.
+// (1D timeframe is intraday minute data — see plan() — so we exclude it.)
+const tfIsDaily = () => ["1W","1M","3M","6M","1Y","3Y","5Y","All"].includes(tf);
+
+async function loadSrvIndicators() {
+  srv.data = null;
+  if (!current) { renderSrvButtons(); return; }
+  // Request the same date span the chart shows (with a small headroom so the
+  // SMA line reaches the leftmost candle). Avoids sending years of indicator
+  // history when the chart only renders 6 months.
+  const pl = plan();
+  const days = pl.interval === "1d" ? pl.days + 5 : 5;
+  try { srv.data = await Api.indicators(current, days); }
+  catch (e) { srv.data = null; }
+  renderSrvButtons();
+  drawSrvOverlays();
+}
+
+// Build one toggle button per (indicator, column) returned by the endpoint.
+// Indicator order follows the registry; column order follows the indicator's
+// output_columns tuple. New backend indicators show up here automatically.
+//
+// On intraday timeframes (1D) the chart axis is epoch seconds while server
+// indicators carry date strings — they can't align, so we show a one-liner
+// hint instead of buttons that would silently do nothing when clicked.
+function renderSrvButtons() {
+  const box = $("srv-indicators"); box.innerHTML = "";
+  if (!srv.data || !srv.data.indicators) return;
+  if (!tfIsDaily()) {
+    box.innerHTML = `<span style="color:var(--dim);font-size:.8em;align-self:center;padding:0 4px;">daily SMAs — switch to 1W+</span>`;
+    return;
+  }
+  let idx = 0;
+  for (const [name, block] of Object.entries(srv.data.indicators)) {
+    for (const col of block.columns) {
+      const key = `${name}.${col}`;
+      const color = chart.srvColor(idx++);
+      const on = srv.enabled.has(key);
+      const btn = document.createElement("button");
+      btn.textContent = col.toUpperCase();
+      btn.title = `${name} → ${col} (server)`;
+      btn.classList.toggle("on", on);
+      if (on) { btn.style.background = color; btn.style.borderColor = color; }
+      btn.onclick = () => toggleSrv(key, color, btn);
+      box.appendChild(btn);
+    }
+  }
+}
+
+function toggleSrv(key, color, btn) {
+  if (srv.enabled.has(key)) { srv.enabled.delete(key); btn.classList.remove("on"); btn.style.background = ""; btn.style.borderColor = ""; }
+  else { srv.enabled.add(key); btn.classList.add("on"); btn.style.background = color; btn.style.borderColor = color; }
+  saveSrv(); drawSrvOverlays();
+}
+
+// Convert server payload → lightweight-charts series data, filter NaN/null,
+// then push to the chart. On intraday timeframes clear everything (date
+// strings won't align with epoch-second bars).
+function drawSrvOverlays() {
+  if (!srv.data || !srv.data.indicators) return;
+  if (!tfIsDaily()) { chart.clearServerSeries(); return; }
+  // Clip indicator dates to the chart's candle range — otherwise older SMA
+  // values stretch lightweight-charts' time axis to the left, beyond the
+  // first candle, which reads as "broken" on the page.
+  const candleDates = new Set(lastBars.map(b => b.time));
+  if (!candleDates.size) { chart.clearServerSeries(); return; }
+  let idx = 0;
+  for (const [name, block] of Object.entries(srv.data.indicators)) {
+    for (const col of block.columns) {
+      const key = `${name}.${col}`;
+      const color = chart.srvColor(idx++);
+      if (!srv.enabled.has(key)) { chart.hideServerSeries(key); continue; }
+      const pts = block.points
+        .filter(p => p[col] != null && isFinite(p[col]) && candleDates.has(p.date))
+        .map(p => ({ time: p.date, value: p[col] }));
+      chart.showServerSeries(key, pts, color);
+    }
+  }
 }
 
 async function loadMeta() {
@@ -75,7 +171,7 @@ async function loadMeta() {
   updateStar();
 }
 
-function select(sym) { current = sym; $("empty").style.display = "none"; loadChart(); loadMeta(); updateStar(); }
+function select(sym) { current = sym; $("empty").style.display = "none"; loadChart(); loadMeta(); loadSrvIndicators(); updateStar(); }
 
 // ---- watchlist (per-stock star) ----
 const saveWl = () => localStorage.setItem("nse_watchlist", JSON.stringify([...wl]));
@@ -99,7 +195,7 @@ $("tfs").onclick = e => {
   tf = e.target.dataset.t;
   document.querySelectorAll("#tfs button").forEach(b => b.classList.toggle("on", b === e.target));
   $("tftag").textContent = tf;
-  if (current) loadChart();
+  if (current) { loadChart(); loadSrvIndicators(); }
 };
 $("termBtn").onclick = () => {
   const on = document.body.classList.toggle("terminal");

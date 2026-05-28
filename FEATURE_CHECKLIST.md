@@ -200,14 +200,25 @@ Working inventory of every capability the system needs, mapped against current b
 
 ### Technical Indicators
 
-- 📋 `indicators/compute.py` nightly job from `raw_bhavcopy_cm`
-- 📋 Trend: SMA 20/50/200, EMA 9/21
+- ✅ `indicators/compute.py` nightly job from `raw_bhavcopy_cm`
+- 🚧 Trend: SMA 20/50/200 ✅, EMA 9/21 📋
 - 📋 Momentum: RSI 14, MACD + signal + histogram
 - 📋 Volatility: ATR 14, Bollinger Bands (upper/lower/width)
 - 📋 Trend strength: ADX 14, DI+, DI−
 - 📋 Volume: volume SMA 20, OBV, volume ratio
-- 📋 Use `pandas-ta` for the 130+ indicator library
-- 📋 Per-stock incremental compute (don't recompute history nightly)
+- ✅ Use `pandas-ta-classic` (numpy-2 compatible fork) for the 130+ indicator library
+- ✅ Per-stock incremental compute (don't recompute history nightly)
+- 📋 **Supertrend** — primary trend-flip signal (xyz "Best Trend Following Setup"). ATR-based; cleaner than EMA crosses on Indian large-caps.
+- 📋 **Stochastic RSI** — fast momentum reversals on top of RSI 14
+- 📋 **Parabolic SAR** — trailing-stop / trend-reversal layer
+- 📋 **Pivot Points** (daily + weekly classical) — S/R levels for intraday rules
+- 📋 **Donchian Channels** (20-bar) — breakout signal substrate
+- 📋 **Keltner Channels** — volatility-trend envelope; pairs with BB for squeeze detection
+- 📋 **CMF** (Chaikin Money Flow), **Volume Delta**, **Cumulative Volume Delta** — order-flow proxies on top of bhavcopy + intraday candles
+- 📋 **Volume Profile** (per session: POC, value-area-high/low) — intraday S/R from `raw_intraday_candles`
+- 📋 **Ichimoku Cloud** — advanced trend + S/R, single-indicator multi-signal (defer to last; signal-dense)
+- 🔬 Hull MA / McGinley Dynamic — research-only smoothers; track if EMA9/21 underperforms on volatile mid-caps
+- 📋 **Dynamic indicator thresholds** — RSI/MACD thresholds adapt to volatility regime (e.g. RSI 80 still bullish in strong trends, RSI 65 already overbought in compression). Per xyz #64.
 
 ### Patterns
 
@@ -215,7 +226,11 @@ Working inventory of every capability the system needs, mapped against current b
 - 📋 Higher-high/higher-low/lower-high/lower-low structural detection
 - 📋 Volume dry-up detection
 - 📋 Support/resistance proximity flags
+- 📋 **Divergence detectors** — RSI–price, MACD–price, OBV–price, volume–price (xyz #54 market exhaustion). Bearish at extension, bullish at flush.
+- 📋 **Trend fatigue / exhaustion score** — composite of divergences + extended-from-EMA + low-ADX-rise. Filters late entries.
+- 📋 **Candlestick pattern library** (hammer, engulfing, doji, marubozu, shooting star, harami) via pandas-ta — feature flags, not standalone signals
 - 🔬 ICT/SMC liquidity zones, fair value gaps, order blocks — research-flag only
+- 🔬 **Candlestick embeddings** (xyz #66) — Phase 9+; learn pattern vectors from raw OHLC without hand-coded rules. Only worth it if hand-coded patterns hit a clear ceiling.
 
 ### Levels
 
@@ -258,6 +273,8 @@ Working inventory of every capability the system needs, mapped against current b
 - 📋 Loss-making / high-debt / pledged flags
 - 📋 Promoter holding / promoter pledge / FII / DII / public split
 - 📋 YoY and QoQ growth rates for revenue, profit, margins
+- 📋 **`delivery_ratio` (India-specific alpha, xyz #20)** — daily `(deliv_qty / traded_qty)` from `raw_bhavcopy_cm` (the SEC field `DELIV_QTY`). High delivery % + breakout + volume spike = strong conviction; the single most-cited feature retail tools miss in India. Add `delivery_ratio_5d_avg`, `delivery_ratio_z` (vs 20d) for regime context.
+- 📋 **Stock DNA / behavior cluster** (xyz #27) — `stock_behavior_cluster` ∈ {momentum, mean_reverting, defensive, high_beta, operator_driven}. Computed quarterly from 1Y price-action stats (autocorr, vol-of-vol, gap frequency, circuit-hit count). Routes strategy selection.
 
 ---
 
@@ -336,6 +353,9 @@ Working inventory of every capability the system needs, mapped against current b
 - 📋 `liquidity_grab_long`, `liquidity_grab_short`
 - 📋 `climax_top`, `capitulation_bottom`
 - 📋 `dead_cat_bounce`
+- 📋 **`liquidity_quality_score`** (xyz #78) — composite from `(spread_bps, avg_volume_20d, depth_proxy, impact_cost_estimate)`. Hard gate on the universe: low score → no intraday signal at all. Spread/depth need top-of-book; until then approximate with `(high-low) / close` and turnover.
+- 📋 **`accumulation_score` / `distribution_score`** (xyz #19) — derived from `(delivery_ratio_z, OBV_slope_20d, price_range_compression, volume_trend)`. Captures smart-money buildup during sideways action — a setup that precedes most Indian mid-cap breakouts.
+- 📋 **`pump_dump_score` / `manipulation_probability`** (xyz #21) — flags `(low fundamentals + abnormal volume + repeated upper circuits + huge candle + low free float)`. Cross-checks against `blacklist` SQL view (GSM/ASM/Unsolicited already collected). Hard exclude from longs when score crosses threshold.
 
 ### Multi-Timeframe Confluence Gate
 
@@ -352,6 +372,9 @@ Working inventory of every capability the system needs, mapped against current b
 - 📋 MAE / MFE per signal (research Pillar 3 — distributions drive optimal SL/TP)
 - 📋 `paper_trades` table — every alert logged as if traded
 - 📋 Hit-1pct-target-by-2h, hit-stop-by-2h binary outcomes
+- 📋 **Survival / holding-time labels** (xyz #17) — `holding_time_until_unprofitable`, `optimal_exit_time`. Cox model or Kaplan-Meier on the same paper_trades feed. Drives the Exit Intelligence model.
+- 📋 **Missed-alpha labeling** (xyz #30) — sweep every (symbol, bar) pair where the rule engine *didn't* fire but a triple-barrier label says it should have. Capture the feature snapshot at that bar — these are the training negatives for "should we have alerted?".
+- 📋 **Drawdown-conditional labels** (xyz #94) — `predicted_max_adverse_excursion`. Regression head alongside the classification, so the explainability card can quote "expected DD: −1.2%".
 
 ### Labeling — Production Methods (from research)
 
@@ -374,6 +397,9 @@ Working inventory of every capability the system needs, mapped against current b
 - 📋 **LightGBM** as primary (one model per signal type, never one mega-model)
 - 📋 CatBoost backup for high-cardinality categoricals
 - 📋 Logistic regression baseline on top features (sanity check)
+- 📋 **Sector-conditional models** (xyz #81) — same architecture, but train banks/IT/pharma/PSU as separate heads when one universal model shows residual sector-clustered errors. Don't pre-split; let the data demand it.
+- 📋 **Earnings-drift model** (xyz #84) — dedicated signal class for post-result PEAD (Post-Earnings-Announcement Drift). Features: surprise vs consensus (from `raw_integrated_filings` deltas), Day-0 reaction, gap behaviour, delivery_ratio. Indian PEAD is well-documented and underexploited at retail.
+- 📋 **Exit-intelligence model** (xyz #71) — separate model from entry; predicts {hold, partial, trail, full-exit} per bar given the open position's MAE/MFE/regime context. Most retail systems only optimize entry.
 - 🔬 Transformers / TFT / N-BEATS — research doc explicitly says skip; 10× compute mistake for tabular intraday
 - 🔬 Reinforcement learning (entry/exit/sizing) — FinRL contest organizers themselves flag policy instability; Phase 9+ only, and only for execution slicing
 - 🔬 Genetic algorithm strategy search — high overfit risk, no Indian benchmark
@@ -399,6 +425,14 @@ Working inventory of every capability the system needs, mapped against current b
 - 📋 NannyML for univariate + multivariate drift + performance estimation without ground truth
 - 📋 Monthly minimum retraining; PSI breach triggers immediate retrain
 - 📋 Challenger model in shadow mode for 2 weeks before promotion
+- 📋 **Regime-specific feature importance** (xyz #63) — track SHAP importance separately for trending / sideways / high-vol windows. When importance ranks invert across regimes, it's a hint to gate the feature on `market_regime` rather than feed it raw.
+- 📋 **Strategy decay detector / meta-alpha layer** (xyz #42, #68) — `strategy_decay_score` per signal type, rolling. When a strategy's score falls below threshold, auto-disable and route capital to the next-best strategy for the current regime. Pairs with the existing model-registry `is_production` flag.
+
+### Counterfactual & Trade Journal Intelligence
+
+- 📋 **Counterfactual attribution** (xyz #31) — post-mortem per losing trade: which features turned against the prediction? Shows users "Trade lost because: NIFTY weakened, breakout volume insufficient, sector flow reversed."
+- 📋 **Trade journal mining** (xyz #44) — auto-cluster losses by `(strategy, regime, time-of-day)` to surface patterns ("Breakout trades failing this month because low-volume regime"). Runs weekly off `paper_trades`.
+- 📋 **Active learning loop** (xyz #91) — surface uncertain setups (entropy near 0.5) for human review; their labels become priority training data. Closes the loop with the human in it for the next 6–12 months.
 
 ### Feature Engineering Hygiene
 
@@ -522,6 +556,12 @@ Working inventory of every capability the system needs, mapped against current b
 - 📋 Per-setup MFE distribution → target you're leaving on the table
 - 📋 Per-trade attribution: SHAP delta of features → P&L
 
+### Portfolio-Level Risk
+
+- 📋 **Portfolio stress test** (xyz #87) — simulate `(NIFTY −3%, BankNifty −5%, USDINR +1%)` shocks across open positions; surface concentration risk before it shows up live.
+- 📋 **Risk-of-ruin computation** (xyz #88) — given current edge + Kelly fraction, probability of drawing down 25% / 50% in N trades. Reported on the dashboard, not just per-trade.
+- 📋 **Sector-allocation optimizer / "hedge fund mode"** (xyz #49) — given the day's signal queue, choose the subset that maximizes expected risk-adjusted return under sector-exposure + correlation constraints. Replaces naive top-N watchlist with a portfolio-aware ranking.
+
 ### Overnight Hedge
 
 - 📋 OTM Nifty put (delta ≈ −0.30) for ~1% of position notional on overnight holds
@@ -600,7 +640,20 @@ Working inventory of every capability the system needs, mapped against current b
 
 ---
 
-## 17. Documentation Hygiene
+## 17. Research Infrastructure (the moat layer)
+
+The xyz brainstorm circles back to one truth: at this scale, the edge isn't *which strategy* — it's having infrastructure to test ideas faster than anyone else and to know when one has decayed. Build these *after* Layer 6 ships and you have ≥3 months of labelled outcomes; building them earlier is premature.
+
+- 📋 **Quant research dashboard** (xyz #100) — strategy-level (not endpoint-level) telemetry: Sharpe, Sortino, Calmar, Profit Factor, Max DD, Win Rate, Expectancy per strategy × per regime, rolling. Distinct from §15 ops dashboard which is about data-pipeline health.
+- 📋 **Strategy health scoreboard** (xyz #69) — per-strategy: recent Sharpe / hit-rate / drawdown / consistency / profit-factor with red/amber/green status. Drives the `strategy_decay_score` (§9) and gates whether the strategy can fire today.
+- 📋 **Experiment registry / "second brain"** (xyz #56) — every backtest, feature, model, hyper-param sweep persisted with config + outcome. Eventually queryable: *"which features improved Sharpe ≥ 5% in the last year?"* — research velocity compounds.
+- 🔬 **Alpha factory pipeline** (xyz #57) — `idea → feature → backtest → CPCV → deploy → decay-monitor` as one orchestrated DAG, not a notebook. Only build after the experiment registry exists; without that store, this is just a notebook with extra steps.
+- 🔬 **Autonomous research agent** (xyz #99) — LLM/agent that proposes feature crosses, runs the alpha-factory pipeline, reports findings weekly. Phase 9+ — needs the registry + pipeline first; right now the human is the research agent.
+- 🔬 **Strategy genome / DSL** (xyz #60) — declarative strategy spec (`{trend: EMA20>EMA50, entry: RSI_PULLBACK, sl: ATR, tp: TRAILING}`) so the alpha factory can evolve strategies, not just optimize hyperparams. Tied to genetic-algorithm search (already 🔬-flagged in §9 for overfit risk).
+
+---
+
+## 18. Documentation Hygiene
 
 - ✅ `FINAL_ARCHITECTURE.md` as single source of truth
 - ✅ `LAYER1_2_REFERENCE.md` — contract for downstream layers
@@ -611,7 +664,7 @@ Working inventory of every capability the system needs, mapped against current b
 
 ---
 
-## 18. Phase 9+ Research Backlog (deferred, deliberately not chasing now)
+## 19. Phase 9+ Research Backlog (deferred, deliberately not chasing now)
 
 These are interesting but the research doc / architecture explicitly cautions against doing them now. Re-evaluate after Layer 6 ships and you have 6+ months of labeled outcomes.
 

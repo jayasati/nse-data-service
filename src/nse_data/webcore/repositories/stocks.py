@@ -135,6 +135,29 @@ class StockRepository:
                        debt_to_equity FROM {SCREENER}
                 WHERE symbol = ? ORDER BY captured_at DESC LIMIT 1""", (symbol,))
 
+    # ---- computed daily indicators (indicator_* tables) ----
+    def indicator_rows(
+        self, table: str, symbol: str, columns: tuple[str, ...], days: int,
+    ) -> list[sqlite3.Row]:
+        """
+        Return up to `days` of indicator output for `symbol`, oldest-first.
+
+        Caller supplies the table name + column list from the registered
+        Indicator's metadata — both are pre-validated (Indicator subclasses
+        own them at import time), so a `_safe_ident` pass keeps SQL injection
+        impossible even if the registry ever grows untrusted input.
+        """
+        if not self.has_table(table):
+            return []
+        safe_table = _safe_ident(table)
+        safe_cols = ",".join(_safe_ident(c) for c in columns)
+        rows = self.conn.execute(
+            f"""SELECT date, {safe_cols} FROM {safe_table}
+                WHERE symbol = ? ORDER BY date DESC LIMIT ?""",
+            (symbol, days),
+        ).fetchall()
+        return list(reversed(rows))
+
     # ---- raw table preview (health page drill-down) ----
     def table_recent(self, name: str, limit: int) -> tuple[str, list[dict]]:
         ts_col, _ = detect_ts_column(self.conn, name)

@@ -2,8 +2,28 @@ Metadata-Version: 2.4
 Name: nse-data-service
 Version: 0.1.0
 Requires-Python: >=3.11
-Requires-Dist: httpx>=0.27
+Requires-Dist: httpx[brotli]>=0.27
 Requires-Dist: pydantic>=2.0
 Requires-Dist: pyyaml>=6.0
+Requires-Dist: structlog>=24.1
+Requires-Dist: pymupdf>=1.24
+Requires-Dist: apscheduler>=3.10
+Requires-Dist: pdfplumber>=0.11
+Requires-Dist: openai>=1.0
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: openpyxl>=3.1
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
+Provides-Extra: redis
+Requires-Dist: redis>=5.0; extra == "redis"
+Provides-Extra: dashboard
+Requires-Dist: fastapi>=0.110; extra == "dashboard"
+Requires-Dist: uvicorn[standard]>=0.29; extra == "dashboard"
+Provides-Extra: broker
+Requires-Dist: growwapi>=0.1; extra == "broker"
+Requires-Dist: pyotp>=2.9; extra == "broker"
+Requires-Dist: kiteconnect>=4.2; extra == "broker"
+Provides-Extra: indicators
+Requires-Dist: pandas>=2.0; extra == "indicators"
+Requires-Dist: numpy<2; extra == "indicators"
+Requires-Dist: pandas-ta>=0.3.14b; extra == "indicators"

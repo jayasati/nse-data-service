@@ -56,6 +56,11 @@
           <button data-o="bb">Bollinger</button>
         </div>
         <span class="sep"></span>
+        <!-- Server-computed indicators from indicator_* tables. Buttons are
+             rendered dynamically from /api/stocks/{symbol}/indicators so every
+             new Indicator registered in the backend shows up here automatically. -->
+        <div class="chips" id="srv-indicators" title="Server-computed indicators"></div>
+        <span class="sep"></span>
         <div class="chips" id="studies">
           <button data-s="rsi">RSI</button>
           <button data-s="macd">MACD</button>

@@ -118,6 +118,36 @@ class StockService:
                         candles.append(lc)
         return candles
 
+    # ---------------------------------------------------------- indicators
+    def indicators(self, symbol: str, days: int) -> dict:
+        """
+        Daily computed-indicator series for `symbol`, registry-driven.
+
+        Every Indicator registered in nse_data.indicators.registry contributes
+        one block of the form
+            {name: {"table": ..., "columns": [...], "points": [{date, ...}]}}
+        Dashboard reads this and renders one overlay per (indicator, column),
+        so adding a new indicator on the backend automatically surfaces on
+        the chart without further wiring.
+        """
+        from ...indicators.registry import INDICATORS  # local import: optional dep
+
+        symbol = symbol.upper()
+        out: dict[str, dict] = {}
+        for ind in INDICATORS:
+            rows = self.repo.indicator_rows(ind.table, symbol, ind.output_columns, days)
+            points = [
+                {"date": r["date"], **{c: r[c] for c in ind.output_columns}}
+                for r in rows
+            ]
+            out[ind.name] = {
+                "table": ind.table,
+                "columns": list(ind.output_columns),
+                "count": len(points),
+                "points": points,
+            }
+        return {"symbol": symbol, "interval": "1d", "indicators": out}
+
     # ----------------------------------------------------------------- meta
     def meta(self, symbol: str) -> dict:
         symbol = symbol.upper()

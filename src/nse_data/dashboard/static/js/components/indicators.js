@@ -99,10 +99,18 @@ export function heikin(b) {
   return o;
 }
 
-// align a values array to times, dropping null/non-finite points.
+// Align a values array to times. Null/non-finite slots become whitespace
+// points (`{time}` with no value) instead of being dropped, so the resulting
+// series has the same length as the input times. Lightweight-charts treats
+// whitespace as "no value at this bar" — the line draws a gap, but the bar
+// index is preserved. Critical: it keeps every sub-pane's bar count equal to
+// the main chart's, so logical-range sync stays in lockstep across panes.
 export const pair = (times, vals) => {
-  const o = [];
-  for (let i = 0; i < times.length; i++)
-    if (vals[i] != null && isFinite(vals[i])) o.push({ time: times[i], value: vals[i] });
+  const o = new Array(times.length);
+  for (let i = 0; i < times.length; i++) {
+    o[i] = (vals[i] != null && isFinite(vals[i]))
+      ? { time: times[i], value: vals[i] }
+      : { time: times[i] };
+  }
   return o;
 };
