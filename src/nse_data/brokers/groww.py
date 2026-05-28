@@ -21,6 +21,7 @@ import os
 import time
 import warnings
 from datetime import date, datetime, timedelta
+from typing import cast
 
 try:
     from dotenv import load_dotenv
@@ -40,8 +41,8 @@ _WINDOW_DAYS = {
     "minute": 7, "3minute": 12, "5minute": 15, "10minute": 30,
     "15minute": 45, "30minute": 90, "60minute": 150, "day": 1000,
 }
-_RATE_SLEEP = 0.4   # between successful requests
-_MAX_RETRIES = 5    # on rate-limit / transient errors
+_RATE_SLEEP = 1.0   # between successful requests
+_MAX_RETRIES = 10   # on rate-limit / transient errors
 
 
 def _is_rate_limit(e: Exception) -> bool:
@@ -81,9 +82,10 @@ def _token() -> str:
             import pyotp
         except ImportError as e:
             raise GrowwError("pyotp needed for TOTP — `pip install pyotp`") from e
-        return GrowwAPI.get_access_token(api_key, totp=pyotp.TOTP(totp_secret).now())
+        # SDK's annotation says -> dict, but it actually returns the token string.
+        return cast(str, GrowwAPI.get_access_token(api_key, totp=pyotp.TOTP(totp_secret).now()))
     if api_secret:
-        return GrowwAPI.get_access_token(api_key, secret=api_secret)
+        return cast(str, GrowwAPI.get_access_token(api_key, secret=api_secret))
     raise GrowwError("set GROWW_ACCESS_TOKEN, or GROWW_API_KEY + GROWW_TOTP_SECRET")
 
 
@@ -153,6 +155,7 @@ def fetch_symbol(symbol: str, interval: str, start: date, end: date) -> list[dic
         win_end = min(cur + window - timedelta(days=1), end)
         s = f"{cur:%Y-%m-%d} 00:00:00"
         e = f"{win_end:%Y-%m-%d} 23:59:59"
+        payload = None
         for attempt in range(_MAX_RETRIES):
             try:
                 with warnings.catch_warnings():       # silence v1-deprecation notice
@@ -162,7 +165,10 @@ def fetch_symbol(symbol: str, interval: str, start: date, end: date) -> list[dic
                 break
             except Exception as ex:
                 if _is_rate_limit(ex) and attempt < _MAX_RETRIES - 1:
-                    time.sleep(2 ** (attempt + 1))    # 2,4,8,16s backoff
+                    # Linear backoff capped at 60s — Groww's minute-rate window
+                    # resets within ~60s, so this rides through instead of
+                    # blowing past it like 2^N did at attempt 6+.
+                    time.sleep(min(60, 5 * (attempt + 1)))
                     continue
                 raise
         candles = (payload or {}).get("candles") or []

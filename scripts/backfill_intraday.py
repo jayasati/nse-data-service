@@ -26,11 +26,11 @@ import argparse
 import sys
 from datetime import date, timedelta
 
-from nse_data.brokers import kite, groww
+from nse_data.brokers import kite, groww, yfinance as yfin
 from nse_data.storage.db import open_db
 
 DB_PATH = "data/nse.db"
-BROKERS = {"kite": kite, "groww": groww}
+BROKERS = {"kite": kite, "groww": groww, "yfinance": yfin}
 
 
 def _universe(conn, args) -> list[str]:
@@ -49,16 +49,16 @@ def _universe(conn, args) -> list[str]:
     raise SystemExit("specify --symbols, --top N, or --fno")
 
 
-def _store(conn, symbol: str, interval: str, candles: list[dict]) -> int:
+def _store(conn, symbol: str, interval: str, candles: list[dict], source: str) -> int:
     if not candles:
         return 0
     cur = conn.cursor()
     cur.executemany(
         "INSERT OR IGNORE INTO raw_intraday_candles "
         "(symbol, interval, ts, open, high, low, close, volume, source) "
-        "VALUES (?,?,?,?,?,?,?,?, 'kite')",
+        "VALUES (?,?,?,?,?,?,?,?,?)",
         [(symbol, interval, c["ts"], c["open"], c["high"], c["low"],
-          c["close"], c["volume"]) for c in candles],
+          c["close"], c["volume"], source) for c in candles],
     )
     conn.commit()
     return cur.rowcount if cur.rowcount and cur.rowcount > 0 else len(candles)
@@ -112,7 +112,7 @@ def cmd_run(args) -> int:
                 continue
         try:
             candles = broker.fetch_symbol(sym, args.interval, start, end)
-            n = _store(conn, sym, args.interval, candles)
+            n = _store(conn, sym, args.interval, candles, args.broker)
             total += n
             print(f"  [{i}/{len(symbols)}] {sym:14} {len(candles):6} candles ({n} new)")
         except Exception as e:  # keep going on per-symbol API hiccups
@@ -173,7 +173,8 @@ def main() -> int:
     pp.add_argument("--interval", default="minute")
     pp.add_argument("--top", type=int, help="target count to show as denominator")
     pr = sub.add_parser("run")
-    pr.add_argument("--broker", default="groww", choices=list(BROKERS.keys()))
+    pr.add_argument("--broker", default="groww", choices=list(BROKERS.keys()),
+                    help="groww (default), kite (paid Connect), or yfinance (no auth, last ~60d)")
     pr.add_argument("--symbols", help="comma-separated, e.g. RELIANCE,TCS")
     pr.add_argument("--top", type=int, help="top N by latest turnover")
     pr.add_argument("--fno", action="store_true", help="all F&O symbols")

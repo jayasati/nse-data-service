@@ -26,7 +26,7 @@ import os
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 try:
     from dotenv import load_dotenv
@@ -82,7 +82,8 @@ def login_url() -> str:
 def exchange_request_token(request_token: str) -> str:
     """Exchange a fresh request_token for an access_token (valid for the day)."""
     kc = _connect(with_token=False)
-    data = kc.generate_session(request_token, api_secret=_require("KITE_API_SECRET"))
+    # kiteconnect ships no type stubs; runtime returns a dict.
+    data = cast(dict[str, Any], kc.generate_session(request_token, api_secret=_require("KITE_API_SECRET")))
     return data["access_token"]
 
 
