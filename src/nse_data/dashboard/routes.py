@@ -26,3 +26,8 @@ def index() -> FileResponse:
 @router.get("/stocks", include_in_schema=False)
 def stocks() -> FileResponse:
     return FileResponse(PAGES_DIR / "stocks.html")
+
+
+@router.get("/backtest", include_in_schema=False)
+def backtest() -> FileResponse:
+    return FileResponse(PAGES_DIR / "backtest.html")

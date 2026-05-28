@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backtest — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/backtest.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Backtest</h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right">
+      <label class="seg">
+        <span class="seg-label">P&amp;L</span>
+        <button class="seg-btn on" id="modeLeveraged">Leveraged</button>
+        <button class="seg-btn"    id="modeRaw">Raw</button>
+      </label>
+      <select id="runPicker" class="picker"></select>
+      <a class="link" href="/stocks">Stocks →</a>
+      <button class="icon" id="themeBtn" title="Toggle light/dark">☀</button>
+    </div>
+  </header>
+
+  <section class="cards" id="cards">
+    <div class="card"><div class="card-label">Signals</div><div class="card-val" id="cSignals">—</div></div>
+    <div class="card"><div class="card-label">Trades</div><div class="card-val" id="cTrades">—</div></div>
+    <div class="card"><div class="card-label">Win rate</div><div class="card-val" id="cWinRate">—</div></div>
+    <div class="card"><div class="card-label">Wins / Losses</div><div class="card-val" id="cWL">—</div></div>
+    <div class="card"><div class="card-label">P&amp;L</div><div class="card-val" id="cPnl">—</div></div>
+    <div class="card"><div class="card-label">Max DD (raw)</div><div class="card-val" id="cDD">—</div></div>
+  </section>
+
+  <section class="curve-wrap">
+    <div class="section-head">Equity curve</div>
+    <div id="curve"></div>
+  </section>
+
+  <section class="splits">
+    <div class="split">
+      <div class="section-head">
+        <span>By symbol</span>
+        <span class="dim" id="bySymCount"></span>
+      </div>
+      <div class="tablewrap">
+        <table id="bySymTable">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort="symbol">Symbol</th>
+              <th class="num sortable" data-sort="trades">Trades</th>
+              <th class="num sortable" data-sort="wins">W</th>
+              <th class="num sortable" data-sort="losses">L</th>
+              <th class="num sortable" data-sort="win_rate">Win%</th>
+              <th class="num sortable" data-sort="pnl_leveraged">P&amp;L lev</th>
+            </tr>
+          </thead>
+          <tbody id="bySymBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="section-head">
+        <span>Trades</span>
+        <span class="dim" id="tradeFilter"></span>
+      </div>
+      <div class="tablewrap">
+        <table id="tradesTable">
+          <thead>
+            <tr>
+              <th>Symbol</th><th>Dir</th>
+              <th>Entry</th><th class="num">Px</th>
+              <th>Exit</th><th class="num">Px</th>
+              <th>Reason</th>
+              <th class="num">P&amp;L</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">
+    Run the backtester from the CLI:
+    <code>PYTHONPATH=src python scripts/run_backtest.py --commit</code>
+  </div>
+
+  <script type="module" src="/static/js/pages/backtest.js"></script>
+</body>
+</html>
