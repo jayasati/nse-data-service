@@ -119,36 +119,51 @@ class StockService:
         return candles
 
     # ---------------------------------------------------------- indicators
-    def indicators(self, symbol: str, days: int) -> dict:
+    def indicators(self, symbol: str, limit: int, *, cadence: str | None = None) -> dict:
         """
-        Daily computed-indicator series for `symbol`, registry-driven.
+        Computed-indicator series for `symbol`, registry-driven.
 
         Every Indicator registered in nse_data.indicators.registry contributes
         one block of the form
-            {name: {"table": ..., "columns": [...], "points": [{date, ...}]}}
-        Dashboard reads this and renders one overlay per (indicator, column),
-        so adding a new indicator on the backend automatically surfaces on
-        the chart without further wiring.
+            {name: {table, columns, pane, cadence, points: [{<time>, <cols...>}]}}
+        Dashboard filters by `block.cadence` to match the chart's timeframe
+        and reads `block.pane` to decide overlay vs sub-pane rendering.
+
+        For intraday indicators the `ts` is shifted by IST_OFFSET on the way
+        out so lightweight-charts (a UTC time scale) displays IST wall-clock
+        — same convention `_backfill_candles` uses for the price bars.
+
+        `limit` caps rows per indicator (most-recent first then reversed).
+        `cadence`, if set, filters the registry to one cadence — useful when
+        the dashboard knows it's on intraday vs daily already.
         """
         from ...indicators.registry import INDICATORS  # local import: optional dep
 
         symbol = symbol.upper()
         out: dict[str, dict] = {}
         for ind in INDICATORS:
-            rows = self.repo.indicator_rows(ind.table, symbol, ind.output_columns, days)
+            if cadence is not None and ind.cadence != cadence:
+                continue
+            time_col = ind.pk_cols[1]
+            rows = self.repo.indicator_rows(
+                ind.table, symbol, time_col, ind.output_columns, limit,
+            )
+            offset = IST_OFFSET if time_col == "ts" else 0
             points = [
-                {"date": r["date"], **{c: r[c] for c in ind.output_columns}}
+                {time_col: (r[time_col] + offset) if offset else r[time_col],
+                 **{c: r[c] for c in ind.output_columns}}
                 for r in rows
             ]
             out[ind.name] = {
                 "table": ind.table,
                 "columns": list(ind.output_columns),
-                "pane": ind.pane,         # "overlay" → ride price scale; "oscillator" → sub-pane
+                "pane": ind.pane,
                 "cadence": ind.cadence,
+                "time_key": time_col,         # frontend uses this to read points
                 "count": len(points),
                 "points": points,
             }
-        return {"symbol": symbol, "interval": "1d", "indicators": out}
+        return {"symbol": symbol, "indicators": out}
 
     # ----------------------------------------------------------------- meta
     def meta(self, symbol: str) -> dict:

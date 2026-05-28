@@ -212,9 +212,9 @@ Working inventory of every capability the system needs, mapped against current b
 Locked in 2026-05-28: build the intraday indicator stack + scheduler first, then the signal engine + Telegram, so first alerts can fire *during* market hours instead of only at EOD.
 
 1. ✅ Daily EOD indicators (SMA / RSI / MACD landed; see status below)
-2. 🚧 Intraday RSI 14 — `indicator_rsi_5m(symbol, ts, rsi_14)` off `raw_intraday_candles` + live 1-min feed
-3. 🚧 Intraday MACD — `indicator_macd_5m` parallel to RSI
-4. 🚧 Live indicator scheduler — APScheduler job, every minute 09:15–15:30 IST, universe sweep
+2. ✅ Intraday RSI 14 — `indicator_rsi_5m(symbol, ts, rsi_14)` off `raw_intraday_candles` + live 1-min feed
+3. ✅ Intraday MACD — `indicator_macd_5m` parallel to RSI
+4. ✅ Live indicator scheduler — APScheduler job, every minute, `is_market_open()`-gated, FNO+Nifty500 sweep
 5. 📋 Signal engine reads daily + intraday tables; writes `signals` rows
 6. 📋 Telegram dispatcher reads `signals`, posts + marks dispatched
 
@@ -238,10 +238,10 @@ Locked in 2026-05-28: build the intraday indicator stack + scheduler first, then
 
 ### Technical Indicators — Intraday (5-min, off `raw_intraday_candles` + live feed)
 
-Recomputed every minute during market hours. Today-only retention (yesterday's intraday is dropped after EOD bhavcopy load).
+Recomputed every minute during market hours by `indicators/live_job.py` (APScheduler interval trigger, gated on `is_market_open()`). 30-day rolling retention via `indicators/retention.py` — older rows are dropped nightly. Universe = F&O ∪ Nifty 500 (~500 symbols).
 
-- 📋 RSI 14 intraday — `indicator_rsi_5m`
-- 📋 MACD intraday — `indicator_macd_5m`
+- ✅ RSI 14 intraday — `indicator_rsi_5m`
+- ✅ MACD intraday — `indicator_macd_5m`
 - 📋 Supertrend intraday — for live trend-flip alerts
 - 📋 Donchian breakout intraday — breakout substrate during session
 - 📋 **VWAP** (running, per session) — primary intraday anchor

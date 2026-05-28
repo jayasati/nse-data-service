@@ -15,23 +15,56 @@ import pytest
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
-_BHAVCOPY_MIGRATION = MIGRATIONS_DIR / "003_bhavcopy.sql"
+_INPUT_MIGRATIONS = (
+    MIGRATIONS_DIR / "003_bhavcopy.sql",           # raw_bhavcopy_cm (EOD source)
+    MIGRATIONS_DIR / "025_intraday_candles.sql",   # raw_intraday_candles (intraday source)
+)
 _INDICATOR_MIGRATIONS = (
     MIGRATIONS_DIR / "026_indicator_sma.sql",
     MIGRATIONS_DIR / "027_indicator_rsi.sql",
     MIGRATIONS_DIR / "028_indicator_macd.sql",
+    MIGRATIONS_DIR / "029_indicator_rsi_5m.sql",
+    MIGRATIONS_DIR / "030_indicator_macd_5m.sql",
 )
 
 
 @pytest.fixture
 def indicators_db() -> sqlite3.Connection:
-    """In-memory SQLite with raw_bhavcopy_cm + every indicator_* table."""
+    """In-memory SQLite with every input + indicator table the suite needs."""
     conn = sqlite3.connect(":memory:")
-    conn.executescript(_BHAVCOPY_MIGRATION.read_text())
-    for m in _INDICATOR_MIGRATIONS:
+    for m in _INPUT_MIGRATIONS + _INDICATOR_MIGRATIONS:
         conn.executescript(m.read_text())
     conn.commit()
     return conn
+
+
+def insert_intraday_candles(
+    conn: sqlite3.Connection,
+    symbol: str,
+    closes: list[float],
+    *,
+    start_ts: int,
+    bar_seconds: int = 60,
+    interval: str = "minute",
+) -> list[int]:
+    """Seed N consecutive 1-minute bars for `symbol` in raw_intraday_candles.
+
+    Each bar is a degenerate candle with O=H=L=C. Returns the list of `ts`
+    values used (UTC epoch seconds). The indicator code will resample these
+    1-min bars to 5-min.
+    """
+    timestamps: list[int] = []
+    for i, c in enumerate(closes):
+        ts = start_ts + i * bar_seconds
+        timestamps.append(ts)
+        conn.execute(
+            "INSERT INTO raw_intraday_candles "
+            "(symbol, interval, ts, open, high, low, close, volume) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (symbol, interval, ts, c, c, c, c, 1_000),
+        )
+    conn.commit()
+    return timestamps
 
 
 def insert_bhavcopy(

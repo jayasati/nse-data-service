@@ -14,6 +14,7 @@ import sys
 
 import structlog
 
+from .indicators.live_job import register_live_job
 from .scheduler.catchup import run_due
 from .scheduler.jobs import register_jobs
 from .scheduler.runner import make_runner, make_scheduler
@@ -81,6 +82,10 @@ def main() -> int:
     registered = register_jobs(
         scheduler, endpoints, make_runner(session, db_path, dedup_cache)
     )
+    # Live intraday-indicator compute: every minute during market hours, sweeps
+    # the FNO + Nifty 500 universe, writes to indicator_*_5m. Gated internally
+    # on is_market_open() so off-hours ticks are cheap no-ops.
+    registered.append(register_live_job(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:

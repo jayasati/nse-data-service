@@ -56,20 +56,23 @@ async function loadChart() {
 }
 
 // ---- server-computed indicator overlays ----
-// Server indicators are daily (`date` strings). Only show on 1d/1w timeframes
-// where the chart's time axis matches; on intraday tf clear all lines.
-// (1D timeframe is intraday minute data — see plan() — so we exclude it.)
-const tfIsDaily = () => ["1W","1M","3M","6M","1Y","3Y","5Y","All"].includes(tf);
+// The chart's time axis matches one of two indicator cadences:
+//   • 1D timeframe → intraday 5-min bars (epoch ts + IST_OFFSET)
+//   • 1W+         → daily bars (date strings)
+// We fetch the indicator family that matches the current chart so the time
+// keys align without translation on the client.
+const tfCadence = () => (tf === "1D" ? "intraday" : "eod");
 
 async function loadSrvIndicators() {
   srv.data = null;
   if (!current) { renderSrvButtons(); return; }
-  // Request the same date span the chart shows (with a small headroom so the
-  // SMA line reaches the leftmost candle). Avoids sending years of indicator
-  // history when the chart only renders 6 months.
+  // Request enough rows to fill the chart with a little headroom on the left.
+  // For intraday: chart shows 4 days × ~75 5-min bars = 300, so ask for 400.
+  // For daily: ask for the visible timeframe's days +5.
   const pl = plan();
-  const days = pl.interval === "1d" ? pl.days + 5 : 5;
-  try { srv.data = await Api.indicators(current, days); }
+  const cadence = tfCadence();
+  const limit = cadence === "intraday" ? 400 : pl.days + 5;
+  try { srv.data = await Api.indicators(current, limit, cadence); }
   catch (e) { srv.data = null; }
   renderSrvButtons();
   drawSrvOverlays();
@@ -86,10 +89,9 @@ async function loadSrvIndicators() {
 function renderSrvButtons() {
   const box = $("srv-indicators"); box.innerHTML = "";
   if (!srv.data || !srv.data.indicators) return;
-  if (!tfIsDaily()) {
-    box.innerHTML = `<span style="color:var(--dim);font-size:.8em;align-self:center;padding:0 4px;">daily indicators — switch to 1W+</span>`;
-    return;
-  }
+  // The endpoint already filtered to the right cadence — no client-side check
+  // needed. If the backend has no indicators of this cadence yet (e.g. session
+  // indicators not built), the buttons row will just be empty.
   let idx = 0;
   for (const [name, block] of Object.entries(srv.data.indicators)) {
     if (block.pane === "oscillator") {
@@ -129,39 +131,38 @@ function toggleSrv(key, color, btn) {
 }
 
 // Convert server payload → lightweight-charts series data, filter NaN/null,
-// then push to the chart. On intraday timeframes clear everything (date
-// strings won't align with epoch-second bars).
+// then push to the chart. The payload's `time_key` is `"date"` for EOD
+// indicators (matches daily-bar chart time) or `"ts"` for intraday (already
+// IST-offset by the service so it matches the chart's intraday epoch time).
 function drawSrvOverlays() {
   if (!srv.data || !srv.data.indicators) return;
-  if (!tfIsDaily()) { chart.clearServerSeries(); return; }
-  // Clip indicator dates to the chart's candle range — otherwise older values
-  // stretch lightweight-charts' time axis to the left, beyond the first
-  // candle, which reads as "broken" on the page.
-  const candleDates = new Set(lastBars.map(b => b.time));
-  if (!candleDates.size) { chart.clearServerSeries(); return; }
+  // Clip indicator points to the chart's candle range — otherwise older
+  // values stretch lightweight-charts' time axis past the first candle,
+  // which reads as "broken" on the page.
+  const candleTimes = new Set(lastBars.map(b => b.time));
+  if (!candleTimes.size) { chart.clearServerSeries(); return; }
   let idx = 0;
   for (const [name, block] of Object.entries(srv.data.indicators)) {
+    const tk = block.time_key || "date";
     if (block.pane === "oscillator") {
-      // Oscillator family: one toggle, one sub-pane, all columns inside.
       const key = `${name}.*`;
       const color = chart.srvColor(idx++);
       if (!srv.enabled.has(key)) { chart.hideServerOscillator(name); continue; }
       const pointsByCol = {};
       for (const col of block.columns) {
         pointsByCol[col] = block.points
-          .filter(p => p[col] != null && isFinite(p[col]) && candleDates.has(p.date))
-          .map(p => ({ time: p.date, value: p[col] }));
+          .filter(p => p[col] != null && isFinite(p[col]) && candleTimes.has(p[tk]))
+          .map(p => ({ time: p[tk], value: p[col] }));
       }
       chart.showServerOscillator(name, block.columns, pointsByCol, color);
     } else {
-      // Overlay: one series per column on the price chart.
       for (const col of block.columns) {
         const key = `${name}.${col}`;
         const color = chart.srvColor(idx++);
         if (!srv.enabled.has(key)) { chart.hideServerSeries(key); continue; }
         const pts = block.points
-          .filter(p => p[col] != null && isFinite(p[col]) && candleDates.has(p.date))
-          .map(p => ({ time: p.date, value: p[col] }));
+          .filter(p => p[col] != null && isFinite(p[col]) && candleTimes.has(p[tk]))
+          .map(p => ({ time: p[tk], value: p[col] }));
         chart.showServerSeries(key, pts, color);
       }
     }

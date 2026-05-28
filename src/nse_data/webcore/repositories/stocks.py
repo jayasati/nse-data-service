@@ -135,26 +135,34 @@ class StockRepository:
                        debt_to_equity FROM {SCREENER}
                 WHERE symbol = ? ORDER BY captured_at DESC LIMIT 1""", (symbol,))
 
-    # ---- computed daily indicators (indicator_* tables) ----
+    # ---- computed indicators (indicator_* tables, EOD + intraday) ----
     def indicator_rows(
-        self, table: str, symbol: str, columns: tuple[str, ...], days: int,
+        self,
+        table: str,
+        symbol: str,
+        time_col: str,
+        columns: tuple[str, ...],
+        limit: int,
     ) -> list[sqlite3.Row]:
         """
-        Return up to `days` of indicator output for `symbol`, oldest-first.
+        Return up to `limit` rows of indicator output for `symbol`, oldest-first.
 
-        Caller supplies the table name + column list from the registered
-        Indicator's metadata — both are pre-validated (Indicator subclasses
-        own them at import time), so a `_safe_ident` pass keeps SQL injection
-        impossible even if the registry ever grows untrusted input.
+        `time_col` is the PK time column — `date` for EOD indicators (TEXT
+        date strings) or `ts` for intraday indicators (INTEGER epoch). Caller
+        supplies it from the registered Indicator's `pk_cols[1]`.
+
+        Table name, time column, and output columns all come from Indicator
+        subclasses owned at import time — `_safe_ident` is belt-and-braces.
         """
         if not self.has_table(table):
             return []
         safe_table = _safe_ident(table)
+        safe_time = _safe_ident(time_col)
         safe_cols = ",".join(_safe_ident(c) for c in columns)
         rows = self.conn.execute(
-            f"""SELECT date, {safe_cols} FROM {safe_table}
-                WHERE symbol = ? ORDER BY date DESC LIMIT ?""",
-            (symbol, days),
+            f"""SELECT {safe_time}, {safe_cols} FROM {safe_table}
+                WHERE symbol = ? ORDER BY {safe_time} DESC LIMIT ?""",
+            (symbol, limit),
         ).fetchall()
         return list(reversed(rows))
 

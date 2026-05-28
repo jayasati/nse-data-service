@@ -8,8 +8,10 @@ export const Api = {
     getJSON(`/api/stocks/${encodeURIComponent(symbol)}/history?interval=${interval}&days=${days}`),
   meta: symbol =>
     getJSON(`/api/stocks/${encodeURIComponent(symbol)}/meta`),
-  indicators: (symbol, days = 365) =>
-    getJSON(`/api/stocks/${encodeURIComponent(symbol)}/indicators?days=${days}`),
+  indicators: (symbol, days = 365, cadence = null) => {
+    const q = `days=${days}` + (cadence ? `&cadence=${cadence}` : "");
+    return getJSON(`/api/stocks/${encodeURIComponent(symbol)}/indicators?${q}`);
+  },
   search: (q, limit = 20) =>
     getJSON(`/api/stocks/search?q=${encodeURIComponent(q)}&limit=${limit}`),
 };

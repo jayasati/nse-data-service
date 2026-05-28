@@ -1,31 +1,37 @@
 """
-Nightly indicator compute job.
+Indicator compute orchestrator (incremental, cadence-aware).
 
-Per-stock incremental: for each (symbol, indicator) we look up the last
-date already in the indicator's table, then read just enough OHLCV history
-to recompute from there forward — `indicator.min_history` bars of lookback
-plus every bar since the last write. The indicator runs on that slice and
-we persist only the rows we did not already have.
+For each (symbol, indicator) the flow is the same regardless of cadence:
 
-Why pull lookback even though we already wrote those dates: rolling-window
-indicators (SMA, EMA, ATR, ...) need the prior window to produce the next
-value. We re-run the math over the lookback but only insert the *new* rows,
-which keeps the write cost proportional to fresh bars and avoids touching
-historic indicator rows that haven't changed.
+    1. Look up the watermark — the indicator's most recent persisted PK time
+       value (date string for EOD, epoch seconds for intraday/session).
+    2. Compute the *lookback cutoff* — the earliest input bar we need to read
+       so the indicator has its `min_history` warm-up plus every new bar
+       since the watermark.
+    3. Read OHLCV from the cadence's source (bhavcopy / intraday_candles+live
+       feed / session-anchored builder).
+    4. Run `indicator.compute(ohlcv)` — pure math, no I/O.
+    5. Drop rows at or before the watermark, write the rest. Re-emitting the
+       warm-up rows would be wasted writes; we only persist new bars.
+
+The cadence-specific I/O is encapsulated in a `_Source` (read + lookback) so
+new cadences (e.g. session-anchored pivots) plug in without touching the
+orchestrator's main loop.
 """
 
 from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from typing import Iterable, cast
+from typing import Any, Callable, Iterable, cast
 
 import pandas as pd
 
 from .base import Indicator
+from .intraday_ohlcv import read_intraday_5m
 from .ohlcv import read_ohlcv
 from .registry import INDICATORS
-from .writer import last_computed_date, write_indicator
+from .writer import last_computed_key, write_indicator
 
 
 @dataclass(frozen=True)
@@ -35,6 +41,8 @@ class ComputeResult:
     rows_written: int
 
 
+# ---------------------------------------------------------------- public API
+
 def compute_for_symbol(
     conn: sqlite3.Connection,
     indicator: Indicator,
@@ -42,21 +50,19 @@ def compute_for_symbol(
     *,
     series: str = "EQ",
 ) -> ComputeResult:
-    """
-    Run one indicator for one symbol, incrementally. Returns the row count
-    actually written (0 if up to date or insufficient history).
-    """
-    last_date = last_computed_date(conn, indicator, symbol)
-    since = _lookback_cutoff(conn, symbol, last_date, indicator.min_history, series)
+    """Run one indicator for one symbol, incrementally."""
+    source = _SOURCES[indicator.cadence]
 
-    ohlcv = read_ohlcv(conn, symbol, since_date=since, series=series)
+    watermark = last_computed_key(conn, indicator, symbol)
+    since = source.lookback_cutoff(conn, symbol, watermark, indicator.min_history, series)
+    ohlcv = source.read(conn, symbol, since=since, series=series)
     if ohlcv.empty:
         return ComputeResult(symbol, indicator.name, 0)
 
     values = indicator.compute(ohlcv)
-    if last_date is not None:
+    if watermark is not None:
         # Drop rows we already persisted — incremental write only.
-        values = cast(pd.DataFrame, values.loc[values.index > last_date])
+        values = cast(pd.DataFrame, values.loc[values.index > watermark])
 
     rows = write_indicator(conn, indicator, symbol, values)
     return ComputeResult(symbol, indicator.name, rows)
@@ -68,46 +74,74 @@ def run_all(
     *,
     indicators: Iterable[Indicator] = INDICATORS,
     series: str = "EQ",
+    cadence: str | None = None,
 ) -> list[ComputeResult]:
-    """Run every registered indicator against every symbol. Sequential."""
+    """Sweep the universe. `cadence` filters which indicators run (None = all)."""
+    selected = [i for i in indicators if cadence is None or i.cadence == cadence]
     results: list[ComputeResult] = []
     for symbol in symbols:
-        for ind in indicators:
+        for ind in selected:
             results.append(compute_for_symbol(conn, ind, symbol, series=series))
     return results
 
 
-def _lookback_cutoff(
-    conn: sqlite3.Connection,
-    symbol: str,
-    last_date: str | None,
-    min_history: int,
-    series: str,
-) -> str | None:
-    """
-    Choose the earliest OHLCV date to load.
+# ------------------------------------------------------ cadence-specific I/O
 
-    First run (no last_date): None — read full history. The indicator will
-    emit NaN for the first `min_history - 1` rows, which the writer drops.
+ReadFn = Callable[..., pd.DataFrame]
+LookbackFn = Callable[..., Any]
 
-    Incremental run: load `min_history` bars before the first un-written
-    bar so rolling windows have their warm-up data. We compute that bound
-    by looking up the (min_history)-th most-recent bhavcopy date strictly
-    older than `last_date`. SQLite + index makes this cheap.
+
+@dataclass(frozen=True)
+class _Source:
+    """Pluggable I/O for one cadence. Selected by `indicator.cadence`."""
+    read: ReadFn
+    lookback_cutoff: LookbackFn
+
+
+def _eod_read(conn, symbol, *, since=None, series="EQ"):
+    return read_ohlcv(conn, symbol, since_date=since, series=series)
+
+
+def _eod_lookback(conn, symbol, watermark, min_history, series):
+    """Find the date `min_history` trading-day-rows earlier than `watermark`.
+
+    We can't just subtract calendar days — NSE has holidays and weekends.
+    Counting backwards through bhavcopy gives the exact warm-up window.
     """
-    if last_date is None:
+    if watermark is None:
         return None
-
     row = conn.execute(
         """
         SELECT date FROM raw_bhavcopy_cm
         WHERE symbol = ? AND series = ? AND date <= ?
-        ORDER BY date DESC
-        LIMIT 1 OFFSET ?
+        ORDER BY date DESC LIMIT 1 OFFSET ?
         """,
-        (symbol, series, last_date, min_history - 1),
+        (symbol, series, watermark, min_history - 1),
     ).fetchone()
-
-    # If we don't have `min_history` bars of history before `last_date`,
-    # fall back to full read — the indicator decides whether it can score.
     return row[0] if row else None
+
+
+def _intraday_read(conn, symbol, *, since=None, series="EQ"):
+    # `series` ignored — intraday source isn't series-aware.
+    return read_intraday_5m(conn, symbol, since_ts=since)
+
+
+_INTRADAY_BAR_SECS = 300  # 5-min bars
+
+
+def _intraday_lookback(conn, symbol, watermark, min_history, series):
+    """Pull `min_history × 300s` before the watermark.
+
+    Overnight gaps are over-pulled (calendar minutes ≠ trading minutes) but
+    that's harmless: empty buckets just don't appear after resample. The
+    extra reads are bounded — min_history is small (~42 bars for RSI 14).
+    """
+    if watermark is None:
+        return None
+    return int(watermark) - min_history * _INTRADAY_BAR_SECS
+
+
+_SOURCES: dict[str, _Source] = {
+    "eod": _Source(read=_eod_read, lookback_cutoff=_eod_lookback),
+    "intraday": _Source(read=_intraday_read, lookback_cutoff=_intraday_lookback),
+}

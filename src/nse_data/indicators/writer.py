@@ -55,17 +55,29 @@ def write_indicator(
     return len(rows)
 
 
-def last_computed_date(
+def last_computed_key(
     conn: sqlite3.Connection,
     indicator: Indicator,
     symbol: str,
-) -> str | None:
-    """Most recent `date` we have for this (symbol, indicator), or None."""
+):
+    """Most recent time-key we have for this (symbol, indicator), or None.
+
+    Reads MAX of the indicator's time column — `pk_cols[1]` by convention.
+    Returns a date string for EOD indicators (`date TEXT`) or an integer epoch
+    for intraday/session indicators (`ts INTEGER`). Callers stay polymorphic
+    — they treat the result as an opaque "watermark" suitable for `>` filters
+    and for passing as `since` to the matching DataSource.
+    """
+    time_col = indicator.pk_cols[1]
     row = conn.execute(
-        f"SELECT MAX(date) FROM {indicator.table} WHERE symbol = ?",
+        f"SELECT MAX({time_col}) FROM {indicator.table} WHERE symbol = ?",
         (symbol,),
     ).fetchone()
-    return row[0] if row and row[0] else None
+    return row[0] if row and row[0] is not None else None
+
+
+# Back-compat alias for any caller still importing the EOD-only name.
+last_computed_date = last_computed_key
 
 
 def _rows_to_write(
@@ -73,12 +85,17 @@ def _rows_to_write(
     indicator: Indicator,
     values: pd.DataFrame,
 ) -> Iterable[tuple]:
-    """Yield (pk..., output...) tuples, skipping rows that are entirely NaN."""
-    for date, row in values.iterrows():
+    """Yield (pk..., output...) tuples, skipping rows that are entirely NaN.
+
+    The DataFrame's index value is the time key — a `date` string for EOD or
+    an integer `ts` for intraday/session. Stays opaque here; the indicator's
+    own table column dictates the storage type.
+    """
+    for key, row in values.iterrows():
         outputs = [row.get(c) for c in indicator.output_columns]
         if all(_is_null(v) for v in outputs):
             continue
-        yield (symbol, date, *[_clean(v) for v in outputs])
+        yield (symbol, key, *[_clean(v) for v in outputs])
 
 
 def _is_null(v) -> bool:

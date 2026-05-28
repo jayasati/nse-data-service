@@ -48,9 +48,14 @@ def history(symbol: str, interval: str = Query("1d"),
 
 
 @router.get("/{symbol}/indicators")
-def indicators(symbol: str, days: int = Query(365, ge=1, le=6000),
+def indicators(symbol: str,
+               days: int = Query(365, ge=1, le=6000),
+               cadence: str | None = Query(None, pattern="^(eod|intraday|session)$"),
                svc: StockService = Depends(get_service)) -> JSONResponse:
-    return _run(lambda: svc.indicators(symbol, days))
+    # `days` is repurposed as a row cap. For EOD indicators it's days of
+    # history; for intraday (5-min bars) it's interpreted as "the latest N
+    # rows", which the frontend translates from its timeframe.
+    return _run(lambda: svc.indicators(symbol, days, cadence=cadence))
 
 
 @router.get("/{symbol}/meta")
