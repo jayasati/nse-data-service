@@ -25,6 +25,7 @@ _INDICATOR_MIGRATIONS = (
     MIGRATIONS_DIR / "028_indicator_macd.sql",
     MIGRATIONS_DIR / "029_indicator_rsi_5m.sql",
     MIGRATIONS_DIR / "030_indicator_macd_5m.sql",
+    MIGRATIONS_DIR / "031_drop_redundant_intraday_indexes.sql",
 )
 
 
