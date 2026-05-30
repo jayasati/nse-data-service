@@ -1,227 +1,322 @@
-# Deployment — keeping the collector always-on
+# Deployment — Phase 1, Week 1 (the VPS gate)
 
-The collector is a single long-running process (`python -m nse_data.main`) that
-schedules every enabled feed in `config/endpoints.yaml`. It only collects while
-that process is alive. On a laptop that sleeps overnight, any **daily/weekly**
-run scheduled for an off hour (e.g. `fii_dii` at 19:00, `surveillance_*` at
-20:00) silently never fires — APScheduler can't trigger a job while the process
-is dead. Intraday feeds self-heal on their next tick; once-a-day feeds don't.
+**What this file is:** the step-by-step runbook for standing up the always-on
+host. It is the deliverable for checklist task **1.12**, and every section maps
+to a Week-1 task (1.1–1.11) so you can tick them off as you go.
 
-Two layers address this:
+**Why this is Phase 1, Week 1 ("THE GATE"):** the collector is a single
+long-running process (`python -m nse_data.main`) that schedules every enabled
+feed in `config/endpoints.yaml`. It only collects while that process is alive.
+On a laptop that sleeps, any daily/weekly run scheduled for an off hour
+(`fii_dii` 19:00, `surveillance_*` 20:00, …) silently never fires. Every
+minute-cadence job in Weeks 2–6 is meaningless on a sleeping host. This week
+retires the #1 blocker; nothing else in Phase 1 starts until it runs **5 clean
+trading days with zero laptop dependency**.
 
-1. **Catch-up on start** (already wired, no host needed). On every boot, `main.py`
-   runs `scheduler.catchup.run_due`: any daily/weekly collector whose stored data
-   lags its last expected run is run once immediately. So opening the laptop the
-   next morning recovers the same-day miss automatically. Manual equivalent:
-   ```
-   python scripts/run_collectors.py --due           # run the stale ones now
-   python scripts/run_collectors.py --due --dry-run  # just list them
-   python scripts/run_collectors.py fii_dii          # run specific feeds
-   ```
-   ⚠️ This recovers a **missed schedule, not lost history**. NSE snapshot
-   endpoints (e.g. `/api/fiidiiTradeReact`) serve only the latest day, so a run
-   missed two days ago captures *today's* value — the gap stays gone.
+> **Naming note:** the checklist (task 1.7) calls the unit `nse-data.service`.
+> In this repo it's `deploy/nse-collector.service`, installed as a `%i`-templated
+> instance — so the running unit is `nse-collector@<user>.service`. Same thing,
+> more descriptive name and wired into `scripts/deploy.sh`.
 
-2. **An always-on host** (the real fix). Run the process somewhere that doesn't
-   sleep, so evening and weekend runs actually fire. Cheapest options: a small
-   VPS (~₹350–500/mo), a Raspberry Pi at home, or any always-on Linux box.
+---
 
-## AWS (EC2) — step by step
+## Week-1 task map
 
-A single small EC2 instance in **Mumbai (ap-south-1)** runs the whole thing.
-Mumbai matters: NSE is sensitive to non-Indian IPs, so collect from an Indian
-region.
+| Task | Where |
+|---|---|
+| 1.1 Provision VPS | [§1](#1-provision-the-instance-task-11) |
+| 1.2 Install deps (Python 3.12, Redis, Git, tmux) | [§3](#3-system-packages-task-12) |
+| 1.3 Transfer the 5.1 GB `nse.db` | [§6](#6-transfer-the-existing-database-task-13) |
+| 1.4 Transfer codebase | [§4](#4-get-the-code-task-14) |
+| 1.5 Configure `.env` | [§7](#7-secrets-and-config-task-15) |
+| 1.6 Redis on boot | [§5](#5-redis--enable-on-boot-task-16) |
+| 1.7 systemd unit | [§8](#8-install-the-systemd-units-tasks-17-18) |
+| 1.8 Enable + start | [§8](#8-install-the-systemd-units-tasks-17-18) |
+| 1.9–1.11 Verify 5 trading days | [§9](#9-verify--the-5-day-gate-tasks-1911) |
+| 1.12 This document | — |
 
-### Step 0 — push the code to GitHub (prerequisite)
+---
 
-The server pulls from `origin`. Make sure your latest code is committed and
-pushed first:
-```bash
-# on your laptop
-git add -A && git commit -m "…" && git push origin main
-```
-Nothing below works against stale/unpushed code.
+## 1. Provision the instance (task 1.1)
 
-### Step 1 — launch the instance
+A single instance in **Mumbai (ap-south-1)** runs everything. Mumbai matters:
+NSE is sensitive to non-Indian IPs, so collect from an Indian region.
 
 EC2 → Launch instance:
-- **Region:** ap-south-1 (Mumbai) — top-right selector, *before* launching.
+
+- **Region:** ap-south-1 (Mumbai) — set in the top-right selector *before* launching.
 - **AMI:** Ubuntu Server 24.04 LTS.
-- **Type:** `t3.small` (2 GB, x86 — widest wheel compatibility). `t4g.small`
-  (ARM/Graviton) is cheaper and works too; `t3.micro` is free-tier but 1 GB is
-  tight with the dashboard + backfill.
-- **Key pair:** create one, download the `.pem` (this is your SSH login).
-- **Storage:** 30 GB gp3 (a 1000-symbol × 6-month minute backfill alone is
-  several GB).
-- **Security group:** allow **SSH (22) from *My IP* only**. Do **not** open 8000
-  — the dashboard has no auth; reach it over an SSH tunnel (Step 8).
+- **Type:** the Week-1 target is **4 vCPU / 8 GB**. On AWS:
+  - **`t3.xlarge`** (4 vCPU / 16 GB, burstable) — **recommended**: meets the vCPU
+    target with RAM headroom for Redis + the minute-cadence indicator jobs landing
+    in Weeks 2–4.
+  - `c6i.xlarge` (4 vCPU / 8 GB) — exact spec match, non-burstable.
+  - **`m7i-flex.large`** (2 vCPU / 8 GB) — **best budget pick**. Newer Sapphire
+    Rapids, cheaper than `t3.large` (~$65–70/mo on-demand vs `t3.xlarge` ~$150),
+    meets the RAM target. "Flex" = sustained ~40% CPU baseline + bursting, which is
+    plenty for Phase-1 polling. Watch CPU once the Week 2–4 minute jobs land; if
+    they throttle, move to `m7i.large` (full 2 vCPU) or `m7i.xlarge` (4 vCPU).
+  - `t3.large` (2 vCPU / 8 GB) — older budget option; `m7i-flex.large` is the
+    better-value equivalent.
+- **Storage:** **100 GB gp3** (task 1.1). The DB is ~5 GB today; intraday candles,
+  backfills, and 30 days of DB backups grow it steadily.
+- **Key pair:** create one, download the `.pem` — this is your SSH login.
+- **Security group:** allow **SSH (22) from *My IP* only**. Do **not** open 8000 —
+  the dashboard has no auth; reach it over an SSH tunnel ([§10](#10-optional-dashboard-over-ssh-tunnel)).
 
-### Step 2 — connect
+> **Cost note:** AWS on-demand for these types in ap-south-1 runs higher than the
+> Hetzner CX32 the checklist names as cheapest (`t3.xlarge` ≈ $0.21/hr on-demand).
+> A 1-year Savings Plan or Reserved Instance roughly halves it. Lightsail's fixed
+> ~$40/mo 8 GB plan is a simpler-billing alternative with the same systemd flow.
+
+---
+
+## 2. Connect
 
 ```bash
-chmod 400 ~/Downloads/nse-key.pem
-ssh -i ~/Downloads/nse-key.pem ubuntu@<EC2_PUBLIC_IP>
+chmod 400 ~/Downloads/stock-key.pem
+ssh -i ~/Downloads/stock-key.pem ubuntu@<13.200.215.86>
 ```
 
-### Step 3 — system packages
+---
+
+## 3. System packages (task 1.2)
+
+Ubuntu 24.04 ships Python 3.12 as `python3`. Install it plus Redis, Git, tmux,
+and build tooling:
 
 ```bash
-sudo apt update && sudo apt install -y python3-venv python3-pip git build-essential
+sudo apt update && sudo apt install -y \
+  python3 python3-venv python3-pip \
+  redis-server git tmux build-essential rsync sqlite3
+python3 --version            # expect 3.12.x
 ```
 
-### Step 4 — get the code into /opt
+---
+
+## 4. Get the code (task 1.4)
 
 ```bash
 sudo mkdir -p /opt/nse-data-service && sudo chown "$USER" /opt/nse-data-service
 git clone https://github.com/jayasati/nse-data-service.git /opt/nse-data-service
 cd /opt/nse-data-service
 ```
+
 Private repo? Use a **read-only deploy key**: `ssh-keygen -t ed25519 -f
 ~/.ssh/deploy -N ""`, add `~/.ssh/deploy.pub` to the repo (Settings → Deploy
 keys, read-only), then clone the `git@github.com:…` URL with that key.
 
-### Step 5 — venv + install
+> Push first. The server pulls from `origin`, so commit and `git push origin main`
+> on the laptop before cloning — nothing here works against unpushed code. The
+> DB is **not** in git (it's gitignored); it's transferred separately in §6.
+
+### venv + install
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -U pip
-.venv/bin/pip install -e ".[dashboard,broker]"      # add ,redis only if you run Redis
+.venv/bin/pip install -e ".[dashboard,redis,indicators]"   # add ,broker for Groww/Kite backfill
 ```
 
-### Step 6 — secrets + config
+The `redis` extra installs the client so the collector uses the Redis dedup
+cache instead of the in-process fallback. `indicators` pulls pandas for the
+nightly/minute indicator jobs.
+
+---
+
+## 5. Redis — enable on boot (task 1.6)
+
+`apt install redis-server` already started it. Make it come back on every reboot
+and confirm it answers:
 
 ```bash
-cp .env.example .env && nano .env        # set GROWW_API_KEY / GROWW_TOTP_SECRET etc.
+sudo systemctl enable --now redis-server
+redis-cli ping                       # expect: PONG
+sudo systemctl is-enabled redis-server   # expect: enabled
 ```
-`config/endpoints.yaml` is in the repo; tune `enabled:` flags there if needed.
 
-### Step 7 — create the DB (apply migrations)
+The collector connects to the default `localhost:6379` (no URL to configure).
+The collector unit is ordered `After=redis-server.service` with `Wants=`, so on
+boot Redis starts first — but if Redis is ever down the collector still runs,
+falling back to the memory cache (logged as `dedup_cache_redis_unavailable`).
+
+---
+
+## 6. Transfer the existing database (task 1.3)
+
+**This is the step that carries your ~5 GB of history.** Do not run `migrate.py`
+to create a fresh DB here — that would give you an empty schema and throw away
+everything collected so far. Migrations are applied automatically against the
+*transferred* DB on first boot.
+
+Run this **from the laptop** (repo root), pointing at the VPS:
 
 ```bash
-mkdir -p data
-.venv/bin/python scripts/migrate.py          # applies all 0NN_*.sql onto data/nse.db
-.venv/bin/python scripts/migrate.py --status  # confirm: all applied, none pending
+./scripts/transfer_db.sh ubuntu@<EC2_PUBLIC_IP> \
+    /opt/nse-data-service/data \
+    ~/Downloads/nse-key.pem
 ```
-(The collector also applies pending migrations on boot, so this is just to
-verify up front.)
 
-### Step 8 — install + start the services
+The script takes a consistent `sqlite3 .backup` snapshot (safe even while the
+local collector is running), then `rsync`s it compressed and resumable — a
+dropped connection mid-transfer resumes on re-run. ~5 GB over a typical home
+uplink is tens of minutes; run it inside `tmux`/`screen` on the laptop, or let
+it resume.
+
+Verify on the server once it finishes:
+
+```bash
+ssh -i ~/Downloads/nse-key.pem ubuntu@<EC2_PUBLIC_IP> \
+  "sqlite3 /opt/nse-data-service/data/nse.db 'PRAGMA integrity_check;'"   # expect: ok
+```
+
+Then confirm the schema is current (the boot path also does this):
+
+```bash
+# on the server, in the repo dir
+.venv/bin/python scripts/migrate.py --status   # all applied, none pending
+.venv/bin/python scripts/migrate.py            # applies any new migrations onto the transferred DB
+```
+
+---
+
+## 7. Secrets and config (task 1.5)
+
+```bash
+cp .env.example .env && nano .env
+```
+
+`.env.example` documents every variable the code actually reads (Azure OpenAI,
+Groww/Kite) and notes what is *not* set here (the DB path and Redis are not env
+vars). Telegram keys are placeholders for now — they get filled in Week 5 when
+the dispatcher lands. `config/endpoints.yaml` ships in the repo; tune `enabled:`
+flags there if needed.
+
+---
+
+## 8. Install the systemd units (tasks 1.7, 1.8)
 
 ```bash
 sudo cp deploy/nse-collector.service /etc/systemd/system/
 sudo cp deploy/nse-dashboard.service /etc/systemd/system/   # optional UI/API
 sudo systemctl daemon-reload
-sudo systemctl enable --now nse-collector@ubuntu
+sudo systemctl enable --now nse-collector@ubuntu            # %i = the run user
 sudo systemctl enable --now nse-dashboard@ubuntu            # optional
 ```
-The unit files already point at `/opt/nse-data-service` and run as the `%i`
-user (`ubuntu` here). Verify:
+
+The unit files point at `/opt/nse-data-service`, run as the `%i` user (`ubuntu`),
+restart on crash, and load `.env`. Verify:
+
 ```bash
 systemctl status nse-collector@ubuntu
 journalctl -u nse-collector@ubuntu -f       # JSON logs: collector_run, catchup_*
 ```
 
-### Step 9 — view the dashboard (no public port)
+On start, `main.py` also runs a **catch-up pass** (`scheduler.catchup.run_due`):
+any daily/weekly collector whose stored data lags its expected run fires once
+immediately, so a reboot self-heals same-day misses. (This recovers a *missed
+schedule*, not lost history — NSE snapshot endpoints serve only the latest day.)
 
-From your laptop, tunnel and open `http://localhost:8000`:
+---
+
+## 9. Verify — the 5-day gate (tasks 1.9–1.11)
+
+The gate is **all 32 collectors firing on schedule for 5 consecutive trading
+days, with the laptop off.**
+
+**Each trading day:**
+
+1. **Watch the feed (1.9).** The health dashboard (`/`, via the tunnel in §10) or
+   the logs show each feed's freshness. Intraday feeds (5-min) should tick all
+   session; daily feeds should land at their scheduled time. A daily feed sitting
+   in the **stale/down** group after its run time = a missed run.
+   ```bash
+   journalctl -u nse-collector@ubuntu --since "06:00" | grep -E 'collector_run|error'
+   .venv/bin/python scripts/run_collectors.py --due --dry-run   # what's overdue right now
+   ```
+2. **Spot-check 10 values by hand (1.10).** Pick a few prices, OI numbers, and the
+   VIX level from the DB and compare against the live NSE website:
+   ```bash
+   sqlite3 data/nse.db \
+     "SELECT symbol, last_price FROM raw_equity_quotes ORDER BY ts DESC LIMIT 5;"
+   sqlite3 data/nse.db \
+     "SELECT * FROM raw_india_vix ORDER BY ts DESC LIMIT 1;"
+   ```
+   Prices/OI/VIX should match NSE within the polling lag.
+3. **Repeat for 5 consecutive trading days (1.11).** Log anything odd in
+   `LEARNINGS.md`. The clock doesn't advance the gate — clean days do.
+
+**Gate met when:** 32 collectors ran 5 straight trading days, zero laptop
+dependency, data spot-checked. Only then start Week 2.
+
+---
+
+## 10. (Optional) Dashboard over SSH tunnel
+
+The dashboard has no auth — never expose port 8000. Tunnel from the laptop:
+
 ```bash
 ssh -i ~/Downloads/nse-key.pem -L 8000:localhost:8000 ubuntu@<EC2_PUBLIC_IP>
+# then open http://localhost:8000
 ```
 
-### Step 10 — backups
+---
 
-Nightly copy of the DB to S3 (the truth source). Quick cron:
-```bash
-# crontab -e
-30 1 * * *  aws s3 cp /opt/nse-data-service/data/nse.db s3://<your-bucket>/nse.db.$(date +\%F)
-```
-(Attach an IAM role to the instance with write access to that bucket; install
-`awscli`.)
+## 11. Backups (preview of task 6.2)
 
-### Cost & ongoing
-
-- t3.small on-demand in ap-south-1 ≈ $15–18/mo; t4g.small a few $ less; **Lightsail**
-  is a fixed ~$5–10/mo VM alternative with the same systemd flow.
-- Updates after this are one command — see **Updating a running deployment**.
-
-## systemd setup (always-on Linux host)
-
-Unit templates live in `deploy/`. They're `%i`-templated on the run user, so
-enable them as `@<user>` instances.
+Not a Week-1 gate item, but cheap to set up now. Nightly local snapshot, 30-day
+rotation:
 
 ```bash
-# 1. Put the code somewhere stable and build the venv.
-sudo mkdir -p /opt/nse-data-service && sudo chown "$USER" /opt/nse-data-service
-git clone <repo> /opt/nse-data-service && cd /opt/nse-data-service
-python -m venv .venv
-.venv/bin/pip install -e ".[dashboard,broker]"      # add ,redis if using Redis
-#   (secrets, if any) -> /opt/nse-data-service/.env  (GROWW_*, etc.)
-
-# 2. Install the unit(s).
-sudo cp deploy/nse-collector.service  /etc/systemd/system/
-sudo cp deploy/nse-dashboard.service  /etc/systemd/system/   # optional UI/API
-sudo systemctl daemon-reload
-
-# 3. Enable + start as your user (replace `jay`).
-sudo systemctl enable --now nse-collector@jay
-sudo systemctl enable --now nse-dashboard@jay               # optional
-
-# 4. Watch it.
-journalctl -u nse-collector@jay -f      # JSON logs: collector_run, catchup_*
-systemctl status nse-collector@jay
+# crontab -e   (on the server)
+0 2 * * *  cd /opt/nse-data-service && sqlite3 data/nse.db ".backup data/archive/db_backups/nse_$(date +\%Y\%m\%d).db" && find data/archive/db_backups/ -name '*.db' -mtime +30 -delete
 ```
 
-Adjust `WorkingDirectory` / `ExecStart` paths in the unit files if you don't use
-`/opt/nse-data-service`.
+For off-box durability, also copy to S3 (attach an IAM role with write access to
+the bucket, install `awscli`):
 
-## WSL note
+```bash
+30 2 * * *  aws s3 cp /opt/nse-data-service/data/nse.db s3://<your-bucket>/nse.db.$(date +\%F)
+```
 
-WSL2 only runs systemd if enabled (`/etc/wsl.conf` → `[boot] systemd=true`), and
-the distro still stops when Windows sleeps or WSL is shut down — so WSL is not
-"always-on". For a laptop, rely on the catch-up-on-start above; for guaranteed
-evening/weekend coverage, use a separate always-on host.
+---
 
 ## Updating a running deployment (continuous development)
 
 Code is replaceable; data is durable. `data/` and `.env` are gitignored, so a
-`git pull` on the server updates code **without ever touching the SQLite DB or
-secrets** — the DB keeps accumulating across deploys. A new version is just:
-back up DB → pull → install → migrate → restart.
+`git pull` updates code **without touching the SQLite DB or secrets** — the DB
+keeps accumulating across deploys. One command:
 
 ```bash
-# on the server, in the repo dir:
-./scripts/deploy.sh jay        # 'jay' = the systemd instance user
+./scripts/deploy.sh ubuntu        # 'ubuntu' = the systemd instance user
 ```
 
-That script backs up `nse.db` (keeps the last 30), `git pull --ff-only`s,
-syncs deps, applies pending migrations, and restarts the services. The on-boot
-catch-up recovers anything missed during the few-second restart.
+That script backs up `nse.db` (keeps the last 30), `git pull --ff-only`s, syncs
+deps, applies pending migrations, and restarts the services. On-boot catch-up
+recovers anything missed during the few-second restart.
 
 Rules that keep this safe:
 
-- **Never edit code on the server** — it's a deploy target. All changes flow
-  through git (develop locally → commit → push → pull on the server). This
-  avoids merge conflicts and accidental `data/` clobbering.
+- **Never edit code on the server** — it's a deploy target. Changes flow through
+  git (develop locally → commit → push → pull on the server).
 - **Migrations are forward-only.** Add a new `migrations/0NN_*.sql`; it applies
-  once (idempotent, on boot and via `scripts/migrate.py`). There are no
-  down-migrations, so `deploy.sh` snapshots the DB first — **rollback** =
-  `git checkout <previous-tag>` **and** restore that `data/archive/db_backups/`
-  snapshot, then restart.
+  once (idempotent, on boot and via `scripts/migrate.py`). `deploy.sh` snapshots
+  the DB first — rollback = `git checkout <previous-tag>` **and** restore that
+  `data/archive/db_backups/` snapshot, then restart.
 - **Deploy tags, not WIP commits.** Tag releases (`git tag v0.x && git push
-  --tags`) and pull those, so the server runs known-good points, not mid-feature
-  state.
-- **Verify after deploy** via the health dashboard — feeds should stay green;
-  a freshly-broken collector shows up as stale/down.
+  --tags`) and pull those, so the server runs known-good points.
 
 ### Optional: auto-deploy on push (GitHub Actions)
 
-Once manual `deploy.sh` feels solid, a workflow on push to `main` can SSH to the
-box and run it — turning `git push` into a deploy. Keep it gated to tags or a
-`release` branch so half-finished work doesn't ship. (Ask and I'll add the
-`.github/workflows/deploy.yml`.)
+Once manual `deploy.sh` feels solid, a workflow on push to `main` (or a `release`
+branch / tags) can SSH to the box and run it — turning `git push` into a deploy.
+Ask and I'll add `.github/workflows/deploy.yml`.
 
-## Verifying coverage
+---
 
-The health dashboard (`/`) shows each feed's freshness; a daily feed sitting in
-the **stale/down** group after its run time means a missed run. `--due --dry-run`
-lists exactly which collectors the catch-up considers overdue.
+## WSL note (why the laptop can't be the host)
+
+WSL2 only runs systemd if enabled (`/etc/wsl.conf` → `[boot] systemd=true`), and
+the distro still stops when Windows sleeps or WSL shuts down — so WSL is **not**
+always-on. That's exactly the blocker this week removes. For local development,
+rely on the on-boot catch-up; for the real 24×7 collection, use the VPS above.

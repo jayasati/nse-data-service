@@ -1,1809 +1,52 @@
-map everything that moves markets intraday — organized by what kind of force it is.
+# NSE Trading System — The Plan (Improved)
 
-The forces that move markets intraday
-Think of intraday price movement as the result of several forces acting simultaneously. Some are planned, some are random, some are structural.
+**Status:** Authoritative build plan. As of 2026-05-30 this supersedes the sequencing in
+`grandplan` and the `FEATURE_CHECKLIST.md` phase anchors. Those two remain valuable as the
+*vision* (`grandplan`) and the *capability inventory* (`FEATURE_CHECKLIST.md`) — but when they
+disagree with this file on **what to build next and in what order**, this file wins.
 
-1. Global and Macro overnight setup
-This is what sets the tone before 9:15 AM. Everything that happened while Indian markets were closed.
-US markets:
+**Improved 2026-05-30** by reconciling the verified codebase state with every brainstormed
+addition from this session: the end-product vision, full intraday force taxonomy, psychological
+factors (buy-rumor/sell-news, FOMO, capitulation, anchoring, stop-hunt), confidence engine
+design, message quality standard, rating intelligence, institutional layer, breadth/delivery,
+event-study database, and the complete multi-layer signal synthesis approach.
 
-Dow, S&P 500, Nasdaq closing level
-Whether they closed up or down by more than 0.5%
-Futures movement overnight (S&P futures, Nasdaq futures)
-A US market crash of 2%+ almost guarantees a gap down open in India
+---
 
-Asian markets (open before India):
+## The one-sentence goal
 
-Nikkei (Japan) — opens 5:30 AM IST
-Hang Seng (Hong Kong) — opens 6:30 AM IST
-Shanghai composite
-If Asia is red when India opens, that pressure carries over
+A personal intraday Indian-market alert system that watches ~500 NSE stocks every minute,
+synthesises every force that moves markets into a single confidence-scored verdict, and delivers
+clean Telegram alerts — *what happened, why it matters, what to do, and the historical odds* —
+built by one developer, running on one VPS, for one monthly hosting bill.
 
-GIFT Nifty:
+The edge is **not** being first to news. It is knowing which stocks are *technically, fundamentally,
+institutionally, and psychologically aligned* to move, and collapsing all simultaneous market forces
+into one scannable, 20-second-to-read verdict with evidence.
 
-The single most important pre-open indicator
-Trades from 6:30 AM IST
-Absorbs all overnight US and Asian moves
-A reliable 75–80% directional predictor for opening
-Gap between GIFT Nifty and previous Nifty close tells you exactly how much the market wants to gap
+---
 
-Dollar index (DXY):
+## The end product — what you actually see and feel
 
-Strong dollar = weak rupee = FII outflows from India
-Weak dollar = strong rupee = FII inflows
-This matters especially for IT stocks and export-heavy sectors
+Before any architecture: what does success look like?
 
-US bond yields:
+**Every morning at 09:00** a single brief message arrives covering global setup (GIFT Nifty,
+US/Asia, crude, DXY), today's regime, overnight events (rating actions, results), expiry note,
+key Nifty levels, and recommended posture (aggressive / normal / conservative / cash).
 
-High US 10-year yield = expensive dollar = capital flows out of emerging markets like India
-This is why Indian markets fell sharply when US yields rose in 2022-23
+**During the day**, alerts arrive when something is worth looking at. Each takes 20 seconds to
+read and answers three questions instantly:
 
-Crude oil:
+1. **What is happening** — the trigger (signal type, key numbers)
+2. **Why it matters** — the context (market, sector, stock, psychological state, institutions)
+3. **What to do** — entry zone, stop loss, targets, max hold time
 
-India imports 85% of its oil
-Brent crude above $90 = negative for India macro = Aviation, Paint, Tyre, FMCG stocks hurt
-Crude spike is almost always bearish for India except for Oil & Gas stocks (ONGC, Oil India)
+**At 18:00** a summary closes the day: market performance, signals that fired, overnight events
+to watch, tomorrow's known catalysts.
 
-Gold:
+A high-confidence alert looks like this:
 
-When gold spikes, it signals fear in global markets
-Usually negative for equities
-
-
-2. Currency moves
-USDINR:
-
-Rupee weakening (say from 83 to 84) is negative for import-heavy sectors
-Positive for IT exporters (TCS, Infosys, Wipro earn in dollars)
-FIIs see rupee depreciation as a loss on their India investments — they sell
-A sharp rupee move during market hours creates sector rotation within the session
-
-USDINR is live during market hours — it moves tick by tick and influences big institutional decisions in real time.
-
-3. India VIX
-The fear gauge. The single number that tells you the expected daily range.
-
-VIX below 12 — complacent market, low volatility, option sellers win
-VIX 12–18 — normal market
-VIX 18–25 — elevated fear, trending moves, option buyers win
-VIX above 25 — panic, erratic moves, anything can happen
-
-Intraday VIX movement matters:
-
-If VIX spikes suddenly mid-session — something scared the market (news, geopolitical event)
-If VIX collapses — market is calming, likely to consolidate
-VIX × Nifty / 1000 gives you the expected daily range — this sets your SL and target universe for the day
-
-
-4. Opening range and first 15 minutes
-The 9:15–9:30 window is not just the start — it's a diagnostic.
-What gets established:
-
-Opening gap (up or down vs previous close)
-Opening range high and low
-Whether gap fills immediately or holds
-Volume in the first 5 minutes — high volume confirms the direction
-
-Gap behavior patterns:
-
-Gap up + holds above gap midpoint at 9:30 = gap and go (bullish)
-Gap up + immediately fills = fade the gap (bearish)
-Gap down + holds below gap midpoint = gap and continue (bearish)
-Gap down + immediately fills = reversal opportunity (bullish)
-
-The first 15 minutes sets the session bias for most traders. Most ORB (Opening Range Breakout) strategies are built on this.
-
-5. Institutional flow — FII and DII
-FII (Foreign Institutional Investors):
-
-They move markets. Full stop.
-FII buying = sustained upward pressure, especially on large caps and index stocks
-FII selling = sustained downward pressure
-You can see FII cash market data at 3:30 PM EOD but intraday clues come from:
-
-Index futures open interest building
-Nifty Bank Nifty sustained directional moves
-Currency (if rupee is strengthening, FII money is likely coming in)
-
-
-
-DII (Domestic Institutional Investors — mutual funds, insurance):
-
-Often act as counterparty to FIIs
-When FIIs sell, DIIs often buy (SIP money keeps flowing)
-DII buying provides a floor during FII sell-offs
-Heavy DII buying mid-session can reverse a downtrend
-
-Participant-wise OI data (EOD):
-
-Shows what FII, DII, Pro desks, retail did in derivatives
-FII adding index put longs = they expect market to fall
-FII adding index call longs = they expect market to rise
-This is why your system needs participant-wise OI as a data source
-
-
-6. Nifty and Bank Nifty options market
-This is the most underappreciated intraday force for Indian markets specifically.
-Max pain:
-
-The strike price where maximum options expire worthless
-On expiry day (Tuesday for Nifty, Thursday for Bank Nifty), price gravitates toward max pain
-This is not a coincidence — market makers and option writers actively push price there
-Your system tracking this and alerting near max pain on expiry is genuine edge
-
-PCR (Put Call Ratio):
-
-PCR below 0.7 = too many calls = market likely to fall (contrarian)
-PCR above 1.3 = too many puts = market likely to rise (contrarian)
-PCR crossing key levels mid-session signals change in sentiment
-
-Gamma and GEX (Gamma Exposure):
-
-Positive GEX = market makers are long gamma = they buy dips and sell rallies = mean-reverting market
-Negative GEX = market makers are short gamma = they chase moves = trending market
-This explains why some days Nifty oscillates in a 50-point range and other days trends 300 points in one direction
-
-OI walls:
-
-If 24,000 CE has 1 crore+ open interest, that's a resistance wall — market struggles to go above
-If 23,500 PE has 1 crore+ OI, that's a support floor
-When these walls break (OI unwinding at a strike), it's like a dam breaking — accelerated move
-Your system tracking OI at key strikes every 3 minutes captures this in real time
-
-Straddle unwinding on expiry:
-
-As expiry approaches and market stays near ATM, straddles lose value fast
-This can create unusual intraday calm followed by a sudden spike
-
-
-7. Sector rotation
-Markets don't move uniformly. Different sectors lead and lag throughout the day.
-Morning sector leadership sets the tone:
-
-If IT is leading at open — market is defensive, risk-off globally
-If Banks are leading — domestic liquidity good, FII buying
-If metals are leading — global commodity cycle positive
-If FMCG is leading — defensive posturing, market may not sustain rally
-
-Sector rotation during the session:
-
-9:15–11:00 — leaders establish
-11:00–13:30 — rotation begins, money moves from hot sectors to lagging
-13:30–15:00 — second move, institutional repositioning
-15:00–15:30 — closing auction pressure, window dressing
-
-RRG (Relative Rotation Graph) applied intraday:
-
-Tracking which sectors are gaining relative strength during the session
-A sector moving from lagging to improving = early rotation signal
-
-
-8. Corporate events and announcements
-This is the scheduled intraday catalyst category.
-Results season:
-
-Quarterly results announced during market hours cause immediate stock moves
-Beat = 3–10% up in minutes
-Miss = 3–15% down in minutes
-Guidance matters more than the actual number sometimes
-
-Board meetings:
-
-Dividend declaration = immediate gap up (2–5%)
-Buyback announcement = immediate spike (5–15%)
-Merger or acquisition = can be 10–30% move
-Rights issue = usually negative (dilution)
-QIP announcement = negative short term (dilution)
-
-Credit rating changes during market hours:
-
-As we discussed — immediate price impact
-Downgrade mid-session = panic selling within 30 minutes
-
-Order wins:
-
-Large infrastructure, defense, IT services companies
-A ₹1000 Cr+ order win announcement mid-session = 2–8% spike
-First move is fast — within 15–30 minutes of NSE filing
-
-Management changes:
-
-CEO/CFO resignation during market hours = immediate sell-off
-Well-known CEO joining a company = positive spike
-
-
-9. Technical levels and price memory
-Markets have memory. Certain price levels act as magnets and barriers.
-Key levels that matter intraday:
-
-Previous day high (PDH) and previous day low (PDL) — most important for intraday
-Previous week high and low
-Round numbers — 50, 100, 500, 1000 — psychological magnets
-52-week highs and lows — breakout or breakdown levels
-VWAP — the reference point for institutional traders
-Opening range high and low
-Session S/R from prior consolidation zones
-
-How they create intraday moves:
-
-Price approaches PDH → resistance → pullback → if breaks with volume → acceleration
-Price falls to VWAP → institutional buyers step in → bounce
-Price breaks below round number with volume → stop losses trigger → cascade down
-
-
-10. Delivery vs intraday volume ratio
-Unique to India — NSE publishes this daily.
-High delivery % + price move up = conviction buying (institutions accumulating)
-Low delivery % + price spike = traders chasing (weak hands, likely to reverse)
-High delivery % + price falling = distribution (institutions exiting quietly)
-Intraday you can approximate this by watching:
-
-Volume spikes with price direction
-Whether volume is sustained or one-time
-First 30 minutes delivery vs subsequent hours
-
-
-11. News flow — real time
-Scheduled news:
-
-RBI monetary policy (6-8 times/year) — massive intraday moves
-Union budget (once/year) — biggest single day move event
-Economic Survey
-CPI and WPI inflation data
-GST collections monthly
-IIP (industrial production) data
-
-Unscheduled news:
-
-Geopolitical events (India-Pakistan tension = defense stocks spike, market falls)
-Natural disasters
-Regulatory actions by SEBI, RBI, IRDA
-Supreme Court orders on companies
-Government policy changes (import duties, export bans)
-Global events — US Fed surprise statements, China data
-
-The problem with news:
-
-By the time you read it, the algo has already acted
-Your edge is not being first to the news
-Your edge is knowing which stocks are set up technically to move on the news
-
-
-12. Algo and HFT behavior
-Algorithms control 50–60% of NSE volume. They create patterns you need to understand.
-VWAP algorithms:
-
-Large institutions use VWAP algos to execute big orders
-They buy gradually throughout the day to minimize impact
-This creates steady directional pressure that looks like organic buying
-If you see a stock slowly creeping up all day with consistent volume — it's likely VWAP execution
-
-Momentum algorithms:
-
-These chase price — they buy when price breaks above a level
-They amplify breakouts
-When a breakout fails, these algos also reverse fast — sharp whipsaws
-
-Mean reversion algorithms:
-
-They fade extreme moves
-They buy when RSI is very oversold, sell when very overbought
-They create the 11 AM–1 PM choppy period where everything bounces around
-
-Stop hunting:
-
-Algos know where retail stops are (just below round numbers, just below obvious support)
-You'll see price dip exactly to those levels, trigger stops, then reverse
-This is the liquidity grab pattern your system is designed to detect
-
-
-13. Time of day effects — India specific
-Markets behave differently at different times. This is structural, not random.
-9:15–9:30 — Opening chaos:
-
-High volatility, wide spreads
-Gap fills or extensions happen here
-Avoid trading unless you have a pre-planned setup
-
-9:30–11:00 — First trend window:
-
-Best time for momentum trades
-ORB setups, gap and go
-Institutions establish positions
-
-11:00–11:30 — First exhaustion:
-
-Morning trend often stalls here
-Pullbacks happen
-Watch for reversal or continuation with volume confirmation
-
-11:30–13:30 — Lunch zone:
-
-Volume thins
-Fake breakouts common
-Mean reversion strategies work better here
-Many experienced traders reduce position size or sit out
-
-13:30–14:30 — European open influence:
-
-European markets open around 1:30 PM IST
-European buying/selling in Indian ADRs and related stocks
-Can create a second directional move
-
-14:30–15:00 — Second trend window:
-
-Institutional repositioning before close
-Real moves often happen here
-Good time for momentum trades with the trend
-
-15:00–15:20 — Closing pressure:
-
-Index rebalancing, ETF buying/selling
-Window dressing by mutual funds (month end, quarter end especially)
-Positions being squared off (MIS auto-square starts 3:20 PM)
-Sharp moves possible but dangerous to trade
-
-15:20–15:30 — Closing auction:
-
-Don't trade this unless you know exactly what you're doing
-
-
-14. Expiry effects — unique to India
-India has weekly expiries which create unique intraday patterns.
-Tuesday (Nifty weekly expiry):
-
-Max pain effect strongest in last 2 hours
-Gamma is extremely high near ATM
-Small Nifty moves cause huge P&L swings for option holders
-Volatility often collapses during the day as time value bleeds
-
-Thursday (Bank Nifty weekly expiry):
-
-Same dynamics but Bank Nifty is more volatile
-Often sees a sharp move in one direction in last 1 hour
-Called "expiry volatility" — can be 100–200 points in minutes
-
-Monthly expiry (last Thursday):
-
-Biggest OI moves
-Max pain effect is strongest
-FII positioning shows most clearly
-Often the biggest single intraday move of the month
-
-
-15. Operator activity in mid and small caps
-This is the dark force that nobody talks about officially but every experienced trader knows about.
-What operators do:
-
-Accumulate quietly over days/weeks
-Release positive news or create buzz
-Pump the stock during market hours
-Distribute (sell) into the retail buying
-
-How it shows up intraday:
-
-Sudden volume spike 3–5× with no news
-Price moves 5–10% in 30 minutes on a small cap
-Upper circuits on illiquid stocks
-Unusual options activity before a news event
-
-Your system's defense:
-
-pump_dump_score — detects this pattern
-Low quality score + no fundamentals + sudden volume = flag
-Blacklist catches ASM/GSM stocks which are often operator driven
-Filter out stocks below a liquidity threshold entirely
-
-
-How all these interact — a real example
-Say it's 10:30 AM. Nifty has gapped up 0.8% at open. Gift Nifty was up 1% overnight. US markets closed strong. The following is happening:
-
-Banks are leading (FII buying signal)
-USDINR is strengthening (risk on)
-India VIX is falling (complacency, call sellers winning)
-PCR is at 1.1 (moderate put protection, not extreme)
-OI wall at 24,000 CE is intact (resistance)
-RELIANCE just announced a large order win (stock specific catalyst)
-
-Now RELIANCE shows a long buildup signal — price up 1.4%, OI up 4.3%, volume 3× average, above VWAP, VWAP slope positive.
-Every macro and micro force is aligned. Market is up, sector is leading, stock has a fresh catalyst, technical picture is clean. This is a high confidence signal — maybe 0.88–0.92.
-Now imagine the same RELIANCE long buildup signal but:
-
-Nifty is down 0.5%
-VIX is rising
-Banks are falling
-USDINR is weakening
-
-Same stock-level signal, completely different context. Confidence drops to maybe 0.55. Market regime is working against it.
-
-What this means for our system
-Every single one of these 15 forces maps to a data source we can collect:
-ForceData sourceAlready in systemUS marketsYahoo Finance macro✅GIFT Niftynseix.com✅India VIX/api/allIndices✅CurrencyYahoo Finance USDINR✅FII/DII flowNSE fii_dii✅Options PCR/Max Painoption_chain✅Sector rotationindices collector✅Corporate announcementsannouncements collector✅Rating changesannouncements + new extractor📋Technical levelsindicators/levels.py📋Time of day rulesbot/time_rules.py📋Expiry effectsoption_chain + calendar📋Participant OInew collector needed📋Operator detectionpump_dump_score📋Volume delivery ratiobhavcopy cm📋
-The system is designed to synthesize all of these into one confidence score per signal. That's what makes it powerful — no single indicator, but the convergence of multiple forces all pointing the same direction.You said: how can i design a system that take all this in account and generate very very high quality messagehow can i design a system that take all this in account and generate very very high quality message1:04 PMClaude responded: Great question.Great question. This is the core design problem — not data collection, not indicators, but synthesis. How do you take 50 data points and produce one message that a human can act on in 30 seconds.
-Let me think through this from first principles.
-
-The fundamental insight
-The message quality problem is actually a context collapse problem.
-You have:
-
-15 macro forces
-20+ technical indicators
-Fundamentals
-Event calendar
-Rating actions
-Options data
-Sector data
-Time of day
-Expiry effects
-
-A human cannot process all of this. So the system must collapse all of it into a verdict with evidence.
-Not a data dump. A verdict.
-The difference between a bad alert and a great alert is whether it answers three questions instantly:
-
-What is happening right now — the trigger
-Why this matters — the context
-What to do — the actionable part
-
-
-The architecture of a great alert message
-Think of it like a newspaper article. The inverted pyramid structure:
-HEADLINE        — what happened, in 5 words
-LEAD            — why it matters, in 2 lines  
-SUPPORTING FACTS — top 3-4 confirming factors
-RISK CONTEXT    — what could go wrong
-ACTION PARAMS   — entry zone, SL, target
-CONFIDENCE      — single number, no ambiguity
-Every word in the message must earn its place. If removing it loses nothing, remove it.
-
-The scoring engine — how confidence is actually computed
-This is the heart of the system. The confidence score is not a number you pick — it is the output of a multi-layer evaluation.
-Think of it as a funnel with gates and boosters.
-
-Layer 0 — Hard gates (binary kill switches)
-These are not scores. They are hard stops. If any of these fail, the signal is killed. Period. No message sent.
-Is stock in blacklist?           → KILL
-Is stock in F&O ban?             → KILL
-Is stock newly listed (<30 days)?→ KILL
-Is promoter pledge > 50%?        → KILL
-Is it a long signal on a loss making company? → KILL
-Is delivery quality score < 20?  → KILL
-Is liquidity too low (<5 Cr avg daily turnover)? → KILL
-Is it within 09:15–09:30 window? → KILL
-Is it lunch zone (11:30–13:30) and not a strong setup? → KILL
-If any gate triggers — silent discard. No message, no log to user. These are not borderline cases.
-
-Layer 1 — Market regime score (−30 to +30)
-Before looking at the stock, look at the market. Is the environment friendly or hostile to this signal type?
-Market direction:
-Nifty trending up strongly today    → +10
-Nifty flat / sideways               →   0
-Nifty trending down strongly        → −15
-VIX state:
-VIX falling + below 15              → +10 (calm, momentum works)
-VIX flat                            →   0
-VIX rising + above 20               → −10 (fear, mean reversion works better)
-VIX above 25                        → −20 (panic, only high-conviction plays)
-Global setup:
-GIFT Nifty gap aligned with signal  → +5
-GIFT Nifty neutral                  →  0
-GIFT Nifty against signal           → −10
-FII flow:
-FII net buyers today (cash)         → +5
-FII net sellers today               → −5
-Time of day:
-9:30–11:00 (prime window)           → +5
-13:30–15:00 (second window)         → +3
-11:30–13:30 (lunch zone)            → −10
-15:00+ (closing pressure)           → −15
-Expiry effect:
-Expiry day, signal aligned with max pain direction → +5
-Expiry day, signal against max pain               → −10
-Non-expiry day                                    →  0
-Regime score range: −30 to +30
-If regime score is below −15, kill the signal regardless of stock quality.
-
-Layer 2 — Sector score (−15 to +15)
-Is the stock's sector helping or hurting?
-Sector is top 3 performing today    → +10
-Sector is average                   →   0
-Sector is bottom 3 performing today → −10
-Sector RS rank improving intraday   → +5
-Sector RS rank deteriorating        → −5
-This matters because a breakout in a leading sector has institutional backing. A breakout in a lagging sector is fighting the tide.
-
-Layer 3 — Stock fundamental score (−20 to +20)
-Long-term quality of the business. This doesn't change minute to minute.
-Quality score > 70                  → +10
-Quality score 50–70                 → +5
-Quality score 30–50                 →  0
-Quality score < 30 (long signal)    → −20
-
-Debt/Equity < 0.5                   → +5
-Debt/Equity > 2                     → −10
-
-Promoter holding > 50%              → +3
-Promoter pledge > 25%               → −10
-
-YoY revenue growing > 15%          → +5
-YoY revenue shrinking               → −10
-
-Recent credit rating upgrade        → +5
-Recent credit rating downgrade      → −15
-
-Layer 4 — Technical alignment score (−20 to +30)
-Is the stock technically set up for this signal?
-Trend:
-Daily trend: strong uptrend (for long signal)  → +10
-Daily trend: uptrend                           →  +5
-Daily trend: sideways                          →   0
-Daily trend: downtrend (for long signal)       → −15
-5-min momentum:
-RSI 5m: 50–65 (healthy, room to run)  → +10
-RSI 5m: 40–50 (recovering)            →  +5
-RSI 5m: 65–75 (strong but watch)      →  +3
-RSI 5m: > 75 (overbought, be careful) → −10
-RSI 5m: > 80 (extreme, avoid long)    → −20
-VWAP:
-Price above VWAP + VWAP slope positive → +10
-Price above VWAP, flat slope            →  +5
-Price below VWAP (for long signal)      → −10
-Volatility setup:
-BB compression (squeeze)        → +5 (energy building)
-BB expansion (breakout confirmed) → +3
-Normal                          →  0
-Volume:
-Volume 3×+ above 20d avg        → +5
-Volume 1.5–3× above avg         → +3
-Volume below avg                → −5 (weak signal)
-Key level:
-Breakout above PDH with volume  → +5
-Near 52-week high               → +3
-Far from any key level          →  0
-At strong resistance            → −5
-
-Layer 5 — Signal-specific score (0 to 20)
-The quality of the trigger itself.
-For OI buildup signals:
-OI change > 10%                 → +10
-OI change 5–10%                 →  +5
-OI change 3–5%                  →  +3
-Price change > 2%               → +5
-Price change 1–2%               → +3
-Volume 3×+ confirming           → +5
-For breakout signals:
-New 52-week high                → +10
-Clean break above resistance    →  +5
-Volume 2×+ confirming           →  +5
-For announcement signals:
-Result beat YoY > 20%           → +10
-Result beat YoY 10–20%          →  +5
-Credit upgrade (AA or above)    →  +8
-Credit downgrade to junk        → +10 (short signal)
-Order win > 5× market cap / 10  →  +8
-
-Layer 6 — Confluence bonus (0 to 20)
-This is where the magic happens. When multiple independent signals align simultaneously on the same stock, confidence goes up non-linearly.
-OI buildup + volume surge (same stock, same time)          → +10
-Breakout + result beat (technical + fundamental catalyst)   → +15
-Rating upgrade + technical breakout                         → +12
-OI buildup + sector leading + VWAP above + VIX falling     → +15
-Multiple brokerage upgrades in same week + technical setup  → +10
-The key principle: independent confirmations multiply confidence, not add. If 3 unrelated forces all point the same direction simultaneously, that's not coincidence — that's institutional accumulation, that's real.
-
-Final confidence computation
-base_score = 0.50  (every signal starts here)
-
-regime_contribution    = regime_score / 30 × 0.15
-sector_contribution    = sector_score / 15 × 0.10
-fundamental_contribution = fundamental_score / 20 × 0.15
-technical_contribution = technical_score / 30 × 0.20
-signal_contribution    = signal_score / 20 × 0.15
-confluence_bonus       = confluence_score / 20 × 0.15
-
-final_confidence = base_score 
-                 + regime_contribution
-                 + sector_contribution  
-                 + fundamental_contribution
-                 + technical_contribution
-                 + signal_contribution
-                 + confluence_bonus
-Thresholds:
-< 0.55  → discard silently
-0.55–0.65 → low confidence, send only if confluence present
-0.65–0.75 → good signal, send with normal priority
-0.75–0.85 → strong signal, send with high priority
-> 0.85  → exceptional signal, send with urgent tag
-
-The message itself — anatomy of a great alert
-Now that you have a confidence score and all the contributing factors, you build the message.
-The message has exactly 6 sections. Nothing more.
-
-Section 1 — The headline (1 line)
-🟢 RELIANCE — Long Buildup | Confidence: HIGH (0.88)
-Three things only: stock, signal type, confidence tier. The emoji encodes direction instantly (green = long bias, red = short bias, yellow = neutral/watch).
-Confidence tiers:
-> 0.85 → HIGH
-0.75–0.85 → GOOD  
-0.65–0.75 → MODERATE
-0.55–0.65 → WATCHLIST (don't trade, observe)
-
-Section 2 — The trigger (2–3 lines)
-What actually happened. The raw facts that fired the signal.
-Trigger: OI +4.3% | Price +1.4% | Vol 3.1× avg
-Time: 10:47 AM | Price at trigger: ₹2,841
-No interpretation here. Just the facts.
-
-Section 3 — The context (3–4 lines)
-Why the environment supports this signal. Only the factors that are GREEN. Don't list everything.
-✓ Nifty up 0.6% | VIX falling (14.2)
-✓ Energy sector leading (+1.8%)
-✓ VWAP: above | RSI(5m): 61 | Trend: uptrend
-✓ Quality: 74/100 | Revenue growth YoY: +18%
-
-Section 4 — The risk flags (only if any exist)
-Only include this section if something is worth flagging. Don't always include it.
-⚠ RSI approaching 65 — limited upside momentum
-⚠ Result expected in 4 days — hold size conservative
-If no flags — skip this section entirely. Absence of warning is itself a positive signal.
-
-Section 5 — Action parameters
-Entry zone: ₹2,838 – ₹2,845 (current: ₹2,841)
-Stop loss:  ₹2,810 (below VWAP + PDL, ATR-based)
-Target 1:   ₹2,878 (1R — partial exit)
-Target 2:   ₹2,915 (2R — trail remainder)
-Max hold:   15:20 IST (mandatory flat)
-This is the most important section for an actionable alert. Without this, the alert is just information. With this, it's a complete idea.
-How SL is calculated:
-
-Take the lower of: structure-based (PDL, VWAP) OR ATR-based (1.5 × ATR14 from entry)
-This ensures SL is never arbitrary
-
-How target is calculated:
-
-Target 1 = 1R (risk × 1 = same distance as SL but upward)
-Target 2 = 2R (ride with trail)
-Never promise more than 2R without exceptional confluence
-
-
-Section 6 — The why in plain English (1–2 sentences)
-This is optional but powerful. A brief human-readable summary of why this signal is worth looking at.
-Summary: Reliance showing institutional accumulation — OI building as price rises
-with sector tailwind and healthy fundamentals. Clean setup above VWAP.
-This makes the alert feel like it came from an analyst, not a machine. It builds trust in the system over time because you can verify it yourself.
-
-Full message example — putting it all together
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🟢 RELIANCE — Long Buildup
-Confidence: HIGH (0.88)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Trigger: OI +4.3% | Price +1.4% | Vol 3.1×
-Time: 10:47 AM | CMP: ₹2,841
-
-Context:
-✓ Nifty +0.6% | VIX falling 14.2
-✓ Energy sector leading +1.8% today
-✓ Above VWAP ↑ | RSI(5m) 61 | Uptrend
-✓ Quality 74 | Revenue +18% YoY
-✓ Sector RS rank: #2 of 11
-
-Action:
-Entry:  ₹2,838–2,845
-SL:     ₹2,810 (1.1% risk)
-T1:     ₹2,878 (1R — exit 50%)
-T2:     ₹2,915 (2R — trail rest)
-Flat by: 15:20 IST
-
-Summary: Institutional accumulation pattern —
-price and OI rising together with volume
-confirmation in a leading sector.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-That message takes 20 seconds to read. Everything you need is there. Nothing you don't need is there.
-
-The rating upgrade/downgrade message — different format
-Rating events need a slightly different format because the action might be next day, not intraday.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔴 KRYSTAL — Credit Downgrade Alert
-Confidence: HIGH (0.85) | BEARISH BIAS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Event: CRISIL downgrade
-LT: A−/Stable → BBB+ (1 notch ↓)
-ST: A2+ → A2
-Filed: 30-Apr 20:51 (after market)
-
-Context:
-✗ Both LT and ST downgraded together
-✗ BBB+ = lowest investment grade
-✗ One more notch = junk territory
-✓ Not yet junk — some institutional support remains
-
-Pre-open watch:
-Expected gap: −3% to −8%
-IEP at 9:08 will confirm direction
-
-If gap down > 3% and holds:
-Entry (short): At 9:30 if below PDL
-SL: Above gap fill level
-Target: −5% from open
-
-If gap fills immediately:
-Skip — reversal in play, avoid
-
-Watch: 09:08 pre-open IEP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-The daily morning brief — a different type of message
-Every morning at 9:00 AM before market opens, one message:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🌅 Market Brief — 30 May 2026
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Global setup: CAUTIOUS
-GIFT Nifty: −0.3% (Nifty ~24,180)
-US markets: S&P −0.4% | Nasdaq −0.6%
-Asia: Nikkei −0.5% | Hang Seng flat
-Crude: $87.2 (+0.8%) — watch energy
-
-Today's regime: SIDEWAYS/MILD BEARISH
-→ Prefer short setups or cash
-→ Reduce position size 30%
-→ Avoid chasing gap ups
-
-Overnight events:
-🔴 KRYSTAL — Credit downgraded (watch gap)
-🟢 SBFC Finance — Rating upgraded
-
-Expiry note: Not expiry day
-
-Key levels today:
-Nifty support: 24,050 | 23,900
-Nifty resistance: 24,300 | 24,500
-
-Signals to watch at open:
-- KRYSTAL gap down — short setup if holds
-- SBFC Finance — any dip is buy opportunity
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-This morning brief sets the entire context for the day. Every subsequent alert is interpreted against this brief.
-
-What makes this system different from everything else
-Most systems give you:
-
-A screener output (just numbers)
-A news alert (just an event)
-A chart signal (just technical)
-
-This system gives you:
-
-The trigger (what happened)
-The market context (is the environment supporting it)
-The stock context (is this a quality company)
-The options context (what is smart money doing)
-The rating context (is fundamental credit quality improving or deteriorating)
-The sector context (is money flowing into this sector)
-The time context (is this the right time of day)
-The action (what to actually do)
-The risk (where you're wrong)
-The plain English summary (why this matters)
-
-All collapsed into one message. One message that takes 20 seconds to read and gives you everything you need to make a decision.
-That is the product.You said: also there are different phycological factors such as buy the news sell the rumor or buy the rumor sell the news how can we handle that casesalso there are different phycological factors such as buy the news sell the rumor or buy the rumor sell the news how can we handle that cases2:30 PMClaude responded: Excellent addition.Excellent addition. This is one of the most important and least systematized aspects of markets. Let me think through this carefully.
-
-First — understanding the phenomenon properly
-The phrases get mixed up. Let me clarify exactly what each means.
-"Buy the rumor, sell the news"
-
-Anticipation of a positive event causes price to rise BEFORE the event
-When the event actually happens, the buying is exhausted
-Traders who bought the rumor now sell into the news
-Result: stock falls ON the day of good news
-Classic example: Nifty rallies 3% in the week before RBI rate cut, then falls 1% the day RBI actually cuts
-
-"Buy the news, sell the rumor" (less common phrase, same phenomenon reversed)
-
-Sometimes used when negative rumors cause selling
-The actual news turns out less bad than feared
-Relief rally happens ON the news day
-Example: Stock falls 8% on merger rumors over 2 weeks, actual merger announced at fair price, stock rallies
-
-The underlying force is the same in both cases:
-Price moves to price in an EXPECTED event. When the event arrives, the expectation is resolved. Resolution removes the uncertainty premium. Price adjusts back.
-
-The four scenarios that matter
-Before anything else, recognize which scenario you are in.
-
-Scenario 1 — Anticipated positive event, good outcome
-Example: Result expected to be strong, result actually strong.
-What happens:
-
-Stock already up 5–15% in days before result
-Result comes in — beat is confirmed
-Initial spike of 2–3% at announcement
-Then selling begins as early buyers exit
-Stock often ends below the spike high by end of day
-But 2–5 days later, a second leg up as fresh buyers come in
-
-How to handle:
-
-Don't chase the initial spike
-Wait for the first pullback after the spike
-Enter on the pullback if volume declines on the dip
-The real move is often the second wave, not the first
-
-
-Scenario 2 — Anticipated positive event, disappointing outcome
-Example: Result expected strong, result misses.
-What happens:
-
-Stock already up 5–15% pre-result
-Result disappoints — miss confirmed
-Stock crashes — not just the miss, but the UNWINDING of the anticipation premium
-Move is double — reversal of pre-run + fresh selling on bad news
-This is brutal. 10–20% down in a day is possible
-
-How to handle:
-
-This is the most dangerous scenario for longs
-If a stock has run 10%+ before its result — size down or avoid longs entirely
-The system should flag stocks that have run significantly pre-event as HIGH RISK
-After the miss, the short signal is very high confidence
-
-
-Scenario 3 — Anticipated negative event, bad outcome
-Example: Downgrade expected, downgrade happens.
-What happens:
-
-Stock already down 5–15% on the fear
-Actual downgrade confirmed
-Further selling but usually less severe than the pre-event fall
-Often a dead cat bounce after the initial shock
-Real bottom only after 2–3 days when forced sellers finish
-
-How to handle:
-
-The first reaction is often overdone
-Look for the bounce setup 1–2 days after
-Don't short into already beaten down stocks — bad risk/reward
-The bounce is the trade, not the continuation of the fall
-
-
-Scenario 4 — Anticipated negative event, better than feared outcome
-Example: Result feared to be bad, actual result is okay.
-What happens:
-
-Stock already down 10–20% pre-result on fear
-Result comes in — not as bad as feared
-Relief rally — sometimes violent — 5–15% in one session
-This is the "sell the rumor, buy the news" scenario
-These are some of the best asymmetric trades
-
-How to handle:
-
-This is a high-reward setup if you catch it
-Look for stocks that have been beaten down significantly pre-event
-Check: is the fear overdone relative to actual business fundamentals?
-If quality score is reasonable but stock has fallen 20%+ on rumors — watch for the reversal signal at the event
-
-
-How to systematically detect which scenario you are in
-This is the design question. How does the system know?
-Signal 1 — Pre-event price run measurement
-The system measures how much a stock has already moved BEFORE the event.
-pre_event_run_pct = (current_price - price_10d_ago) / price_10d_ago × 100
-Classification:
-pre_event_run > +15%  → BUY_RUMOR_IN_PLAY (long exhaustion risk)
-pre_event_run +5% to +15% → MILD_ANTICIPATION
-pre_event_run −5% to +5% → NO_SIGNIFICANT_ANTICIPATION
-pre_event_run −5% to −15% → MILD_FEAR_PRICED
-pre_event_run < −15% → SELL_RUMOR_IN_PLAY (short exhaustion, reversal risk)
-This single number tells you how much of the event is already priced in.
-
-Signal 2 — Options implied volatility behavior
-Options traders know about upcoming events. They buy protection. This shows up in IV.
-Pre-event IV expansion:
-
-IV rising steadily as event approaches = market pricing uncertainty = event not yet priced
-Means the move hasn't happened yet
-
-IV crush:
-
-When the event happens, uncertainty resolves
-IV collapses — sometimes 30–50% in one session
-This IV crush amplifies price moves in the direction of the news
-
-What the system tracks:
-iv_vs_5d_avg = current_atm_iv / 5d_avg_atm_iv
-
-iv_vs_5d_avg > 1.5  → IV elevated, event approaching, uncertainty premium high
-iv_vs_5d_avg > 2.0  → IV very elevated, event imminent
-iv_vs_5d_avg < 0.7  → IV crushed, event just passed
-When IV is very elevated AND pre-event run is >15% → classic buy-the-rumor setup in play.
-
-Signal 3 — Volume pattern before the event
-Smart money moves first. They know before anyone else (legally or otherwise).
-Accumulation pattern before positive event:
-
-Delivery volume rising over 5–10 days
-Price creeping up on above average volume
-OBV (On Balance Volume) rising
-This is buy-the-rumor accumulation in progress
-
-Distribution pattern before negative event:
-
-Delivery volume declining
-Price falling on above average volume
-OBV declining
-Insiders selling before bad news
-
-The system tracks this as:
-pre_event_volume_trend = avg_volume_5d / avg_volume_20d
-
-> 1.5  → unusual pre-event activity (information asymmetry likely)
-> 2.0  → strong pre-event positioning (high buy-rumor risk)
-
-Signal 4 — News and rumor detection
-The system needs to know when something is a "known event" vs a "surprise event."
-Known events (scheduled, everyone knows):
-
-Quarterly results (board meeting date announced)
-RBI policy meetings (scheduled 6 times/year)
-Union budget
-Dividend record dates
-Annual General Meetings
-
-For these — pre-event run is almost always present. Buy-rumor risk is HIGH.
-Semi-known events (rumored but not confirmed):
-
-Acquisition rumors
-Promoter stake sale rumors
-Rating action rumors
-Management change rumors
-
-For these — rumor may have circulated for days/weeks before announcement. Check pre-event run.
-Surprise events (no prior knowledge):
-
-Sudden regulatory action
-Geopolitical event
-Unexpected management resignation
-Fraud discovery
-
-For these — no pre-event run, first mover advantage is maximum, buy-rumor dynamic doesn't apply.
-
-Signal 5 — The announcement arrival pattern
-When the actual news hits, what the stock does in the FIRST 5 MINUTES tells you everything.
-Pattern A — Spike and hold:
-
-Stock jumps 3% on news
-Stays above 2.5% for 5 minutes
-Volume is 5×+ average
-This is a genuine first-reaction move — more likely to continue
-
-Pattern B — Spike and fade:
-
-Stock jumps 3% on news
-Falls back to 1.5% within 5 minutes
-Volume high initially but dropping
-This is buy-rumor sell-news in action — the sellers are present
-
-Pattern C — No reaction:
-
-News hits, stock barely moves
-Fully priced in already
-Neither buy nor sell signal
-
-Pattern D — Reverse reaction:
-
-Good news, stock falls
-Bad news, stock rises
-Classic buy-rumor sell-news or sell-rumor buy-news
-These are COUNTER-INTUITIVE moves — very important to flag
-
-Pattern D is the most important one to detect and signal. A stock falling on good news is telling you something. The system must catch this.
-
-The psychological cycle — full map
-Understanding the full cycle helps predict where in the cycle a stock is.
-RUMOR STARTS
-     ↓
-First movers buy quietly
-(volume rises, price creeps)
-     ↓
-Rumor spreads to more traders
-(volume spikes, price accelerates)
-     ↓
-Maximum anticipation — stock at peak
-(everyone who will buy has bought)
-     ↓
-NEWS ARRIVES
-     ↓
-Initial spike (late buyers jump in)
-     ↓
-Smart money SELLS into the spike
-     ↓
-Price starts falling despite good news
-     ↓
-Retail confused — "but the news was good?"
-     ↓
-Price falls back to pre-rumor levels
-     ↓
-MAXIMUM PESSIMISM
-     ↓
-Real long-term buyers enter
-     ↓
-Second leg up begins (slower, more sustainable)
-The system needs to identify WHERE in this cycle the stock is at any given moment.
-
-New data points this requires
-To handle psychological factors properly, the system needs several new measurements.
-1. Event proximity score:
-days_to_event = 0 (event today)
-             = 1 (event tomorrow)
-             = 5 (event in 5 days)
-Already partly tracked in pending_events table.
-2. Pre-event run score:
-pre_event_run_5d  = price change over 5 days
-pre_event_run_10d = price change over 10 days
-pre_event_run_20d = price change over 20 days
-Computed from bhavcopy history.
-3. Rumor detection score:
-This is the hardest one. Options:
-
-Track if volume was abnormally high in the 5–10 days BEFORE an announced event
-If yes — information was leaking, rumor was in play
-Compare: pre-event volume vs 30-day average volume
-
-4. Post-announcement behavior tracker:
-After any announcement, track:
-
-What did the stock do in the first 5 minutes?
-Did it spike and hold or spike and fade?
-What was the volume pattern?
-
-This feeds into the "announcement reaction" signal type.
-5. Sentiment exhaustion score:
-sentiment_exhaustion = pre_event_run × pre_event_volume_spike × iv_level
-
-High exhaustion → sell-the-news risk is HIGH
-Low exhaustion  → genuine first reaction, more likely to follow through
-
-How this changes the signal messages
-Before an event — pre-event run detected
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠ INFOSYS — Pre-Result Warning
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Result in: 2 days
-Pre-event run: +8.4% over 10 days
-Pre-event volume: 1.8× normal
-IV level: 1.6× 5d avg
-
-Assessment: BUY-RUMOR IN PLAY
-→ Significant anticipation already priced
-→ Result must beat consensus substantially
-   to sustain current levels
-→ Even a good result may cause sell-off
-
-Advice: Avoid new longs until result
-If long already: consider partial exit
-Watch for: Spike-and-fade pattern at result
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-At the moment of announcement — reaction analysis
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔴 INFOSYS — Sell-the-News Pattern Detected
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Result: BEAT (Revenue +12% YoY, PAT +9%)
-Expected: Good news
-
-First 5-min reaction:
-  Spike: +2.8% at announcement
-  Now:   +0.9% (fading fast)
-  Volume: 4× but declining
-
-Pattern: SPIKE AND FADE
-Assessment: BUY-RUMOR SELL-NEWS confirmed
-→ Good result but price had run +8% pre-result
-→ Buyers exhausted, sellers arriving
-→ Likely to give back pre-result gains
-
-Watch:
-  Support 1: ₹1,847 (pre-run start level)
-  Support 2: ₹1,820 (200d MA)
-
-Opportunity: SHORT or AVOID LONG
-If it stabilizes at ₹1,847 with low volume → buy dip
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-The reverse — sell-rumor buy-news detected
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🟢 KRYSTAL — Sell-Rumor Buy-News Setup
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Context:
-Pre-event fall: −18% over 15 days
-(downgrade feared, excessive selling)
-
-Actual news: Rating downgraded BUT
-→ Not to junk (BBB+, still investment grade)
-→ Outlook: Stable (not negative)
-→ Less bad than feared
-
-First 5-min reaction:
-  Initial fall: −3.2%
-  Now: −0.8% (recovering fast)
-  Volume: 6× (exhaustion buying)
-
-Pattern: BETTER THAN FEARED — REVERSAL SETUP
-Assessment: SELL-RUMOR BUY-NEWS in play
-→ Stock oversold by 18% pre-event
-→ Actual news resolves the worst fear
-→ Short squeeze likely
-
-Setup:
-Entry: ₹287 (current, after stabilization)
-SL:   ₹271 (below today's low)
-T1:   ₹310 (50% pre-event fall recovery)
-T2:   ₹328 (pre-event level)
-
-Confidence: MODERATE (0.72)
-Risk: Rating still deteriorating fundamentally
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Other psychological factors to systematize
-While we're here — other psychological forces that create repeatable patterns.
-
-Round number magnetism
-Nifty at 24,000. Reliance at ₹3,000. These are not just technical levels. They are psychological anchors.
-The system tracks:
-
-Distance from nearest round number (50, 100, 500, 1000)
-Volume behavior AS price approaches round numbers
-Whether the stock has repeatedly failed at a round number (psychological resistance)
-
-round_number_distance_pct < 0.5%  → AT round number (max psychological significance)
-round_number_distance_pct < 2%    → APPROACHING (watch for behavior)
-previous_failures_at_level > 2    → STRONG psychological resistance
-
-Loss aversion and stop loss clustering
-Retail traders cluster stops at obvious levels. Operators know this.
-Common stop clustering zones:
-
-Just below round numbers (stops at 999, 4999, 19999)
-Just below previous day low
-Just below a well-known moving average (200 DMA especially)
-
-The system detects when price approaches these zones with high volume — it's either a genuine breakdown or a stop hunt.
-The stop hunt signature:
-Price dips below obvious support level
-Volume spikes on the dip
-Price recovers back above the level within 1–2 candles
-Volume drops on the recovery
-When this pattern appears — it's a liquidity grab. The smart trade is in the direction of the recovery, not the dip.
-
-FOMO — Fear of Missing Out
-FOMO creates the final blow-off top of a trend.
-FOMO signatures:
-
-Stock up 15–20% in 3–5 days
-Volume increasing each day (more people piling in)
-Social media buzz (hard to measure but correlated with volume)
-RSI above 80
-Price far above VWAP
-New 52-week high every day
-
-This is NOT the time to buy. This is the time the smart money is selling to the FOMO buyers.
-System detects:
-consecutive_up_days > 5 AND
-volume_trend_5d = rising AND
-rsi_5m > 78 AND
-pct_from_vwap > 3%
-→ FOMO_EXHAUSTION_WARNING
-
-Capitulation — the opposite of FOMO
-The mirror of FOMO. Maximum pain, everyone selling, nobody wants to hold.
-Capitulation signatures:
-
-Stock down 8–15% in 3–5 days
-Volume increasing each day on the down days (panic selling)
-RSI below 25
-Price far below VWAP
-New 52-week lows
-Delivery percentage high (long-term holders finally giving up)
-
-This is NOT the time to short. It's often the best buying opportunity.
-System detects:
-consecutive_down_days > 4 AND
-volume_trend_5d = rising (panic) AND
-rsi_5m < 22 AND
-pct_below_vwap > 3% AND
-delivery_pct > 60%
-→ CAPITULATION_WATCH (reversal setup forming)
-
-Anchoring bias
-Traders anchor to specific prices and make irrational decisions around them.
-Common anchors:
-
-IPO price (people who bought at IPO hold on no matter what)
-All-time high (people who missed the top wait for it to come back)
-Round numbers (₹100, ₹500, ₹1000)
-52-week high and low
-
-How this creates tradable patterns:
-
-Stock that crashed from ₹500 to ₹250 has massive overhead resistance at ₹350, ₹400, ₹450 — people who are "stuck" sell to break even
-Stock approaching its IPO price from below often gets a relief bounce (bagholders finally at breakeven)
-Stock at all-time high has no overhead resistance — breakout is clean
-
-distance_from_ath_pct = (ath - current) / ath × 100
-
-distance < 2%   → NEAR ALL-TIME HIGH (if breaks, clean runway)
-distance = 0%   → NEW ALL-TIME HIGH (momentum signal, no resistance)
-distance > 30%  → DEEP VALUE or FALLING KNIFE (check which)
-
-Disposition effect — holding losers, selling winners
-Retail traders systematically:
-
-Sell winning positions too early (to lock in profits)
-Hold losing positions too long (to avoid admitting a loss)
-
-This creates predictable patterns:
-Supply overhang at previous highs:
-
-People who bought near a previous high and held through a crash are waiting to sell at breakeven
-This creates resistance at those levels
-
-Support at round loss levels:
-
-People who bought at ₹500 won't sell at ₹350 (too painful) but might at ₹400
-Clustering of buy orders at -20%, -30% from peak
-
-
-The master psychological state classifier
-All of these factors together let you classify the psychological state of any stock at any moment.
-PSYCHOLOGICAL STATE:
-─────────────────────────────────
-FOMO_EUPHORIA      → Late buyers piling in, smart money selling
-─────────────────────────────────
-BUY_RUMOR          → Anticipation building, pre-event run active
-─────────────────────────────────
-NEUTRAL_TRENDING   → Normal price discovery, follow the trend
-─────────────────────────────────
-SELL_NEWS          → Good news arrived, exhaustion selling
-─────────────────────────────────
-FEAR_BUILDING      → Negative expectations forming, avoid longs
-─────────────────────────────────
-CAPITULATION       → Maximum pain, potential reversal zone
-─────────────────────────────────
-RELIEF_BOUNCE      → Bad news less bad than feared, recovery
-─────────────────────────────────
-DEAD_CAT_BOUNCE    → Temporary relief in downtrend, avoid longs
-─────────────────────────────────
-Each state has a different trading approach. The system identifies the state and the alert message tells you which state you're in.
-
-How this feeds into confidence scoring
-Add a new layer to the confidence computation:
-Psychological alignment score (−20 to +20):
-Signal is LONG + state is NEUTRAL_TRENDING    → +10
-Signal is LONG + state is FOMO_EUPHORIA       → −20 (fighting exhaustion)
-Signal is LONG + state is BUY_RUMOR active    → −10 (late to the party)
-Signal is LONG + state is CAPITULATION        → +15 (contrarian long setup)
-Signal is SHORT + state is SELL_NEWS          → +15 (sell-news confirmed)
-Signal is SHORT + state is RELIEF_BOUNCE      → −15 (fighting the bounce)
-Signal is either + state is NEUTRAL           →   0
-This single addition to the scoring engine dramatically reduces false signals — because the biggest losses come from taking technically valid signals in psychologically wrong environments.
-
-The single most important principle
-All of these psychological factors reduce to one insight:
-Price moves in anticipation. News resolves anticipation. Resolution creates the opposite of the expected move.
-The system that understands this will:
-
-Never chase a stock that has already run before its catalyst
-Always look for the setup AFTER the initial reaction, not during it
-Treat violent moves on news as setup opportunities for the subsequent move
-Flag exhaustion before it becomes a painful position
-Find the asymmetric trades where fear is overdone or excitement is overdone
-
-That understanding — systematized into scores, states, and clear message formats — is what separates a signal system from a noise machine.You said: anything else that can make this system more confidentanything else that can make this system more confident2:44 PMClaude responded: Great question.Great question. Let me think through every possible additional layer that could increase signal confidence — things we haven't fully covered yet.
-
-1. Insider and Promoter Activity
-This is one of the most powerful signals available and almost nobody systematizes it properly.
-What to track:
-Promoter buying their own stock is one of the strongest bullish signals that exists. They know the business better than anyone. When they buy — especially in large quantities — they are telling you something.
-Data sources already in your pipeline:
-
-insider_trading collector — tracks SAST/PIT disclosures on NSE
-shareholding_pattern collector — quarterly promoter holding changes
-
-What the signals look like:
-Promoter bought 2% additional stake in open market
-→ Very bullish — they're spending real money
-→ Not an allotment, not an ESOP — actual market purchase
-
-Promoter sold 5% stake
-→ Bearish — could be personal need OR could be losing confidence
-
-Promoter pledge INCREASED
-→ Very bearish — they're borrowing against shares (financial stress)
-
-Promoter pledge DECREASED
-→ Bullish — stress is reducing, they're freeing up shares
-The compound signal:
-Promoter buying + technical breakout + OI buildup
-→ Extremely high confidence long signal
-→ Promoter has non-public fundamental knowledge
-→ Technical setup confirms price action
-→ Derivatives confirming institutional interest
-The red flag compound:
-Promoter pledge increasing + credit downgrade + price falling
-→ Extremely high confidence avoid / short signal
-→ This is the IL&FS, DHFL, Vodafone Idea pattern
-→ The system should generate a DANGER alert, not just a bearish signal
-
-2. Mutual Fund and FII Holding Changes
-Quarterly shareholding data tells you:
-
-FII holding increased last quarter → institutional confidence growing
-DII (mutual fund) holding increased → domestic money flowing in
-Both FII and DII increased → very bullish setup
-Both decreasing → distribution, smart money exiting
-
-The lag problem:
-Shareholding data is quarterly — 45 days old by the time it's published. But the DIRECTION of change combined with current price action is still valuable.
-How to use it:
-FII holding up 3% last quarter + stock at support + OI building
-→ Institutions bought last quarter, now price is back at their entry
-→ They're likely defending their position
-→ High probability bounce
-
-FII holding down 5% + stock in downtrend + credit concerns
-→ Smart money already exited
-→ Retail is holding the bag
-→ Avoid longs completely
-
-3. Delivery Percentage — The Conviction Indicator
-We mentioned this but it deserves much deeper treatment because it's India-specific and massively underused.
-What delivery % tells you:
-Every trade on NSE is either:
-
-Delivery (person actually wants to OWN the shares — long term intent)
-Intraday (will square off same day — speculative)
-
-High delivery % = conviction. People are paying to own, not just speculate.
-Delivery % > 60% on an up day
-→ Genuine buying, not just day trading
-→ Institutions accumulating
-→ Move likely to sustain
-
-Delivery % < 20% on an up day
-→ Mostly intraday traders
-→ No real ownership change
-→ Move likely to reverse by EOD or next day
-
-Delivery % > 60% on a DOWN day
-→ Long-term holders selling — they've given up
-→ Either capitulation (buy opportunity) or distribution (danger)
-→ Need to combine with other signals to distinguish
-The multi-day delivery pattern:
-5 consecutive days of rising delivery % with rising price
-→ Systematic accumulation
-→ Not a coincidence — institution building position
-→ Very high confidence long setup
-
-Sudden spike in delivery % after a long rally
-→ Transfer from weak hands (traders) to strong hands (investors)
-→ Consolidation likely, then next leg up
-This becomes a standalone indicator:
-delivery_conviction_score:
-  delivery_5d_avg vs delivery_20d_avg
-  delivery_trend (rising / falling / flat)
-  delivery_vs_volume_ratio
-  delivery_on_up_days vs delivery_on_down_days
-
-4. Short Interest Proxy — SLB Data
-India doesn't have a clean short interest disclosure like the US. But we have the Securities Lending and Borrowing (SLB) segment.
-What SLB tells you:
-When a trader wants to short a stock, they need to borrow shares. The SLB segment is where this happens.
-High SLB lend rates → high demand to short → bearish sentiment
-Rising SLB volumes → increasing short interest → bearish pressure building
-Sudden drop in SLB lending → shorts covering → potential short squeeze
-The short squeeze setup:
-Stock has fallen 20%+ over 2 weeks
-SLB lending has been high (shorts are in)
-Stock starts recovering with high delivery volume
-SLB lending starts dropping (shorts exiting)
-→ SHORT SQUEEZE in progress
-→ High confidence violent upward move
-→ Shorts are forced to cover — they BUY
-→ This buying accelerates the move
-This is one of the most explosive intraday moves possible. When a heavily shorted stock suddenly reverses, the covering cascade can move a stock 10–20% in hours.
-
-5. Index Rebalancing — Passive Flow Alpha
-Every few months NSE updates the composition of Nifty 50, Nifty 500, sector indices. When a stock is ADDED to an index, every index fund and ETF tracking that index must buy it.
-This creates guaranteed, predictable, forced buying.
-Nifty 50 market cap: ₹200 lakh crore
-Index funds tracking Nifty 50: significant AUM
-Stock added to Nifty 50:
-→ All index funds must buy proportional weight
-→ Buying is forced and non-discretionary
-→ Buying happens on the effective date
-→ Announcement usually 2 weeks before effective date
-The trade:
-Stock announced for Nifty 50 addition
-→ Buy immediately after announcement
-→ Sell just before effective date (when forced buying peaks)
-→ 5–15% move in 2 weeks is common
-→ High confidence because the buyers are FORCED
-NSE announces index changes on their website. This should be a collector — collectors/index_rebalancing.py — that checks for IISL (India Index Services) announcements.
-
-6. Block Deal Intelligence — Named Buyers
-Your system already collects block deals. But the VALUE is in knowing WHO is buying or selling.
-Named institutions that matter:
-When these names appear as buyers in a block deal, it's a strong positive signal:
-
-LIC (largest domestic institution)
-SBI Mutual Fund, HDFC Mutual Fund, ICICI Prudential MF
-Known FIIs — GIC Singapore, CPPIB, Temasek, Norges Bank
-Warren Buffett entities (rare but gold)
-
-When these appear as sellers:
-
-Could be normal portfolio rebalancing OR losing confidence
-Need to check if they're still holding significant stake after the sale
-
-The system should:
-raw_large_deals → extract client_name field
-→ match against known institution list
-→ classify: tier_1_institution, tier_2_institution, unknown_retail
-→ weight signal confidence accordingly
-
-Tier 1 institution buying + technical setup
-→ +15 to confidence score
-
-Unknown retail selling large block
-→ Neutral or mild negative
-
-7. Management Quality and Track Record
-This is qualitative but can be partially systematized.
-Signals of good management:
-Consistent guidance vs actual delivery
-→ If management said "20% growth" and delivered 19–22% for 3 years
-→ High credibility — next guidance is trustworthy
-
-Promoter increasing stake over time
-→ Skin in the game, confidence in business
-
-Debt reducing year over year
-→ Financial discipline
-
-Working capital cycle improving
-→ Operational efficiency
-Signals of bad management:
-Multiple guidance misses
-→ Either incompetent or deliberately misleading investors
-
-Related party transactions > 15% of revenue
-→ Money leaving the company through back channels
-
-Auditor qualifications or change of auditor
-→ Serious red flag — accounting irregularities possible
-
-Frequent CFO/CEO changes
-→ Internal stress, governance issues
-
-Management selling large stake while saying business is great
-→ Actions contradict words
-How to systemize this partially:
-From raw_financial_results:
-  guidance_accuracy_score = actual vs guidance over 4 quarters
-
-From raw_integrated_filings:
-  audit_flags = qualified opinion, emphasis of matter, going concern
-
-From raw_large_deals:
-  management_selling_pattern = promoter/mgmt sales in last 6 months
-
-From raw_announcements:
-  cfo_changes, ceo_changes, auditor_changes count in 12 months
-
-8. Relative Strength — Within Sector
-We track sector RS but within-sector relative strength is even more powerful.
-The idea:
-In any bull run, some stocks in a sector lead. Others lag. The leaders keep leading. This is momentum persistence.
-Calculation:
-For each stock in NIFTY BANK:
-  stock_rs = stock_5d_return / sector_5d_return
-
-Rank all stocks in sector by this ratio:
-
-Top quintile (ratio > 1.2) = sector leaders
-Bottom quintile (ratio < 0.8) = sector laggards
-Why this matters for signal confidence:
-Long signal on sector leader:
-→ Money is flowing into this stock specifically
-→ Institutions have chosen this over peers
-→ +10 to confidence
-
-Long signal on sector laggard:
-→ Even in a rising sector, this stock is weak
-→ Something specific is wrong
-→ −15 to confidence
-The most powerful version:
-Sector moving from lagging to leading in RRG
-AND
-A specific stock leading within that sector
-AND
-Technical breakout on that stock
-→ Sector rotation + stock leadership + technical trigger
-→ Triple confluence, very high confidence
-
-9. Market Breadth — The Hidden Health Indicator
-Breadth tells you if a market rally or fall is broad (sustainable) or narrow (fragile).
-Key breadth indicators:
-Advances vs Declines:
-→ Nifty up 1% but 1200 stocks declining vs 800 advancing
-→ Narrow rally, only large caps going up
-→ Fragile — likely to reverse
-
-Nifty up 1% and 1600 advancing vs 400 declining
-→ Broad rally, healthy
-→ Sustainable — trend is real
-
-New 52-week highs:
-→ More new highs than lows → bull market is healthy
-→ More new lows despite flat index → internal weakness building
-
-Percentage of stocks above 200 DMA:
-→ > 70% → strong bull market
-→ 40–70% → mixed market
-→ < 40% → bear market or approaching
-→ < 20% → extreme weakness, potential bottom
-How this modifies signal confidence:
-Long signal when breadth is strong (>70% above 200 DMA)
-→ +10 to market regime score
-
-Long signal when breadth is weak (<40% above 200 DMA)
-→ −15 to market regime score
-→ Even strong stocks struggle in bad breadth
-The divergence signal:
-Index making new highs
-Breadth deteriorating (fewer stocks participating)
-→ Distribution happening at the top
-→ Smart money selling index heavyweights while rotating out
-→ Market top forming
-→ Reduce all long confidence scores by 10–15
-
-10. Earnings Quality — Not Just the Number
-When a result comes in, the headline EPS number is what everyone sees. But WHAT IS DRIVING that EPS matters enormously.
-High quality earnings:
-Revenue growing → real business growth
-Operating profit growing faster than revenue → margin expansion
-Cash flow from operations matching PAT → real profits not accounting tricks
-Receivables growing slower than revenue → collecting money efficiently
-Working capital improving → operational health
-Low quality earnings:
-PAT up but revenue flat → one-time items, write-backs, tax benefits
-Other income driving profit → not from core business
-Receivables growing faster than revenue → booking revenue but not collecting
-Inventory building up → goods not selling
-Cash flow negative despite positive PAT → accounting profits, not real
-The system extracts from parsed PDFs:
-earnings_quality_score:
-  revenue_growth_yoy
-  operating_profit_growth_vs_revenue_growth
-  cfo_vs_pat_ratio (cash flow from operations / profit after tax)
-  receivables_days_change
-  inventory_days_change
-High quality earnings beat (revenue + margins + cashflow all strong)
-→ +15 to signal confidence
-→ Move is likely to sustain
-
-Low quality earnings beat (PAT up only due to other income)
-→ −10 to signal confidence
-→ Market will eventually see through this
-→ Don't chase the initial spike
-
-11. Global Sector Parallels
-Indian sectors don't move in isolation. They follow global peers.
-The connections:
-US banks earnings strong
-→ Indian banking sector gets a tailwind
-→ FIIs more comfortable with banking exposure globally
-
-US semiconductor stocks surging
-→ Indian IT stocks with semiconductor exposure benefit
-→ Also HCL Tech, Wipro which service chip companies
-
-Chinese steel production data
-→ Directly impacts Indian steel stocks (Tata Steel, JSW, SAIL)
-→ China cuts steel = global steel prices rise = Indian steel profits up
-
-US pharma FDA approvals/rejections
-→ Indian pharma companies with US exposure move in parallel
-→ Dr Reddy's, Sun Pharma, Cipla follow US pharma sentiment
-
-Global oil price
-→ Already in your system
-→ But track oil company specific news — OPEC decisions, inventory data
-The system should track:
-collectors/global_sector_sentiment.py:
-  US banking index (XLF) vs Indian banking
-  US tech (QQQ) vs Indian IT
-  Global metals ETF vs Indian metals
-  US pharma vs Indian pharma
-
-Alignment bonus:
-  Global sector up + Indian sector signal
-  → +8 to sector contribution score
-  
-Divergence warning:
-  Global sector down + Indian sector signal bullish
-  → −10 to sector contribution score
-  → Going against global tide is risky
-
-12. Event Study Database — Historical Pattern Memory
-Over time your system accumulates data about what happened after every signal. This is the most powerful long-term feature.
-What gets recorded for every signal:
-signal_type: long_buildup
-symbol: RELIANCE
-confidence: 0.88
-market_regime: uptrend
-sector: energy
-pre_event_run: +3%
-vix_level: 14
-time_of_day: morning_window
-...
-
-Outcome:
-T+30min: +1.2%
-T+2hr: +2.1%
-T+EOD: +1.8%
-T+1d: +2.4%
-T+3d: +3.1%
-After 6 months you can answer:
-"When long_buildup fires in uptrend market with VIX<15 
- in the morning window with confidence > 0.80:
- 
- Win rate: 68%
- Avg gain: +2.8%
- Avg loss: −1.1%
- Profit factor: 1.73"
-This becomes part of the message:
-Historical context (last 6 months):
-This setup (long_buildup + uptrend + low VIX):
-Win rate: 68% | Avg gain: 2.8% | Avg loss: 1.1%
-Sample size: 47 trades
-Now the trader has not just a signal but a statistical expectation based on real historical outcomes from the same system. This is what institutions have. This is what retail doesn't.
-
-13. Intermarket Divergence Signals
-Sometimes the most powerful signal is when two related markets diverge when they shouldn't.
-The most important divergences:
-Nifty making new highs but India VIX also rising
-→ Rally happening with increasing fear
-→ Unstable, correction likely
-
-Bank Nifty falling but Nifty flat
-→ Banks are the economy's backbone
-→ If banks fall alone, broader weakness coming
-
-Rupee strengthening but FII selling
-→ Contradiction — FII buying usually strengthens rupee
-→ Something else is driving rupee (RBI intervention?)
-→ Don't trust the FII flow signal today
-
-Gold AND equities both rising together
-→ Unusual — normally they're inversely correlated
-→ Means liquidity is flooding everything
-→ Could be pre-election rally or policy surprise
-
-Crude rising but energy stocks falling
-→ Sector not believing the crude move
-→ Or sector-specific bad news (margin squeeze, regulation)
-→ Don't buy energy stocks just because crude is up
-These divergences should generate specific alerts:
-⚠ INTERMARKET DIVERGENCE DETECTED
-Nifty: +1.2% | India VIX: +8%
-Rally is happening with rising fear
-→ Reduce long confidence by 15% today
-→ Prefer shorter holding periods
-→ Tighten stop losses
-
-14. Regulatory and Policy Radar
-Regulatory actions can destroy or create enormous value overnight.
-What to track:
-SEBI actions:
-  New margin rules → affects traders directly
-  F&O lot size changes → affects derivatives
-  Insider trading investigations → company-specific
-
-RBI actions:
-  Rate decisions → affects banks, NBFCs, real estate
-  CRR/SLR changes → banking sector liquidity
-  Forex intervention → currency moves
-  Prompt Corrective Action on banks → banking crisis signal
-
-Government policy:
-  Import duty changes → affects auto, steel, electronics
-  Export bans → affects pharma, agriculture
-  PLI scheme announcements → sector-specific windfall
-  Disinvestment plans → PSU stocks move
-
-IRDAI (insurance regulator):
-  Premium regulations → insurance sector
-
-Competition Commission:
-  Merger approvals/rejections → M&A plays
-  Cartel investigations → sector-wide impact
-These don't come through NSE announcements. They come from:
-
-RBI website press releases
-SEBI website circulars
-PIB (Press Information Bureau) — government announcements
-Ministry websites
-
-This is a separate collector category — collectors/regulatory_watch.py — that monitors these sources.
-
-15. Weather and Seasonal Patterns
-This sounds unusual but for certain sectors it's very real.
-Agriculture sector:
-Monsoon progress (IMD data)
-→ Good monsoon → rural income up → FMCG, tractors, fertilizers up
-→ Poor monsoon → rural stress → MFI (microfinance) stress, FMCG down
-
-Rabi vs Kharif crop estimates
-→ Good harvest → farmer buying power up
-→ Directly impacts Hero MotoCorp, Maruti (rural models), Mahindra
-Power sector:
-Summer heat wave
-→ Power demand spikes
-→ NTPC, Torrent Power, Tata Power benefit
-
-Winter (North India)
-→ Heating demand
-→ Gas utilities benefit
-Cement:
-Pre-monsoon rush (construction accelerates in Feb-May)
-→ Cement volumes peak
-→ UltraTech, ACC, Ambuja benefit
-
-Monsoon slowdown (construction halts)
-→ Cement volumes drop
-→ Cement stocks underperform June-September
-How to systematize:
-collectors/weather_seasonal.py:
-  IMD monsoon progress weekly
-  Current season vs historical average
-  
-seasonal_factor_score:
-  Positive seasons for sector → +5 to sector score
-  Negative season for sector → −5 to sector score
-
-16. The Smart Money Tracker
-Combining multiple institutional signals into one score.
-smart_money_score = weighted combination of:
-
-FII cash market (daily)          weight: 25%
-FII derivative positioning       weight: 20%
-DII activity                     weight: 15%
-Block deal institutions          weight: 15%
-Promoter activity                weight: 15%
-SLB short interest               weight: 10%
-smart_money_score > 0.7  → Institutions are accumulating
-smart_money_score 0.4–0.7 → Mixed institutional activity
-smart_money_score < 0.4  → Institutions are distributing
-This becomes one of the core inputs to the morning brief and every signal alert.
-
-How all of this upgrades the message
-With all these additional layers, the confidence score now has 10+ independent inputs instead of 5–6. Each additional independent confirming factor reduces the probability of a false signal exponentially.
-Think of it like this:
-One signal alone: 55% probability of working
-Two confirming signals: 67%
-Three confirming signals: 76%
-Four confirming signals: 83%
-Five confirming signals: 88%
-Six+ confirming signals: 92%+
-These numbers are illustrative but the principle is real. Each INDEPENDENT confirmation multiplies confidence. Not adds — multiplies. Because the probability that 6 independent signals all point the wrong direction simultaneously is vanishingly small.
-
-The upgraded message — final form
+```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🟢 TATA MOTORS — Multi-Confluence Long
 Confidence: EXCEPTIONAL (0.93)
@@ -1811,812 +54,1247 @@ Confidence: EXCEPTIONAL (0.93)
 
 Trigger: Long Buildup
 OI +6.2% | Price +1.8% | Vol 4.1×
+Time: 10:47 AM | CMP: ₹926
 
-Market context: FAVORABLE
-✓ Nifty +0.8% | VIX falling (13.8)
-✓ Breadth strong (72% stocks above 200d)
-✓ FII net buyers ₹1,840 Cr today
-✓ Smart money score: 0.74 (accumulating)
-✓ Global autos (sector ETF) up 1.1%
+Market: Nifty +0.8% | VIX falling 13.8
+        Breadth strong (72% above 200d)
+        FII net buyers ₹1,840 Cr
 
-Sector context: LEADING
-✓ Auto sector RS rank: #1 today
-✓ Sector rotating from lagging to leading
-✓ Nifty Auto up 1.4% vs Nifty 0.8%
+Sector: Auto RS rank #1 | +1.4% vs Nifty +0.8%
+        Sector rotating from lagging → leading
 
-Stock context: STRONG
-✓ Quality score: 72/100
-✓ Revenue growth YoY: +23%
-✓ Earnings quality: HIGH (CFO > PAT)
-✓ Promoter bought 0.8% stake last month
-✓ FII holding up 2.1% last quarter
-✓ Delivery trend: rising 5 days
-✓ No credit concerns | No pledge
+Stock: Quality 72/100 | Revenue +23% YoY
+       Promoter bought 0.8% last month
+       Delivery trend: rising 5 days
+       No pledge | No credit concerns
 
-Technical: ALIGNED
-✓ Daily trend: strong uptrend
-✓ RSI(5m): 62 | VWAP: above ↑
-✓ Breaking PDH with volume
-✓ Volatility compression ending
-✓ Sector RS rank within auto: #2
+Technical: Uptrend | VWAP above ↑ | RSI 62
+           Breaking PDH with volume
+           Volatility compression ending
 
-Psychological state: NEUTRAL_TRENDING
-✓ Pre-event run: only +2.1% (not exhausted)
-✓ No upcoming result (no sell-news risk)
-✓ No FOMO signatures yet
+Psychology: NEUTRAL_TRENDING
+            Pre-event run: +2.1% (not exhausted)
+            No FOMO signatures
 
-Historical (this setup, last 6 months):
-Win rate: 71% | Avg gain: 3.1%
-Avg loss: 1.0% | Sample: 34 trades
+Institutions: Smart money 0.74 (accumulating)
+              Block: Tier-1 buyer confirmed
+
+History (this setup, 90 days):
+Win 71% | Avg gain 2.8% | PF 1.91 | n=47
 
 Action:
-Entry:  ₹924–928 | CMP: ₹926
-SL:     ₹908 (structure, 1.9% risk)
-T1:     ₹959 (1R — exit 40%)
-T2:     ₹993 (2R — trail 60%)
+Entry: ₹924–928 | SL: ₹908 (1.9% risk)
+T1: ₹959 (1R — exit 40%) | T2: ₹993 (2R trail)
 Flat by: 15:20 IST
 
 Summary: Rare multi-confluence setup.
 Institutional accumulation confirmed across
-derivatives, cash market, and block deals.
-Sector rotation favorable. Clean technical
-breakout without psychological exhaustion.
+derivatives, cash, and block deals. Sector
+rotation favorable. Clean breakout without
+psychological exhaustion.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-That message is not just an alert. It is a complete investment thesis delivered in 30 seconds. Every factor that experienced traders check manually — market, sector, stock, technicals, institutions, psychology, history — collapsed into one structured, scannable message.
-That is the end product at its highest quality.You said: now how can i smoothly integrate every thing one by one crete a grand plannow how can i smoothly integrate every thing one by one crete a grand plan3:55 PMClaude responded: This is the right question to ask now.This is the right question to ask now. Everything we've brainstormed needs to become a sequenced build plan where each phase delivers real value and the next phase builds on a stable foundation.
-Let me design this properly.
+```
 
-The guiding principle of the grand plan
-Every phase must produce something useful by itself.
-You should never be in a position where you've built for 3 months and have nothing working. Each phase ends with a functional system that is better than the previous phase. The complexity grows incrementally, not all at once.
+The system never trades for you. It never places orders. It surfaces complete, evidence-backed
+trading ideas. You decide in 30 seconds.
 
-The phases overview
-Phase 0 — Foundation        (already done — Layers 1 & 2)
-Phase 1 — First Alerts      (4 weeks)
-Phase 2 — Market Context    (4 weeks)
-Phase 3 — Stock Intelligence (6 weeks)
-Phase 4 — Event Intelligence (4 weeks)
-Phase 5 — Psychological Layer (4 weeks)
-Phase 6 — Institutional Layer (4 weeks)
-Phase 7 — Confidence Engine  (4 weeks)
-Phase 8 — Message Quality    (3 weeks)
-Phase 9 — Learning System    (ongoing)
-Phase 10 — ML Enhancement    (month 9+)
-Total to first truly high-quality alert: approximately 8 months from today.
-Total to full vision: 12–18 months.
+---
 
-Phase 0 — What you already have
-Before building anything new, be clear about what is stable.
-✅ Layer 1 — Session manager (32 collectors, all archetypes)
-✅ Layer 2 — All data flowing into raw_* tables
-✅ SQLite database with all raw tables
-✅ Redis for dedup and hot storage
-✅ Scheduler running with IST timezone awareness
-✅ Bhavcopy landing daily (the truth source)
-✅ Announcements flowing (5-min cadence)
-✅ Option chain data (5-min cadence)
-✅ OI spurts (5-min cadence)
-✅ Surveillance blacklist (daily)
-✅ FII/DII (daily)
-✅ GIFT Nifty (30-second cadence)
-✅ India VIX (5-min cadence)
-✅ Macro data (daily)
-✅ NSDL FPI (daily)
-This is a strong foundation. Everything from Phase 1 onward builds on this.
+## Forces the system synthesises
 
-Phase 1 — First Alerts (Weeks 1–4)
-Goal: Get your first Telegram message. Imperfect but real. Proves the pipeline works end to end.
-What you build:
-Week 1 — Intraday candle builder
-The most fundamental missing piece. Turn your 1-minute LTP polls into proper OHLCV candles.
-raw_equity_quotes (1-min polls)
-→ candle_builder.py
-→ raw_intraday_candles (1m and 5m bars)
-This unlocks everything — VWAP, intraday RSI, intraday MACD, all require candles.
-The candle builder runs every minute during market hours. For each symbol it takes the last poll readings, computes open/high/low/close/volume for the current bar, and writes it.
-Week 2 — Live indicator job (basic version)
-Start with just the most important indicators:
-From daily bars (bhavcopy):
-→ SMA 20, SMA 50, SMA 200
-→ RSI 14 (daily)
-→ ATR 14
+Every alert is the output of synthesising all these simultaneously:
 
-From 5-min candles:
-→ RSI 14 (5-min)
-→ VWAP (session running sum)
-→ VWAP slope (6-bar slope)
+| Force | Data source | Phase |
+|---|---|---|
+| GIFT Nifty pre-open signal | nseix.com 30s | 0 ✅ |
+| India VIX level + direction | /api/allIndices 5m | 0 ✅ |
+| US / Asian market overnight | Yahoo Finance daily | 0 ✅ |
+| USDINR (rupee direction) | Yahoo Finance daily | 0 ✅ |
+| Crude, gold, DXY | Yahoo Finance daily | 0 ✅ |
+| FII/DII cash flow | NSE daily | 0 ✅ |
+| Advance-decline, breadth | raw_indices 5m | 0 ✅ |
+| OI buildup / unwinding | raw_oi_spurts 5m | 0 ✅ |
+| Option chain PCR / IV / OI walls | raw_option_chain 5m | 0 ✅ |
+| 52-week highs / lows | raw_high_low_52w 10m | 0 ✅ |
+| Bhavcopy (truth source) | nsearchives daily | 0 ✅ |
+| Sector relative strength | raw_indices 5m | 0 ✅ |
+| Surveillance blacklist | GSM/ASM/Unsolicited daily | 0 ✅ |
+| NSDL FPI custodian flow | nsdl.co.in daily | 0 ✅ |
+| Macro (macro_regime) | raw_macro daily | 0 ✅ |
+| Intraday RSI + MACD (5m) | indicator_live 1m | 0 ✅ |
+| VWAP + VWAP slope | raw_intraday_candles | 1 📋 |
+| ATR (daily + 5m) | bhavcopy + candles | 1 📋 |
+| Trend + momentum regime | indicator_live | 1 📋 |
+| Market regime classifier | market_state | 2 📋 |
+| Sector radar (RS rank 1-11) | sector_state | 2 📋 |
+| Time-of-day + expiry rules | time_rules | 2 📋 |
+| Full indicator set (EMA/BB/ADX/ST) | indicator_live | 4 📋 |
+| Delivery conviction score | bhavcopy deliv_qty | 4 📋 |
+| Key levels (PDH/PDL/52w/round) | levels table | 4 📋 |
+| Pattern detection | patterns table | 4 📋 |
+| Divergence (RSI/MACD/OBV vs price) | patterns table | 4 📋 |
+| Quality score (0-100) | fundamentals table | 4 📋 |
+| Credit rating actions | rating_extractor L3 | 5 📋 |
+| Financial results extraction | financial_extractor L3 | 5 📋 |
+| Analyst rating changes | analyst_ratings scraper | 5 📋 |
+| Pre-event run score | event proximity | 6 📋 |
+| Psychological state | psych classifier | 6 📋 |
+| FOMO / capitulation detector | exhaustion detector | 6 📋 |
+| Buy-rumor / sell-news detection | announcement tracker | 6 📋 |
+| Stop-hunt / liquidity grab | microstructure | 6 📋 |
+| Smart money score | institutional layer | 7 📋 |
+| Participant-wise OI | NSE F&O reports | 7 📋 |
+| Options Greeks + GEX + max pain | mibian lib | 7 📋 |
+| Block deal institution tier | institution_database | 7 📋 |
+| Index rebalancing | IISL announcements | 7 📋 |
+| SLB short interest proxy | SLB segment | 7 📋 |
+| Intermarket divergence | divergence detector | 8 📋 |
+| Confluence bonus | confluence detector | 8 📋 |
+| Historical win rate (this setup) | signal_outcomes | 9 📋 |
+| ML probability adjustment | LightGBM scorer | 10 📋 |
 
-Regime classification (basic):
-→ trend_regime (5 states)
-→ momentum_state (RSI-based)
-Write everything to indicator_live table and Redis.
-Pre-market loader at 08:45 seeds the history into RAM. Live job runs every minute from 09:15.
-Week 3 — First signal detector
-Start with the two cleanest signals only:
-Signal 1: long_buildup
-  - Reads raw_oi_spurts + raw_equity_quotes
-  - Rule: price >= +1% AND OI >= +3%
-  - Enriches from Redis indicator_live
-  - Writes to signals table
+---
 
-Signal 2: breakout_52wh
-  - Reads raw_high_low_52w
-  - Rule: new 52w high AND volume >= 1.5× 20d avg
-  - Enriches from Redis
-  - Writes to signals table
-Hard gates at this stage:
+## Verified current state (2026-05-30)
 
-Blacklisted? Kill.
-Quality score < 30? Kill (for longs).
-Is it lunch zone? Kill.
+| Area | Reality |
+|---|---|
+| **Layer 1 — Session manager** | ✅ Done. Single NSE boundary, cookie warm-up, rate limits, circuit breakers. |
+| **Layer 2 — Collectors** | ✅ Done. 32 collectors, all feeds landing in `raw_*`. `data/nse.db` ≈ 5.4 GB, 25,956 equity announcements, GIFT Nifty, India VIX, FII/DII, macro, NSDL FPI, surveillance/blacklist, option chain, oi_spurts, 52w high/low, bhavcopy. |
+| **Deployment** | ❌ **Laptop-only (WSL2).** Scheduler dies when the laptop sleeps. **This is the #1 blocker.** |
+| **Layer 3 — PDF/parsers** | 🟡 Partial. Downloader, classifier, text extractor, state machine exist. But `financial_extractor.py`, `sentiment.py` are empty stubs. ~25k announcements still `pending`. |
+| **Layer 4 — Indicators** | 🟡 Partial. EOD SMA/RSI/MACD done. Intraday RSI+MACD done. **VWAP, ATR, BB, EMA, ADX, Supertrend, levels, patterns, regime classifiers — all missing.** |
+| **Layer 5 — Profile** | ❌ None. No `stock_profile_daily`. |
+| **Layer 6 — Signals** | ❌ Empty stubs. No signals table. No live signal fires today. |
+| **Backtester** | 🟢 Built but cost-blind. Good architecture, no brokerage/STT/slippage — P&L numbers are fiction. |
+| **Layer 7 — API** | ❌ None. |
+| **Bot / Telegram** | ❌ None. |
+| **Ops** | 🟡 Logging and health tables exist. No DB backups, no stale-collector alerting. |
 
-Week 4 — Bot and first Telegram message
-Build the simplest possible bot:
-Alert bot polls GET /signals?since= every minute
-For each signal:
-  Apply hard gates
-  Compute basic confidence (just technical + regime)
-  If confidence > 0.65: send Telegram message
-First message format — simple version:
-🟢 RELIANCE — Long Buildup
-OI: +4.3% | Price: +1.4% | Vol: 3.1×
-RSI(5m): 61 | Trend: uptrend | VWAP: above
-Confidence: 0.72
-SL: ₹2,810 | T1: ₹2,878
-Phase 1 exit criteria:
+**One-line summary:** the data foundation is strong and real; everything from intelligence to
+delivery (signals → confidence → message → Telegram) is essentially unstarted.
 
-At least one real alert fires during market hours
-Alert contains correct numbers
-Telegram delivers it successfully
-No false alerts on blacklisted stocks
+---
 
+## Governing rules (non-negotiable)
 
-Phase 2 — Market Context (Weeks 5–8)
-Goal: Every alert now knows what the market is doing. The market regime layer becomes live.
-Week 5 — Market regime classifier
-market_regime_job.py (runs every 5 minutes):
+1. **Every phase ships something usable on its own.** Never build for 3 months with nothing working.
+   Each phase ends strictly better than the last.
 
-Inputs:
-  Nifty level and direction (raw_indices)
-  India VIX level and direction (raw_india_vix)
-  GIFT Nifty vs previous close (raw_gift_nifty)
-  FII net cash flow today (raw_fii_dii, partial day estimate)
-  Advance-decline ratio (raw_advances_declines)
-  Breadth: % stocks above VWAP today
+2. **Never advance until the current phase is stable:** no crashes for 5 consecutive trading days,
+   data spot-checked (10 values by hand each week), outputs make intuitive sense, phase metrics tracked.
 
-Output: market_state table
-  market_direction: strong_up / up / flat / down / strong_down
-  vix_state: low / normal / elevated / high / extreme
-  breadth_state: strong / moderate / weak / very_weak
-  gift_nifty_signal: aligned_bull / neutral / aligned_bear
-  overall_regime: risk_on / neutral / risk_off / panic
-  regime_confidence: 0–1
-Week 6 — Sector radar
-sector_radar_job.py (runs every 5 minutes):
+3. **Paper-trade everything from the moment signals fire.** `paper_trades` and `signal_outcomes`
+   tables start in Phase 1. The data must accumulate silently from day one — you cannot go back
+   and recreate it.
 
-For each of 11 NSE sectoral indices:
-  current_return vs Nifty return today
-  RS ratio: sector_return / nifty_return
-  RS rank: 1 (best) to 11 (worst)
-  RS trend: improving / flat / deteriorating
-  Volume: above or below 20d avg
+4. **No P&L number is trusted without the full cost model:** brokerage (₹20/order or 0.03%),
+   STT (0.025% intraday sell), exchange charges (~0.00345%/leg), SEBI (~₹10/cr), stamp duty
+   (0.003% buy), GST (18% on fees), F&O STT (0.1% option sell premium), slippage (≥1 tick + 1bps
+   liquid / 5bps mid-cap scaling with size/volume). A cost-blind backtest lies with confidence.
 
-Output: sector_state table
-  sector_name, rs_rank, rs_ratio
-  rs_trend, volume_state
-  updated every 5 minutes
-Week 7 — Time-of-day rules engine
-time_rules.py:
+5. **The backtester validates; it does not gate the live MVP.** It runs as a parallel research
+   track. A strategy earns its way into live alerts through stage gates — not by being interesting.
 
-09:15–09:30 → NO_TRADE (observation only)
-09:30–11:00 → PRIME_WINDOW (full confidence)
-11:00–11:30 → FIRST_EXHAUSTION (reduce confidence 10%)
-11:30–13:30 → LUNCH_ZONE (reduce confidence 20%, only high conviction)
-13:30–14:30 → SECOND_WINDOW (full confidence)
-14:30–15:00 → CLOSING_APPROACH (reduce holding time)
-15:00–15:20 → CLOSING_PRESSURE (scalp only)
-15:20+ → NO_NEW_TRADES
+6. **Point-in-time correctness everywhere.** Every feature must be computable at decision time.
+   `shift(1)` on current-bar rolling stats, closed bars only, no lookahead. A single leak
+   invalidates every downstream number.
 
-Expiry detection:
-  Tuesday → Nifty expiry multiplier
-  Thursday → Bank Nifty expiry multiplier
-  Last Thursday → monthly expiry (strongest effects)
-Week 8 — Integrate market context into confidence
-Now upgrade the confidence score to use:
-confidence = base_signal_score
-           + regime_contribution (−0.15 to +0.15)
-           + sector_contribution (−0.10 to +0.10)
-           + time_contribution   (−0.15 to +0.05)
-Upgrade the alert message to include market context section.
-Phase 2 exit criteria:
+7. **Defer ML until data exists.** No model training until ≥3–6 months of labeled paper-trade
+   outcomes exist, ≥500 examples per signal type. Building it earlier is overfitting theater.
 
-Alerts show market regime in message
-Alerts show sector RS rank
-Alerts in lunch zone are suppressed or confidence-reduced
-Morning brief message lands at 09:00 AM daily
+8. **The message is the product.** Every architectural decision is evaluated against: does this
+   make the 20-second Telegram message more accurate, more actionable, or more trusted?
+   If the answer is no, deprioritise.
 
+---
 
-Phase 3 — Stock Intelligence (Weeks 9–14)
-Goal: Every alert knows the complete story of the stock — fundamental quality, levels, delivery conviction, pattern state.
-Week 9 — Fundamentals pipeline
-fundamentals/from_nse_quote.py
-→ sector, PE, market cap from /api/quote-equity
+## Money gates (paper → real capital)
 
-fundamentals/quality_score.py
-→ composite 0–100 from all available data
+These gates are the **only** path from idea to capital. No exceptions, no shortcuts.
 
-Write to fundamentals table
-Refresh weekly
-Quality score components at this stage:
+- **Backtest → paper:** strategy shows positive expectancy **net of the full cost model** over
+  a multi-year backtest with CPCV-style validation (not a single random split). Deflated Sharpe
+  reported alongside raw Sharpe.
 
-Revenue growth (from raw_financial_results)
-PE ratio (from quote_metadata)
-Promoter holding (from raw_shareholding_pattern)
-Debt proxy (from screener)
-Loss-making flag
+- **Paper → small live:** **60 consecutive paper-trading days at ≥ 1.0 Sharpe net of all costs.**
+  If this gate takes longer than expected — good. More data.
 
-Week 10 — Level detection
-indicators/levels.py (runs nightly):
+- **Small live → scale:** **3 months live at ≥ 0.7× the paper Sharpe.** 30%+ live-vs-paper
+  shrinkage is normal; materially worse means a leak — go back, don't size up.
 
-52w high, 52w low, days since
-PDH, PDL
-5d and 20d high/low ranges
-Round number proximity
-Distance from each level
-indicators/patterns.py (runs every 1 min on intraday data):
+---
 
-is_inside_bar
-is_gap_up / is_gap_down
-is_volume_dryup
-is_at_resistance / is_at_support
-higher_high / lower_low patterns
-Week 11 — Delivery conviction tracker
-delivery_tracker.py (runs nightly from bhavcopy):
+## The confidence engine — how every alert is scored
 
-delivery_ratio_today = deliv_qty / traded_qty
-delivery_ratio_5d_avg
-delivery_trend (rising / flat / falling)
-delivery_on_up_days vs delivery_on_down_days
-delivery_conviction_score (composite)
-This is one of the most India-specific and powerful signals. Build it properly.
-Week 12 — Stock profile builder (live version)
-live_profile_writer.py (every 1 minute):
+This is the core of the system. The confidence number is not picked — it is computed through
+nine independent layers. Each layer is independent. Independent confirmations multiply confidence
+rather than adding it: six independent forces pointing the same direction simultaneously is not
+coincidence — it is institutional intent.
 
-Merges:
-  indicator_live (technical)
-  levels (static, session)
-  patterns (updated intraday)
-  fundamentals (weekly)
-  delivery_conviction (daily)
-  blacklist (daily)
-  sector_state (5-min)
-  market_state (5-min)
+```
+Layer 0:  Hard gates          (binary kills — any failure = silent discard)
+Layer 1:  Market regime       (−30 to +30)
+Layer 2:  Sector alignment    (−15 to +15)
+Layer 3:  Fundamental quality (−20 to +20)
+Layer 4:  Technical alignment (−20 to +30)
+Layer 5:  Signal-specific     (0 to +20)
+Layer 6:  Confluence bonus    (0 to +20)
+Layer 7:  Psychological state (−20 to +15)
+Layer 8:  Institutional       (−10 to +15)
+Layer 9:  Event proximity     (−15 to +10)
 
-→ Single Redis hash per symbol with ALL context
-→ Signal engine reads this, never raw tables
-Week 13–14 — More signal types
-Now add more signals using the richer context:
-volume_surge
-  Vol >= 3× 20d avg with price confirmation
+→ Normalised to 0–1
+→ Thresholds: 0.55 (send) / 0.65 (good) / 0.75 (strong) / 0.85 (exceptional)
+```
 
-gap_up_go / gap_up_fade
-  Uses pre_open data + 09:30 hold check
+**Layer 0 — Hard gates (any one kills the signal):**
+- Stock in blacklist (GSM/ASM/Unsolicited)
+- Stock in F&O ban
+- Newly listed < 30 days
+- Promoter pledge > 50%
+- Long signal on loss-making company
+- Liquidity < ₹5 Cr avg daily turnover
+- 09:15–09:30 observation window
+- Call auction / T2T segment
 
-upper_circuit / lower_circuit
-  From raw_band_hits
+**Layer 1 — Market regime** inputs: Nifty direction, VIX level/direction, GIFT Nifty alignment,
+FII partial-day flow, advance-decline ratio, % stocks above VWAP, breadth (% above 200d MA).
+Expiry effects: aligned with max pain direction = +5, against = −10.
 
-inside_bar_breakout
-  From patterns + volume confirmation
+**Layer 2 — Sector alignment** inputs: sector RS rank (1 = best, 11 = worst), RS trend
+(improving/flat/deteriorating), sector volume vs 20d avg, global sector parallel
+(US sector ETF aligned or diverging).
 
-short_buildup / long_unwinding / short_covering
-  From OI spurts (price needed from quotes JOIN)
-Phase 3 exit criteria:
+**Layer 3 — Fundamental quality** inputs: quality score (0–100), revenue growth YoY, earnings
+quality (CFO/PAT ratio, receivables/revenue trend), D/E ratio, promoter holding/pledge,
+recent rating action (upgrade/downgrade), delivery conviction z-score.
 
-Quality score populating for all stocks
-Alerts show quality score, delivery trend, key levels
-6+ signal types active
-Confidence score now includes fundamental contribution
+**Layer 4 — Technical alignment** inputs: daily trend regime (5 states), 5-min RSI (healthy
+range 50–65 for longs), VWAP side + slope, Bollinger squeeze, volume ratio, proximity to
+key levels (PDH/PDL, round numbers, 52w extremes), pattern flags.
 
+**Layer 5 — Signal-specific quality** inputs depend on signal type. OI: OI% change, price%
+change, volume confirmation. Breakout: level cleanness, volume. Announcement: surprise magnitude,
+sentiment score, earnings quality of the beat.
 
-Phase 4 — Event Intelligence (Weeks 15–18)
-Goal: The system knows what events are coming and adjusts accordingly.
-Week 15 — Event calendar
-events/calendar.py:
+**Layer 6 — Confluence bonus** fires when multiple independent signals simultaneously confirm
+the same stock. OI buildup + volume surge = +0.10. Breakout + result beat = +0.15.
+Rating upgrade + technical breakout = +0.12. Smart money + VWAP hold + sector leading = +0.15.
 
-Reads raw_board_meetings
-→ populates pending_events table
-  event_type: result / dividend / buyback / AGM
-  expected_date
-  confidence: confirmed / inferred
+**Layer 7 — Psychological state** from the classifier (see Phase 6). NEUTRAL_TRENDING = +0.05.
+FOMO_EUPHORIA with long signal = −0.20 (near-kill). CAPITULATION with long signal = +0.15
+(contrarian). SELL_NEWS confirmed with short signal = +0.15. BUY_RUMOR active with long = −0.10.
 
-Reads raw_corporate_actions
-→ dividend dates, split dates, bonus dates
+**Layer 8 — Institutional** inputs: smart money score (0–1), FII derivative positioning
+(index puts adding = bearish for macro), block deal tier (Tier-1 institution = +0.10),
+participant-wise OI net direction.
 
-Result: system knows which stocks have events coming
-Week 16 — Pre-event risk flags
-events/pre_event_risk.py:
+**Layer 9 — Event proximity** inputs: days to next event, pre-event run score (stock already
+up 10%+ = −0.15 for longs), IV vs 5d avg (elevated IV = uncertainty premium exists),
+rumor detection score, post-announcement reaction pattern if event just occurred.
 
-For each stock in pending_events:
-  days_to_event = expected_date - today
-  pre_event_run_5d = price change last 5 days
-  pre_event_run_10d = price change last 10 days
-  iv_vs_avg = current IV / 5d avg IV
+---
 
-Classify:
-  BUY_RUMOR_IN_PLAY → pre_event_run > 10% with event in < 5 days
-  MILD_ANTICIPATION → pre_event_run 5–10%
-  NORMAL → pre_event_run < 5%
-  FEAR_PRICED → pre_event_run < −10%
-  SELL_RUMOR_IN_PLAY → pre_event_run < −15%
-Week 17 — Rating action extractor
-Layer 3 extension:
+## Psychological factors — systematic handling
 
-parsers/rating_extractor.py:
-  Reads raw_announcements WHERE subject LIKE 'Credit Rating%'
-  Extracts: agency, old_rating, new_rating, direction, instrument
-  Classifies: upgrade / downgrade / watch_negative / reaffirm
+These are the forces most retail systems miss entirely. Each maps to a measurable pattern.
 
-raw_rating_actions table:
-  symbol, agency, action, old_rating, new_rating
-  instrument_type, rating_level, direction
-  broadcast_dt, is_junk_downgrade
+**Buy the rumor, sell the news (and the reverse):**
 
-New signals:
-  credit_downgrade (especially to near-junk)
-  credit_upgrade
-  credit_watch_negative
-Week 18 — Event-driven signals
-result_beat / result_miss
-  Reads parsed financial results
-  YoY revenue change + sentiment score
-  Cross-references pending_events
+The system detects which of four scenarios is active:
 
-dividend_announced
-  From corporate_actions
+| Scenario | Pre-event run | Actual outcome | System action |
+|---|---|---|---|
+| Anticipated positive, good result | +10%+ | Beat confirmed | Flag SELL_NEWS risk; watch spike-fade |
+| Anticipated positive, disappointment | +10%+ | Miss confirmed | HIGH confidence short; unwind + miss = double fall |
+| Anticipated negative, bad outcome | −10%+ | Downgrade/miss | Bounce setup in 1–2 days; don't short exhausted stocks |
+| Anticipated negative, better than feared | −10%+ | Less bad | RELIEF_BOUNCE setup; high reward/risk contrarian long |
 
-order_win
-  From announcements WHERE subject LIKE '%Order%'
+**Key measurements driving this:**
+- `pre_event_run_5d` and `pre_event_run_10d` (from bhavcopy history)
+- `iv_vs_5d_avg` (IV expansion = anticipation; IV crush = event resolved)
+- `post_announcement_5min_pattern` (SPIKE_AND_HOLD vs SPIKE_AND_FADE vs REVERSE_REACTION)
+- `pre_event_volume_ratio` (abnormal volume before event = information leaking)
 
-mgmt_change
-  CEO / CFO resignation detection
+**FOMO and Capitulation — exhaustion detection:**
 
-pre_result_accumulation
-  pending_events + OI buildup + technical_setup_score > 0.7
-Add pre-event and post-announcement message formats.
-Phase 4 exit criteria:
-
-Morning brief includes upcoming events for the day
-Alerts flag BUY_RUMOR_IN_PLAY when detected
-Rating action alerts firing for downgrades
-Pre-result accumulation signal active
-
-
-Phase 5 — Psychological Layer (Weeks 19–22)
-Goal: The system understands market psychology and adjusts every signal accordingly.
-Week 19 — Psychological state classifier
-psychology/state_classifier.py (runs every 5 minutes):
-
-For each stock:
-  Measure pre-event run
-  Measure RSI extreme
-  Measure distance from VWAP
-  Measure consecutive up/down days
-  Measure volume trend direction
-  Measure delivery vs intraday split
-
-Classify:
-  FOMO_EUPHORIA
-  BUY_RUMOR
-  NEUTRAL_TRENDING
-  SELL_NEWS
-  FEAR_BUILDING
-  CAPITULATION
-  RELIEF_BOUNCE
-  DEAD_CAT_BOUNCE
-Week 20 — Post-announcement behavior tracker
-psychology/announcement_tracker.py:
-
-When an announcement fires:
-  Record price at T+0, T+5min, T+15min, T+30min
-  Record volume at each interval
-  Classify pattern:
-    SPIKE_AND_HOLD → genuine first reaction
-    SPIKE_AND_FADE → sell-the-news
-    NO_REACTION → fully priced in
-    REVERSE_REACTION → counter-intuitive move
-    
-Generate signal:
-  sell_the_news_confirmed
-  better_than_feared_reversal
-  news_already_priced
-Week 21 — FOMO and capitulation detection
-psychology/exhaustion_detector.py:
-
-FOMO_EXHAUSTION:
+```
+FOMO_EXHAUSTION fires when:
   consecutive_up_days > 5
   AND volume rising each day
   AND rsi_5m > 78
   AND price > 3% above VWAP
-  → Generate FOMO_WARNING (don't chase)
+  → Do not send long alerts. Generate FOMO_WARNING instead.
 
-CAPITULATION_WATCH:
+CAPITULATION_WATCH fires when:
   consecutive_down_days > 4
-  AND volume rising each day (panic)
+  AND volume rising on down days (panic)
   AND rsi_5m < 22
   AND price > 3% below VWAP
   AND delivery_pct rising (long-term holders giving up)
-  → Generate CAPITULATION_WATCH (reversal forming)
-Week 22 — Psychological score integration
-Add psychological alignment score to confidence:
-psychological_contribution:
-  NEUTRAL_TRENDING + long signal     → +0.05
-  FOMO_EUPHORIA + long signal        → −0.20 (kill it)
-  BUY_RUMOR active + long signal     → −0.10
-  CAPITULATION + long signal         → +0.15 (contrarian)
-  SELL_NEWS confirmed + short signal → +0.15
-  RELIEF_BOUNCE + long signal        → +0.10
-  DEAD_CAT_BOUNCE + long signal      → −0.15
-Phase 5 exit criteria:
+  → Flag as reversal zone. Watch for stabilisation + low volume.
+```
 
-Every alert shows psychological state
-FOMO signals are suppressed or flagged
-Sell-the-news patterns generate their own alerts
-Capitulation watch generates morning watchlist items
+**Stop-hunt / liquidity grab detection:**
+```
+Price dips below obvious support
+AND volume spikes on the dip
+AND price recovers above support within 1–2 candles
+AND volume drops on the recovery
+→ LIQUIDITY_GRAB confirmed. Trade in direction of recovery, not the dip.
+```
 
+**Round-number magnetism:**
+Track distance from ₹50/100/500/1000 round numbers. Repeated failure at a round number
+= strong psychological resistance. Clean break above = no overhead supply.
 
-Phase 6 — Institutional Layer (Weeks 23–26)
-Goal: Track what smart money is doing and add this to every signal.
-Week 23 — Participant-wise OI collector
-collectors/participant_oi.py:
-  NSE F&O daily reports
-  FII / DII / Pro / Client
-  Index Futures / Stock Futures / Index Options / Stock Options
+**Psychological state classifier (8 states):**
+```
+FOMO_EUPHORIA      → late buyers piling in, smart money selling. Suppress longs.
+BUY_RUMOR          → anticipation building, pre-event run active. Reduce confidence.
+NEUTRAL_TRENDING   → normal price discovery. Full confidence.
+SELL_NEWS          → good news arrived, exhaustion selling. Short bias.
+FEAR_BUILDING      → negative expectations forming. Avoid longs.
+CAPITULATION       → maximum pain, reversal zone. Contrarian long watch.
+RELIEF_BOUNCE      → bad news less bad than feared. Long opportunity.
+DEAD_CAT_BOUNCE    → temporary relief in downtrend. Avoid longs.
+```
+
+---
+
+## Rating intelligence — how credit and analyst ratings are handled
+
+Rating changes are one of the cleanest event-driven alpha sources because:
+- The move happens fast (within minutes of the announcement)
+- Direction is unambiguous
+- Most retail misses it — they're not watching the filing feed
+
+**Credit rating agencies (CRAs) in India:** CRISIL, ICRA, CARE, India Ratings, Acuité,
+Brickwork, INFOMERICS.
+
+**Analyst ratings:** Brokerage equity research (Buy/Sell/Hold/target price changes). Tier-1
+(Goldman, Morgan Stanley, BofA, Jefferies, Citi), Tier-2 (Motilal, Kotak, HDFC Sec, ICICI Direct).
+
+**Impact map:**
+
+| Rating event | Company type | Expected equity impact |
+|---|---|---|
+| Credit downgrade to junk (BBB→BB+) | Any | Very high negative. Forced selling by institutions. |
+| Credit watch negative | Any | Often larger than the actual downgrade (surprise factor). |
+| LT + ST both downgraded together | Any | Both moving = serious stress. High negative. |
+| Credit upgrade (AA−→AA) | NBFC/Bank | High positive. Cheaper borrowing = better NIM. |
+| First-time rating assigned (A or above) | Small-mid | Mild positive. Eligible for institutional debt. |
+| Reaffirmation (no change) | Any | Near zero. Already priced. Don't trade. |
+| Tier-1 brokerage upgrade to Buy | Any | Immediate 2–5% spike. Best within first 30 min. |
+| Tier-1 brokerage downgrade to Sell | Any | Immediate 3–8% fall. |
+| Target price cut (rating maintained) | Any | Mild negative. −1% to −3%. |
+
+**Key nuance:** credit rating changes affect debt instruments, not equity directly. The equity
+impact depends on: (a) whether the company is already known to be stressed, (b) how significant
+the instrument is relative to total debt, (c) whether institutional mandates force selling.
+The signal confidence is modulated by the quality score and existing regime.
+
+**Signal types from rating data:**
+```
+credit_downgrade_junk    → highest urgency
+credit_downgrade         → bearish
+credit_upgrade           → bullish fundamental confirmation
+credit_watch_negative    → early warning (often bigger move than the actual downgrade)
+analyst_upgrade_tier1    → bullish, immediate
+analyst_downgrade_tier1  → bearish, immediate
+analyst_upgrade_tier2    → mild bullish
+target_price_cut         → bearish even if rating maintained
+```
+
+**Data sources:** credit ratings come through `raw_announcements` (already collected). Parse
+subjects matching "Credit Rating", "Revision in Credit Rating", "Rating Action". Analyst
+ratings require a separate scraper — Moneycontrol analyst ratings page (30-min cadence).
+
+**Timing:** most rating actions arrive after 17:00 (as seen in your sample data — all 10 rows
+between 17:08 and 21:35). Extend the announcements collector to 21:30. Cross-reference with
+next morning's pre-open IEP to confirm gap direction before generating the alert.
+
+---
+
+## Intraday force taxonomy — complete map
+
+Every alert is implicitly aware of all 15 categories of intraday forces:
+
+1. **Global overnight setup** — GIFT Nifty, US markets, Asian markets, DXY, crude, gold
+2. **Currency** — USDINR live (FII flows, IT vs import sector rotation)
+3. **India VIX** — regime (< 12 calm, 12–18 normal, > 20 trending, > 25 panic)
+4. **Opening range** — first 15 minutes, gap behavior, volume diagnostic
+5. **Institutional flow** — FII/DII cash, participant OI (derivatives), block deals
+6. **Options market** — PCR, max pain, GEX sign (mean-revert vs trend tape), IV, OI walls
+7. **Sector rotation** — RRG quadrant movement, sector RS rank real-time
+8. **Corporate events** — results, board meetings, dividends, acquisitions, order wins
+9. **Technical levels** — PDH/PDL, 52w, round numbers, VWAP, S/R zones
+10. **Delivery vs intraday** — conviction indicator unique to India
+11. **News flow** — RBI policy, regulatory actions, budget, geopolitical
+12. **Algo and HFT behavior** — VWAP execution footprint, stop-hunt patterns, momentum chase
+13. **Time of day** — prime windows, lunch chop, closing pressure, expiry effects
+14. **Psychological factors** — buy-rumor/sell-news, FOMO, capitulation, anchoring
+15. **Rating changes** — credit and analyst, immediate and next-day effects
+
+---
+
+## Message design standard
+
+Every alert follows a strict 6-section structure. Nothing added, nothing removed.
+
+```
+Section 1: HEADLINE (1 line)
+  Emoji + Symbol + Signal type + Confidence tier
+  🟢 / 🔴 / 🟡 encodes direction instantly
+
+Section 2: TRIGGER (2–3 lines)
+  Raw facts that fired the signal. No interpretation.
+  The numbers only.
+
+Section 3: CONTEXT (3–5 lines)
+  Why the environment supports this signal.
+  Only GREEN factors. Never list everything.
+  Market → Sector → Stock → Technical → Institutional
+
+Section 4: RISK FLAGS (0–2 lines)
+  Only if a genuine concern exists.
+  If no flags: skip section entirely.
+  Absence of warning is itself a positive signal.
+
+Section 5: ACTION (4–5 lines)
+  Entry zone, SL (tighter of structure vs ATR), T1, T2, flat-by time.
+  Never more than 2R target without exceptional confluence.
+
+Section 6: SUMMARY (1–2 sentences)
+  Plain English. Why this is worth looking at.
+  Makes the alert feel like an analyst, not a machine.
+```
+
+**Special alert types with different formats:**
+- **Pre-event warning** — fires when BUY_RUMOR detected. Warns not to chase.
+- **Rating action** — after-hours format with next-day pre-open guidance.
+- **Sell-the-news** — fires when SPIKE_AND_FADE detected post-announcement.
+- **Capitulation watch** — fires at extreme oversold with stabilisation signs.
+- **Intermarket divergence warning** — fires when market forces contradict each other.
+- **Morning brief** — 09:00 daily. Full global + domestic setup + day's plan.
+- **EOD summary** — 18:00 daily. Day's recap + overnight events to watch.
+
+---
+
+## Roadmap overview
+
+| Phase | Name | Delivers | Weeks |
+|---|---|---|---|
+| **0** | Foundation | ✅ Done (Layers 1–2, all raw_* data) | — |
+| **1** | Always-On + First Alert | First real Telegram alert on VPS, paper trades logging | 4–6 |
+| **2** | Market Context | Regime + sector + time-of-day in every alert; morning brief | 3–4 |
+| **3** | Backtest Trust | Cost model added; existing strategies validated net-of-cost | 3–4 |
+| **4** | Stock Intelligence | Quality score, levels, delivery, full indicator set, patterns | 5–6 |
+| **5** | Event Intelligence | PDF financial extraction; rating + result alerts; pre-event gating | 4–6 |
+| **6** | Psychological Layer | Buy-rumor/sell-news, FOMO, capitulation, stop-hunt detection | 3–4 |
+| **7** | Institutional + Derivatives | Smart money, participant OI, Greeks/GEX, index rebalancing | 4–6 |
+| **8** | Confidence + Message + Risk | Full 9-layer engine, calibration, polished templates, risk rules | 4–5 |
+| **9** | Learning System | Outcome analysis, strategy health, historical odds in alerts | ongoing mo.6 |
+| **10** | ML Enhancement | Triple-barrier labels, LightGBM per signal, meta-labeling | mo.12+ |
+
+Gate over calendar: durations are estimates. The **exit criteria** are what matter — not the clock.
+
+---
+
+## Phase 1 — Always-On + First Live Alert (Weeks 1–6)
+
+**Goal:** First real Telegram alert fires during market hours, from a VPS that never sleeps,
+with correct numbers, logged to paper trades.
+
+### 1a. VPS migration (the gate — do this first)
+
+Provision cloud VPS. Migrate scheduler + collectors + `data/nse.db` + Redis.
+Verify all 32 collectors run on schedule for **5 consecutive trading days** with no laptop.
+Document in `docs/DEPLOY.md`. Set up systemd units.
+
+**Why first:** every minute-cadence job below is meaningless on a sleeping laptop.
+This retires the #1 blocker.
+
+### 1b. Intraday candle builder
+
+Turn 1-minute LTP polls into proper OHLCV bars:
+
+```
+raw_equity_quotes (1-min polls)
+→ candle_builder.py (runs every minute)
+→ raw_intraday_candles (1m and 5m bars, 30-day rolling retention)
+```
+
+Schema: `(symbol, bar_time, timeframe, open, high, low, close, volume, vwap, session_date)`.
+Retention: nightly purge of rows older than 30 days.
+
+### 1c. Missing Phase-1 indicators
+
+These three unlock everything downstream:
+
+- **VWAP** (running per session, resets at 09:15) and **VWAP slope** (6-bar regression).
+  The single most important intraday anchor. Almost every signal gate references it.
+- **ATR(14)** on daily bars and 5-min bars. Needed for stop sizing and volatility regime.
+- **Basic regime tags:** `trend_regime` (5 states: strong_uptrend/uptrend/sideways/downtrend/
+  strong_downtrend) and `momentum_state` (7 states: overbought_extreme through oversold_extreme)
+  written to `indicator_live` and Redis every minute.
+
+Pre-market loader at 08:45 IST:
+- Loads 250 days of bhavcopy history per symbol into RAM dict
+- Seeds `indicator_live` with yesterday's final indicator values
+- Loads blacklist + quality flags into Redis (5-min TTL)
+
+### 1d. Signal engine MVP (currently empty stubs)
+
+New migrations: `signals`, `signal_features`, `paper_trades`, `signal_outcomes`.
+
+Two signals only:
+
+**`long_buildup`:** reads `raw_oi_spurts` + `raw_equity_quotes`. Rule: `price ≥ +1% AND OI ≥ +3%`.
+Per LEARNINGS: oi_spurts has no price field — must JOIN equity_quotes. Enrich from Redis.
+
+**`breakout_52wh`:** reads `raw_high_low_52w`. Rule: new 52w high AND volume ≥ 1.5× 20d avg.
+Volume avg comes from `raw_bhavcopy_cm`. Enrich from Redis.
+
+Pipeline per signal:
+```
+detect → compute → deduplicate (Redis fingerprint) → enrich (Redis ind:{sym}) → write signals table
+```
+
+### 1e. Hard gates (applied before any enrichment)
+
+Binary kills. Silent discard — no log to user:
+- Blacklisted (GSM/ASM/Unsolicited SQL view) → kill
+- In F&O ban → kill (collector coming in Phase 7, until then skip F&O ban stocks manually)
+- Newly listed < 30 days → kill
+- Price-band ≤ 2% or T2T series → kill for longs
+- 09:15–09:30 observation window → suppress
+- 11:30–13:30 lunch zone AND confidence < 0.75 → suppress
+
+### 1f. Telegram dispatcher (MVP)
+
+Small process, polls `signals` table every minute. Applies hard gates. Computes basic confidence
+(technical + regime only, Layers 0–4 from the full engine). Sends if confidence > 0.65.
+
+Reads SQLite directly — **no FastAPI yet**. The API is built when a second consumer appears.
+
+First message format:
+```
+🟢 RELIANCE — Long Buildup
+OI: +4.3% | Price: +1.4% | Vol: 3.1×
+VWAP: above ↑ | RSI(5m): 61 | Trend: uptrend
+Quality: n/a (Phase 4) | Confidence: 0.72
+SL: ₹2,810 | T1: ₹2,878 | Flat by: 15:20
+```
+
+### 1g. Learning substrate (start now, analyse later)
+
+`signals/outcome_labeler.py` — nightly job:
+Records T+30m, T+2h, T+EOD, T+1d, T+3d returns + MAE + MFE + hit_target + hit_stop
+per signal. **Starts from day one.** Months of data accumulate silently. Phase 9 cannot
+compensate for a late start here.
+
+`paper_trade_tracker.py` — simulates entry/SL/T1 for every alert sent. Uses the full cost
+model (Governing Rule 4) from the beginning so numbers are honest from the start.
+
+**Phase 1 exit criteria:**
+- VPS runs all collectors for 5 consecutive trading days
+- At least one real alert fires with correct numbers, delivered to Telegram
+- No false alerts on blacklisted or newly-listed stocks
+- Every alert written to `paper_trades`; outcome labeler populating returns next morning
+
+---
+
+## Phase 2 — Market Context (Weeks 7–10)
+
+**Goal:** Every alert knows what the market is doing. Regime layer goes live and shapes confidence.
+
+**`market_regime_job.py`** (every 5 min → `market_state` table):
+Inputs: Nifty level/direction, India VIX state + direction, GIFT Nifty vs prev close,
+partial-day FII estimate, advance/decline, % stocks above VWAP today, breadth (% above 200d MA).
+Output: `overall_regime` ∈ {risk_on, neutral, risk_off, panic} + `regime_confidence`.
+
+**`sector_radar_job.py`** (every 5 min → `sector_state` table):
+For each of 11 NSE sectoral indices: RS ratio vs Nifty, RS rank 1–11, RS trend
+(improving/flat/deteriorating), volume state, global sector parallel flag.
+
+**`time_rules.py`:**
+```
+09:15–09:30  NO_TRADE (observation only)
+09:30–11:00  PRIME_WINDOW (full confidence)
+11:00–11:30  FIRST_EXHAUSTION (−10% confidence)
+11:30–13:30  LUNCH_ZONE (−20%, only > 0.75 confidence passes)
+13:30–14:30  SECOND_WINDOW (full confidence)
+14:30–15:00  CLOSING_APPROACH (reduce holding time in message)
+15:00–15:20  CLOSING_PRESSURE (scalp only)
+15:20+       NO_NEW_TRADES (mandatory flat message)
+```
+
+Expiry detection: Tuesday = Nifty weekly, Thursday = Bank Nifty weekly,
+last Thursday of month = monthly (strongest max-pain effects).
+
+**Confidence upgrade:**
+```
+confidence = base + regime(−0.15..+0.15) + sector(−0.10..+0.10) + time(−0.15..+0.05)
+```
+
+**Morning brief** (09:00 IST every trading day):
+Global setup (GIFT/US/Asia/crude/DXY), today's regime, overnight events,
+expiry note, key Nifty levels, stocks to watch, recommended posture.
+
+**Intermarket divergence detector (first version):**
+Nifty up but VIX up → fragile rally warning. Banks falling but Nifty flat → weakness building.
+These generate warning messages that reduce all long confidence by 10% for the session.
+
+**Phase 2 exit criteria:**
+- Alerts show regime + sector RS rank in message
+- Lunch-zone signals suppressed or confidence-reduced
+- Morning brief lands every trading day at 09:00 without fail
+- First intermarket divergence warning fires at least once (verify manually)
+
+---
+
+## Phase 3 — Backtest Trust & Strategy Promotion (Weeks 11–14)
+
+**Goal:** Make the backtester's numbers true. Validate existing strategies net-of-cost.
+Promote the first validated strategy into live signals.
+
+**Add the cost model** to the backtester (the critical missing piece):
+Brokerage, STT, exchange, SEBI, stamp, GST, slippage (size/volume-scaled).
+Every historical P&L number recomputed. All dashboards updated to show net-of-cost only.
+
+**Align inputs:** backtester must consume the same indicator definitions the live engine uses.
+No divergence between research math and production math.
+
+**Validate existing strategies** (`bb_ema9_30m`, `macd_willr_daily`) net of costs with
+proper time-aware validation (CPCV with purge + embargo, not random split).
+Report: win rate, avg gain/loss, profit factor, Deflated Sharpe, PBO.
+
+**Experiment registry:** a table logging every backtest run with config + net-of-cost outcomes.
+Research velocity compounds; nothing is re-run from memory. Seed it now.
+
+**Promote or shelve:** any strategy clearing the backtest→paper gate enters `signals/detect.py`
+as a new signal type, feeding the same paper-trade loop. Any strategy not clearing is
+documented with explicit reasons in the registry.
+
+**Phase 3 exit criteria:**
+- Backtester P&L is net-of-cost for all strategies
+- At least one strategy is either promoted (gate cleared) or explicitly shelved with reasons
+- Experiment registry seeded and being used
+
+---
+
+## Phase 4 — Stock Intelligence (Weeks 15–20)
+
+**Goal:** Every alert knows the complete story of the stock — quality, levels, delivery
+conviction, full indicator set, pattern state.
+
+### Indicators — complete set
+
+**Daily (from bhavcopy, nightly):**
+EMA 9/21, Bollinger Bands (upper/lower/width/squeeze detection), ADX 14/DI+/DI−,
+Supertrend (period 10, multiplier 2.0), Parabolic SAR, Donchian Channels (20-bar),
+Keltner Channels, CMF (Chaikin Money Flow), OBV, volume SMA 20, volume ratio.
+
+**5-min intraday (from candles, per-minute):**
+RSI 14 (5m), MACD (5m), VWAP (already in Phase 1), VWAP slope (already Phase 1),
+Supertrend intraday, Donchian breakout, Volume Delta, Cumulative Volume Delta (CVD).
+
+**Session-anchored (reset daily):**
+Pivot points (PDH/PDL/R1/R2/S1/S2 from prior session HLC),
+Volume profile (POC/VAH/VAL from intraday candles).
+
+### Levels (nightly, static per session)
+
+`indicators/levels.py`:
+52w high/low + days-since, PDH/PDL, 5d/20d high-low ranges, round-number proximity
+(₹50/100/500/1000), nearest S/R zone from rolling pivot history.
+
+The pre-market loader copies today's levels into Redis at 08:45 — they don't change intraday.
+
+### Delivery conviction (the most underused India-specific signal)
+
+`delivery_tracker.py` (nightly from bhavcopy `DELIV_QTY` field):
+```
+delivery_ratio = deliv_qty / traded_qty
+delivery_ratio_5d_avg
+delivery_trend (rising / flat / falling)
+delivery_z_score vs 20d avg
+delivery_on_up_days vs delivery_on_down_days
+delivery_conviction_score (composite)
+```
+
+High delivery + price up = institutional accumulation (not just day trading).
+High delivery + price down = distribution or capitulation (check which with other signals).
+
+### Pattern detection (per-minute during market hours)
+
+`indicators/patterns.py`:
+Inside bar, outside bar, gap up/gap down, volume dry-up, higher-high/lower-low structure,
+S/R proximity flags.
+
+**Divergence detectors** (particularly important):
+RSI–price divergence, MACD–price divergence, OBV–price divergence.
+Bearish at extension, bullish at flush. These are early warning signals.
+
+### Fundamentals
+
+`fundamentals/quality_score.py` — composite 0–100:
+Revenue growth YoY, operating margin trend, earnings quality (CFO/PAT ratio), ROE, ROCE,
+D/E ratio, promoter holding, promoter pledge (%), interest coverage.
+
+**Earnings quality score** (from parsed results, Phase 5 enables this):
+Revenue growth, operating profit vs revenue growth, CFO vs PAT, receivables days change,
+inventory days change. Distinguishes real beats from accounting ones.
+
+**Delivery ratio** added to fundamentals: `delivery_ratio_5d_avg` and `delivery_z_score`
+are among the most informative features for institutional intent. Build it properly.
+
+### Stock profile (daily composer, nightly)
+
+`profile/builder.py` → `stock_profile_daily` (~60 cols/stock/day):
+All indicators + levels + patterns + fundamentals + sector RS + flags + event proximity.
+Versioned for replay. Indexed by `(as_of_date, quality_score DESC)` and `(as_of_date, trend_regime)`.
+
+During market hours the live profile lives in Redis (`ind:{symbol}` hash). The nightly
+`stock_profile_daily` is the ML training archive, not the operational lookup.
+
+**Phase 4 exit criteria:**
+- Full indicator set live and computing for all symbols
+- Quality score in every alert
+- Delivery trend in every alert
+- Key levels shown in action section
+- Pattern flags visible in alert message
+- `stock_profile_daily` populated and accessible
+
+---
+
+## Phase 5 — Event Intelligence (Weeks 21–26)
+
+**Goal:** Scheduled catalysts and filings become signals. Rating and result alerts go live.
+The half-finished Layer 3 PDF pipeline is productionised.
+
+### PDF pipeline productionisation
+
+The empty stubs become real:
+
+**`parsers/pdf_text.py`:** pdfplumber (primary, handles text-based PDFs) + pymupdf (speed/fallback).
+Scanned PDF detection → flag `pdf_error='ocr_required'`, skip for now. No OCR in this phase.
+
+**`parsers/financial_extractor.py`** (the main investment — 3 weeks minimum):
+Multi-strategy ensemble: camelot lattice → camelot stream → pdfplumber tables → pymupdf+regex.
+Each strategy returns (numbers_dict, confidence_score). Ensemble picks highest-confidence
+non-empty result. `extraction_failed` flag when all strategies below threshold.
+
+Schema-aware via `field_aliases.yaml`: maps every variant label ("Total Income from Operations",
+"Revenue from Operations", etc.) to canonical field names. This is what takes accuracy from 60%
+to 90%+.
+
+Validation layer: revenue > 0, profit < revenue in magnitude, segment sum ≈ total.
+Failures flag low-confidence rows, don't reject.
+
+Eval harness: 50+ hand-labeled PDFs from 50+ companies. Ground truth in YAML.
+Eval script measures accuracy per company, per field, per strategy. Target: 95% on F&O results.
+
+**`parsers/rating_extractor.py`** (new, critical — see Rating Intelligence section above):
+Reads `raw_announcements` where subject matches credit rating patterns.
+Extracts: agency, old_rating, new_rating, direction, instrument_type, is_junk_downgrade.
+Writes to `raw_rating_actions` table.
+
+**`parsers/sentiment.py`:**
+v1: Loughran-McDonald lexicon (fast, cheap, no dependencies).
+v2: FinBERT swap-in (better but heavier — do this after v1 is validated).
+
+**`parsers/analyst_ratings.py`** (new scraper):
+Moneycontrol analyst ratings aggregation page, 30-min cadence during market hours.
+Extracts: brokerage, symbol, old_call, new_call, old_target, new_target.
+Matches brokerage against `config/brokerage_tiers.yaml` (Tier-1/Tier-2/unknown).
+Writes to `raw_analyst_ratings` table.
+
+**Backfill:** 25k+ pending announcements including the 291 credit-rating PDFs.
+Run as a background job, not blocking new arrivals.
+
+### Event calendar and pre-screen
+
+`events/calendar.py` → `pending_events` from board meetings.
+`events/matcher.py` → matches incoming filings to pending events.
+`events/pre_screen.py` → T-1 technical pre-screen, populates `technical_setup_score`.
+
+Event proximity columns flow into `stock_profile_daily` and `indicator_live`:
+`next_event_type`, `next_event_date`, `days_to_next_event`.
+
+### Event signals
+
+```
+result_beat / result_miss
+  Parsed financials + YoY revenue change + sentiment score
+  earnings_quality_score distinguishes real beats from accounting ones
+
+rating_action (credit)
+  From rating_extractor: agency, direction, level
+  Confidence modulated by: is_junk_downgrade, instrument_significance, existing_regime
+
+analyst_upgrade/downgrade_tier1
+  From analyst_ratings: Tier-1 only in first version
   
-raw_participant_oi table:
-  date, category, instrument_type
-  long_contracts, short_contracts, net_position
-  
-Signals:
-  FII adding index put longs → bearish macro signal
-  FII adding index call longs → bullish macro signal
-  Client (retail) net short extreme → contrarian bullish
-Week 24 — Smart money score
-smart_money/score.py:
+dividend_announced, acquisition, order_win, mgmt_change, qip_announcement
+  From announcements classifier (subject patterns already work)
 
-smart_money_score = weighted combination of:
-  FII cash flow today        25%
-  FII derivative positioning 20%
-  DII activity               15%
-  Block deal institutions    15%
-  Promoter activity          15%
-  SLB short interest        10%
+pre_result_accumulation
+  pending_events + OI buildup + technical_setup_score > 0.7
+  The highest-quality event-driven signal
+```
 
-Output: 0–1 score updated daily
-  > 0.70 → accumulation
-  0.40–0.70 → mixed
-  < 0.40 → distribution
-Week 25 — Block deal intelligence upgrade
-Upgrade large_deals processor:
+**Pre-event risk gating:**
+Auto-avoid fresh longs within N days of earnings if `pre_event_run_10d > 8%`.
+Generate `BUY_RUMOR_WARNING` message instead of a long signal.
+Extend announcements collector to run until **21:30 IST** to catch after-hours rating actions.
 
-For each block deal:
-  client_name → match against institution database
-  institution_tier: tier1 / tier2 / retail / unknown
-  
-institution_database.yaml:
-  tier1: LIC, SBI MF, HDFC MF, Goldman Sachs, Morgan Stanley...
-  tier2: Domestic mid-size brokerages, regional funds...
+**Phase 5 exit criteria:**
+- Credit rating alerts firing with agency, action, old/new rating in message
+- Result beat/miss alerts firing with extracted revenue surprise number
+- Pre-event BUY_RUMOR_WARNING suppressing long signals into exhausted pre-result stocks
+- PDF backlog clearing at rate faster than new arrivals
+- Eval harness showing ≥ 90% accuracy on 50-fixture test set
 
-Signal boost:
-  Tier 1 institution buying → +0.10 to confidence
-  Unknown retail block → neutral
-Week 26 — Index rebalancing collector
-collectors/index_rebalancing.py:
-  IISL announcements (NSE Indices website)
-  Detect: addition / removal from Nifty 50 / Nifty 500 / sectors
-  
-Signal:
-  Stock added to Nifty 50 → 2-week forced buying window
-  Stock removed → forced selling window
-  
-Alert:
-  index_rebalancing_addition → buy immediately
-  index_rebalancing_removal → avoid longs / potential short
-Phase 6 exit criteria:
+---
 
-Smart money score appears in every alert
-Block deals show institution tier
-Participant OI data informs macro regime
-Index rebalancing alerts active
+## Phase 6 — Psychological Layer (Weeks 27–30)
 
+**Goal:** The system understands market psychology and adjusts every signal accordingly.
 
-Phase 7 — Confidence Engine (Weeks 27–30)
-Goal: The confidence score is now a fully multi-layered, properly weighted composite of everything.
-Week 27 — Full confidence architecture
-Implement the complete scoring model:
-confidence_engine.py:
+### New measurements
 
-Layer 0: Hard gates (binary kills)
-Layer 1: Market regime score (−30 to +30)
-Layer 2: Sector score (−15 to +15)
-Layer 3: Fundamental score (−20 to +20)
-Layer 4: Technical alignment (−20 to +30)
-Layer 5: Signal-specific score (0 to +20)
-Layer 6: Confluence bonus (0 to +20)
-Layer 7: Psychological alignment (−20 to +15)
-Layer 8: Institutional alignment (−10 to +15)
-Layer 9: Event proximity adjustment (−15 to +10)
+```
+pre_event_run_5d, pre_event_run_10d  (from bhavcopy history)
+iv_vs_5d_avg                          (IV expansion = anticipation building)
+pre_event_volume_ratio                (abnormal volume = information leaking)
+post_announcement_5min_pattern        (SPIKE_AND_HOLD / SPIKE_AND_FADE / REVERSE)
+sentiment_exhaustion_score            (pre_event_run × volume_spike × iv_level)
+consecutive_up_days, consecutive_down_days
+delivery_pct_trend                    (rising on down days = capitulation signal)
+round_number_proximity                (already in levels, extend to track prior failures)
+```
 
-→ Normalized to 0–1
-→ Thresholds: 0.55 / 0.65 / 0.75 / 0.85
-Week 28 — Confluence detector
-confluence/detector.py:
+### Psychological state classifier
 
-Checks for simultaneous independent signals on same stock:
-  OI buildup + volume surge → +0.10
-  Breakout + result beat → +0.15
-  Rating upgrade + technical breakout → +0.12
-  Smart money accumulating + VWAP hold + sector leading → +0.15
-  Multiple signal types on same stock within 30 minutes → +0.08
+`psychology/state_classifier.py` (every 5 minutes):
+Classifies each stock into the 8 psychological states (see taxonomy above).
+Writes to `psychological_state` column in Redis live hash.
 
-The more independent the signals, the higher the bonus
-Week 29 — Intermarket divergence detector
-intermarket/divergence.py:
+### Post-announcement behavior tracker
 
-Nifty up but VIX up → rally fragile warning
-Banks falling but Nifty flat → weakness building warning
-Rupee strengthening but FII selling → contradiction warning
-Crude rising but energy stocks falling → sector-specific issue
+`psychology/announcement_tracker.py`:
+Fires when an announcement hits. Records price at T+0, T+5m, T+15m, T+30m.
+Classifies pattern. Generates `sell_the_news_confirmed` or `better_than_feared_reversal` signals.
 
-Divergence detected → reduce all long confidence by 10%
-Divergence alerts → separate warning messages
-Week 30 — Confidence calibration
-Look at 3 months of signals and outcomes. Are signals scored 0.80 winning 80% of the time? Are signals scored 0.60 winning 60%?
-Calibrate the weights based on actual performance:
-calibration.py:
-  For each confidence bucket (0.55–0.65, 0.65–0.75, etc.)
-  Calculate actual win rate
-  Adjust layer weights if calibration is off
-  
-This is your first empirical feedback loop
-Phase 7 exit criteria:
+### FOMO and capitulation detector
 
-Confidence score uses 9 independent layers
-Confluence bonus working
-Calibration check shows scores roughly match win rates
+`psychology/exhaustion_detector.py` (runs every minute on live data):
+FOMO_EXHAUSTION: `consecutive_up_days > 5 AND rsi_5m > 78 AND price > 3% above VWAP`.
+CAPITULATION_WATCH: `consecutive_down_days > 4 AND rsi_5m < 22 AND volume rising AND delivery rising`.
 
+### Stop-hunt detector
 
-Phase 8 — Message Quality (Weeks 31–33)
-Goal: The message is now the final polished product. Every word earns its place.
-Week 31 — Message template engine
-message_builder.py:
+`psychology/stop_hunt_detector.py`:
+Pattern: price below obvious support + volume spike + recovery above + volume drops.
+When detected: generate `LIQUIDITY_GRAB_LONG` signal with trade in direction of recovery.
 
-Takes: signal + full context + confidence breakdown
-Produces: formatted Telegram message
+### Confidence integration
 
-Templates:
-  standard_signal_template
-  pre_event_warning_template
-  rating_action_template
-  sell_the_news_template
-  capitulation_watch_template
-  morning_brief_template
-  daily_summary_template
-  divergence_warning_template
-Week 32 — Morning brief upgrade
-morning_brief.py (09:00 AM daily):
+Psychological alignment score added as Layer 7 to confidence engine (−0.20 to +0.15).
 
-Sections:
-1. Global setup summary (GIFT, US, Asia, Crude, DXY)
-2. Today's regime (with reasoning)
-3. Overnight events (ratings, announcements)
-4. Today's expiry note (if applicable)
-5. Key levels for Nifty today
-6. Stocks to watch (from overnight data)
-7. Recommended approach (aggressive / normal / conservative / cash)
+New alert templates: pre-event warning, sell-the-news, capitulation watch.
 
-This sets the entire context for the day's alerts
-Week 33 — EOD summary
-eod_summary.py (06:00 PM daily):
+**Phase 6 exit criteria:**
+- Psychological state visible in every alert
+- BUY_RUMOR and FOMO states suppressing long confidence visibly
+- Sell-the-news and capitulation alerts firing and appearing correct on review
+- Stop-hunt signal generating at least a few alerts per week (verify against chart)
 
-Sections:
-1. Market summary (Nifty, sector performance)
-2. Today's signals: how many, breakdown by type
-3. Notable events that fired
-4. Overnight events to watch (pending rating actions, results)
-5. Tomorrow's known events
-6. Signal quality note (were signals aligned with market?)
+---
 
-This closes the loop for the day
-Phase 8 exit criteria:
+## Phase 7 — Institutional + Derivatives Intelligence (Weeks 31–36)
 
-All messages follow consistent templates
-Morning brief arriving at 09:00 every trading day
-EOD summary arriving at 06:00 PM
-Messages are clean, scannable, actionable
+**Goal:** See what smart money and the options market are doing. Add the forces that most
+retail systems completely ignore.
 
+### New collectors
 
-Phase 9 — Learning System (Month 9 onward, continuous)
-Goal: The system learns from its own history. Gets smarter over time.
-Month 9 — Outcome labeling
-outcome_labeler.py (nightly):
+**`collectors/participant_oi.py`** (EOD ~19:00 IST):
+NSE F&O daily reports: FII/DII/Pro/Client × Index Fut/Stock Fut/Index Opt/Stock Opt.
+Long contracts, short contracts, net position per category.
+→ `raw_participant_oi` table.
 
-For each signal from T-1:
-  Record T+30min return
-  Record T+2hr return
-  Record T+EOD return
-  Record T+1day return
-  Record T+3day return
-  Record MAE (max adverse excursion)
-  Record MFE (max favorable excursion)
-  Record: hit_target_1 (yes/no)
-  Record: hit_stop (yes/no)
+Signal: FII adding index put longs = bearish macro. FII adding index call longs = bullish.
+Client (retail) net short extreme = contrarian bullish (smart money vs retail).
 
-Write to signal_outcomes table
-Month 9 — Paper trades
-paper_trade_tracker.py:
+**`collectors/slb.py`** (daily):
+SLB segment data — India's short-interest proxy.
+Rising lend rates + volumes = increasing short interest.
+Falling lending = short covering → potential short squeeze setup.
 
-For every alert sent:
-  Simulate entry at signal time price
-  Simulate SL at specified level
-  Simulate T1 exit (50%) at T1 price
-  Simulate trail on remainder
-  Record final P&L
+**`collectors/fno_ban_list.py`** (EOD):
+Stocks above 95% MWPL → F&O ban. Hard exclude from long signals.
+Stocks returning from ban (OI falls below 80%) → re-entry opportunity flag.
 
-This is your performance tracking
-without risking real money
-Month 10 — Performance dashboard
-performance_dashboard.py:
+**`collectors/index_rebalancing.py`** (event-driven, IISL announcements):
+Addition to Nifty 50/500/sector → forced passive buying window.
+Removal → forced selling window.
+Alert fires on announcement day (2 weeks before effective date).
 
-For each signal type:
-  Win rate (last 30 / 90 / all days)
-  Avg win, avg loss, profit factor
-  Best and worst market regime performance
-  Best time of day
-  Best sector conditions
+### Smart money score
 
-This tells you: which signals are working?
-Which to amplify? Which to suppress?
-Month 10 — Historical context in messages
-Now add to every alert:
+`smart_money/score.py` (daily, 0–1):
+```
+FII cash flow today           25% weight
+FII derivative positioning    20%
+DII activity                  15%
+Block deal institutions       15%
+Promoter activity             15%
+SLB short interest            10%
 
-Historical context (this setup, last 90 days):
-Win rate: 71% | Avg gain: 2.8% | Avg loss: 1.0%
-Profit factor: 1.91 | Sample size: 47
-This is the feature that makes the system feel professional. The alert is not just a prediction — it is a statistically backed prediction.
-Month 11 — Manual signal tuning
-Based on performance data:
-Kill signals with win rate < 45% after 50+ samples
-Boost confidence threshold for signals with win rate > 65%
-Add sector/regime filters for signals that fail in specific conditions
-Kill signals that work in backtests but not in reality
-This is your first real feedback loop. Humans still making decisions, but based on data.
+> 0.70 → accumulation
+0.40–0.70 → mixed
+< 0.40 → distribution
+```
 
-Phase 10 — ML Enhancement (Month 12+)
-Goal: Layer a learned model on top of the rules to catch patterns humans can't see.
-Month 12 — Data readiness check
-Before training any model, verify:
-Do you have 500+ labeled examples per signal type?
-Is outcome data complete and accurate?
-Is feature data clean (no lookahead bias)?
-Is sample distribution reasonable (not all from one market regime)?
+### Block deal institution database
 
-If yes to all → proceed to training
-If no → keep collecting, don't rush
-Month 12–13 — Triple barrier labeling
-For each signal:
-  Upper barrier: entry + 2× ATR (take profit)
-  Lower barrier: entry − 1× ATR (stop loss)
-  Time barrier: 15:20 IST (forced flat)
+`config/institution_database.yaml`:
+Tier-1: LIC, SBI MF, HDFC MF, ICICI Pru MF, Goldman Sachs, Morgan Stanley, BofA, Citi,
+Temasek, GIC Singapore, Norges Bank, CPPIB, Jefferies.
+Tier-2: Motilal Oswal, Kotak, Axis MF, regional domestic funds.
 
-Label:
-  +1 if upper barrier hit first
-  −1 if lower barrier hit first
-  0 if time barrier hit first
+Tier-1 block purchase → +0.10 confidence boost.
+Tier-1 block sale → context-dependent (rebalancing vs losing confidence).
 
-This is more honest than simple forward returns
-Month 13 — First LightGBM model
-For your highest-volume signal type (probably long_buildup):
+### Options Greeks and derivatives intelligence (currently entirely missing)
 
-Features: all 50+ columns from signal_features table
-Label: triple-barrier label
-Validation: CPCV (not random split — time-aware)
-Metric: Deflated Sharpe (not just accuracy)
+`options/greeks.py` (per option chain poll, every 5 min):
+Compute delta/gamma/theta/vega per strike using `mibian` library.
+Inputs: spot (from raw_equity_quotes), strike, time-to-expiry, risk-free rate
+(10yr G-Sec yield proxy), IV (from NSE-published bid-ask).
 
-Train → validate → if beats rules baseline → deploy as secondary scorer
-Month 14+ — Meta-labeling
-Primary model: your rule engine (decides direction)
-Secondary model: LightGBM (decides whether to take the trade)
+**Net dealer gamma (GEX):**
+Positive GEX → market makers long gamma → mean-reverting tape (buy dips, sell rallies).
+Negative GEX → market makers short gamma → trending tape (momentum works).
+This is why some days Nifty oscillates 50 points and others trends 300.
 
-Secondary model input: all features at signal time
-Secondary model output: P(trade profitable | features)
+**Max pain per expiry:**
+Strike where maximum options expire worthless. On expiry day, price gravitates here.
+Alert within 2% of max pain on expiry Tuesday/Thursday → `max_pain_drift` signal.
+
+**PCR extremes already partially collected.** Add ATM PCR (not just total).
+
+**New option signals:**
+`pcr_extreme_low` (< 0.7 contrarian bearish), `pcr_extreme_high` (> 1.3 contrarian bullish),
+`max_pain_drift`, `gamma_squeeze_risk`, `heavy_ce_writing`, `heavy_pe_writing`, `iv_spike`.
+
+**Index rebalancing signal:**
+`index_addition` → buy window of ~2 weeks (forced passive buying).
+`index_removal` → avoid longs / potential short.
+
+**Phase 7 exit criteria:**
+- Smart money score in every alert
+- Block deals show institution tier
+- GEX computed and driving mean-revert vs trend tape classification
+- Max pain computed for each expiry; drift signal active
+- Participant OI data shaping macro regime classification
+- Index rebalancing alerts firing when IISL announcements appear
+
+---
+
+## Phase 8 — Confidence Engine + Message Quality + Risk (Weeks 37–41)
+
+**Goal:** The confidence engine reaches its final form. Messages become the polished product.
+Risk rules are enforced throughout.
+
+### Full 9-layer confidence engine
+
+`confidence_engine.py` implementing all layers from the taxonomy above.
+Normalised to 0–1 with thresholds 0.55/0.65/0.75/0.85.
+
+All existing layers (1–4 from Phase 1–2, partially 3 from Phase 4) are formalised here.
+New layers 7–9 from Phases 6–7 now integrated.
+
+### Confluence detector
+
+`confluence/detector.py`:
+OI buildup + volume surge simultaneously = +0.10.
+Breakout + result beat = +0.15.
+Rating upgrade + technical breakout = +0.12.
+Smart money accumulating + VWAP hold + sector leading = +0.15.
+Multiple signal types on same stock within 30 minutes = +0.08.
+
+Rule: independent confirmations multiply confidence, they do not add.
+Probability that 6 independent forces all point the wrong direction simultaneously is negligible.
+
+### Full intermarket divergence detector
+
+`intermarket/divergence.py` (expanded from Phase 2 basic version):
+Nifty up + VIX up → fragile rally. Banks falling + Nifty flat → internal weakness.
+Rupee strengthening + FII selling → contradiction (RBI intervention?). 
+Crude rising + energy stocks falling → sector-specific problem.
+Gold + equities both rising → liquidity flood, not fundamentals.
+
+Divergence → reduce all long confidence by 10% for the session + emit divergence warning.
+
+### Confidence calibration
+
+`calibration.py`:
+Bucket signals by confidence (0.55–0.65, 0.65–0.75, etc.).
+Compare each bucket's actual win rate from paper_trades outcomes.
+Are signals scored 0.80 winning 80% of the time?
+Adjust layer weights if calibration is systematically off.
+
+This is the first empirical feedback loop — confidence numbers must earn their meaning.
+
+### Message template engine
+
+`message_builder.py`:
+Templates for each alert type (see Message Design Standard above).
+Explainability: list top 3 contributing factors to confidence in every alert.
+Historical odds section (from signal_outcomes, once 90+ days of data exist).
+
+Risk and sizing enforcement in paper simulation:
+- Structure/ATR stops (tighter of the two)
+- Chandelier trail (highest_high − 3×ATR for longs)
+- Scale-out: 40% at T1 (1R), trail 60% with chandelier to T2 (2R)
+- Quarter-to-half Kelly, capped at 2% account risk per trade
+- Daily kill-switches: −2% day = hard stop; 3 consecutive losses = pause half-size;
+  5 consecutive losses = stop for day
+- Volatility gross scaling: cut all gross exposure 40% when VIX > 22
+
+### EOD summary
+
+`eod_summary.py` (18:00 IST):
+Market performance, sector leadership, day's signals breakdown, strategy health,
+overnight events to watch (pending ratings, results), tomorrow's known catalysts.
+
+**Phase 8 exit criteria:**
+- All 9 layers computing and visible in confidence breakdown
+- Calibration check shows scores roughly match actual win rates
+- All message templates live and producing clean output
+- Morning brief + EOD summary arriving reliably
+- Risk rules enforced in paper-trade simulation
+- Confluence bonus firing on multi-signal days (verify manually)
+
+---
+
+## Phase 9 — Learning System (continuous from ~Month 6)
+
+**Goal:** The system learns from its own history. This only works if Phase 1 started the
+paper_trades and signal_outcomes accumulation from day one — which it did.
+
+### Outcome analysis maturation
+
+- Add survival/holding-time labels (how long until trade became unprofitable).
+- Add drawdown-conditional labels (`predicted_max_adverse_excursion`).
+- Add missed-alpha labeling: sweep every (symbol, bar) where the rule engine didn't fire
+  but triple-barrier label says it should have. These become training negatives.
+
+### Performance dashboard
+
+Per signal type:
+- Win rate (30/90/all days)
+- Avg win, avg loss, profit factor
+- Best market regime (which regime does this signal shine in?)
+- Best time of day
+- Best sector conditions
+- Strategy health score (red/amber/green) with `strategy_decay_score`
+
+### Historical context in alerts
+
+Once 90+ days of data exist, every alert includes:
+```
+History (this setup, 90 days):
+Win 71% | Avg gain 2.8% | Avg loss 1.0% | PF 1.91 | n=47
+```
+
+This makes the alert feel like it comes from an experienced analyst, not a rule engine.
+It builds trust by allowing the user to verify the claim.
+
+### Manual signal tuning (data-driven)
+
+Kill signals with win rate < 45% after 50+ samples.
+Raise confidence threshold for signals consistently below calibration.
+Add regime/sector filters where a signal fails in specific conditions.
+Amplify signals with win rate > 65% (lower the threshold to send more of them).
+
+### Experiment registry matured
+
+Every backtest, feature addition, threshold change logged with config + outcome.
+Queryable: "which features improved Sharpe ≥ 5% in the last year?"
+Research velocity compounds because nothing is re-run from memory.
+
+**Phase 9 exit criteria (ongoing, no hard close):**
+- Data-driven signal tuning in effect (at least one signal killed or amplified based on data)
+- Performance dashboard live
+- Historical odds appearing in alerts
+- Strategy health scoreboard tracking decay
+
+---
+
+## Phase 10 — ML Enhancement (Month 12+)
+
+**Goal:** Layer a learned model on top of the rules to catch what hand-coded rules cannot —
+strictly after data readiness is confirmed.
+
+### Data readiness gate (non-negotiable)
+
+Before any training:
+- ≥ 500 labeled examples per signal type (for each type you want to train)
+- Multi-regime coverage (not all samples from one market condition)
+- Point-in-time correct features (shift(1) verified throughout)
+- Full cost model applied to all labels
+
+If any gate fails: keep collecting. Do not proceed.
+
+### Triple-barrier labeling
+
+For each signal: upper barrier (TP = entry + 2×ATR), lower barrier (SL = entry − 1×ATR),
+vertical barrier (15:20 IST forced flat).
+Label: +1 if upper hit first, −1 if lower hit first, 0 if time barrier hit.
+Dynamic σ_t (intraday 20-bar realized vol) makes labels heteroscedasticity-aware.
+
+Uniqueness-of-label weighting: overlapping labels share information — down-weight proportionally.
+Return-attribution weighting: weight by magnitude of return at barrier.
+
+### Validation (CPCV only — no shortcuts)
+
+Combinatorial Purged CV with purge horizon = max label span, embargo buffer after each segment.
+Deflated Sharpe + PBO reported alongside raw Sharpe.
+Walk-forward as sanity check only, never as primary validator.
+
+### Models
+
+**LightGBM** per signal type — one model per type, never a mega-model.
+Logistic regression baseline on top features (sanity check — must beat this to be useful).
+Sector-conditional heads only if data demands (not pre-split).
+
+**Earnings drift (PEAD) model:** dedicated signal class for post-result drift.
+Features: surprise vs prior, Day-0 reaction, gap behavior, delivery ratio.
+Indian PEAD is well-documented and underexploited at retail.
+
+**Exit intelligence model:** separate from entry. Predicts {hold, partial, trail, full-exit}
+per bar given open position's MAE/MFE/regime context. More valuable than entry optimization.
+
+### Meta-labeling
+
+Rule engine decides side. Secondary LightGBM decides size.
+Secondary model input: all features at signal time.
+Secondary output: P(trade profitable | features).
+Take trade only if calibrated P > 0.55.
 
 Final confidence:
-  0.60 × rule_confidence + 0.40 × model_probability
+```
+0.60 × rule_confidence + 0.40 × model_probability
+```
 
-Secondary model adjusts SIZE not direction
+Model adjusts size, never side. This is the correct use of ML in this system.
 
-The integration sequence summary
-MONTH 1:
-  First alerts firing (2 signal types)
-  Basic confidence score
-  Basic Telegram message
+### Calibration + drift monitoring
 
-MONTH 2:
-  Market regime live
-  Sector radar live
-  Time-of-day rules
-  Morning brief starts
+Isotonic regression on OOS CPCV predictions to calibrate raw probabilities.
+PSI/KS per feature weekly. Rolling 30-trade hit rate, profit factor, rolling Sharpe.
+Challenger model in shadow mode 2 weeks before promotion.
+Monthly minimum retraining; PSI breach triggers immediate retrain.
 
-MONTH 3:
-  Full fundamentals
-  Delivery conviction
-  Level detection
-  6+ signal types
-  Richer alerts
+**Phase 10 exit criteria:**
+- At least one signal type has a validated model beating its rules baseline net of costs
+- Deployed as a size-adjusting secondary scorer
+- Drift monitoring running and alerting
 
-MONTH 4:
-  Event calendar
-  Pre-event risk flags
-  Rating action alerts
-  Event-driven signals
+---
 
-MONTH 5:
-  Psychological state classifier
-  Buy-rumor sell-news detection
-  FOMO and capitulation detection
-  Psychological layer in confidence
+## Cross-cutting tracks (run alongside phases, not separately)
 
-MONTH 6:
-  Participant OI
-  Smart money score
-  Block deal intelligence
-  Index rebalancing alerts
-  Institutional layer in confidence
+### Ops and resilience (start Phase 1, harden continuously)
 
-MONTH 7:
-  Full 9-layer confidence engine
-  Confluence detector
-  Intermarket divergence
-  Confidence calibration
+- Nightly SQLite backup to `data/archive/db_backups/` (30-day rotation). Starts Phase 1.
+- Bhavcopy CSVs kept forever (historical truth source, never delete).
+- Alert to Telegram when any collector hasn't succeeded in N minutes during market hours.
+- `failed=0` is NOT "all OK" — `errors==[] AND inserted>0` is the real health signal.
+- Prometheus `/metrics` endpoint (optional Grafana) — add when useful, not speculatively.
+- Endpoint verify script daily at 06:00 flags moved NSE URLs before live polls fail.
 
-MONTH 8:
-  Message templates polished
-  Morning brief complete
-  EOD summary
-  All templates tested
+### Layer 7 FastAPI (deferred until second consumer exists)
 
-MONTH 9:
-  Outcome labeling starts
-  Paper trade tracking starts
-  Performance dashboard
-  Historical context in messages
+The Phase-1 Telegram dispatcher reads SQLite directly. Build the API when:
+- The bot becomes a separate process, OR
+- An external client (dashboard, mobile) appears
 
-MONTH 10–11:
-  Manual tuning based on data
-  Kill bad signals
-  Amplify good signals
-  System at peak rule-based quality
+Endpoints when built: `/signals`, `/profile/{symbol}`, `/blacklist`, `/universe`,
+`/admin/replay`, `/admin/endpoint-health`. Standard cursor pagination via `next_cursor`.
 
-MONTH 12+:
-  ML training begins
-  Triple barrier labels
-  First LightGBM model
-  Meta-labeling
-  Continuous improvement
+Likely around Phase 4–5. Do not build speculatively before then.
 
-The one rule that governs everything
-Never move to the next phase until the current phase is stable.
-Stable means:
+### Postgres migration (deferred until needed)
 
-No crashes for 5 consecutive trading days
-Data is consistent and accurate (spot-check 10 values manually each week)
-Alerts make intuitive sense when you read them
-Performance metrics for that phase are being tracked
+Only when SQLite shows WAL write-lock contention or raw table > 5–10M rows.
+First candidates: `raw_option_chain`, `raw_announcements`.
+Document dialect diffs before migrating (AUTOINCREMENT, strftime→EXTRACT, INSERT OR IGNORE→ON CONFLICT).
 
-Moving too fast is how you get a system that technically works but produces garbage outputs. Slow and stable compounds into exceptional quality.
+### Documentation hygiene
 
-What you have at the end
-At the end of Phase 8 you have the complete product:
-A system that wakes up before the market, briefs you on global conditions, watches 500+ stocks every minute, understands what the market is doing, understands what each sector is doing, understands each stock's fundamental quality and psychological state, knows what smart money is doing, knows what events are coming, detects signals from 15+ signal types, scores each signal through 9 independent layers of confirmation, and delivers a clean actionable message in 30 seconds that tells you exactly what happened, why it matters, what to do, and what the historical odds are.
-Built by one developer, running on one VPS, costing one monthly hosting bill.
-That is the grand plan.Sonnet 4.6 Low
+- `FEATURE_CHECKLIST.md`: move 📋→✅ as things ship. Never delete entries (history matters).
+- `LEARNINGS.md`: append every NSE quirk discovered. Read before designing any new collector.
+- `PLAN.md` (this file): update when a phase closes. Phases completed are not deleted — kept as record.
+- ADR log: one entry per significant architecture decision with rationale.
+- Per-collector README in `collectors/`: response shape, known quirks, fixture path.
+
+---
+
+## Decision log
+
+1. **Commit to cloud VPS early (Phase 1a).** 2026-05-30. Laptop-only is #1 blocker.
+   Minute-cadence signals are pointless on a sleeping host.
+
+2. **First live signals = OI/breakout, not backtested technical strategies.** 2026-05-30.
+   The data is already collected; these reach a real alert fastest. Technical strategies
+   go through cost-model + stage-gate in Phase 3 before going live.
+
+3. **Backtester is a validation bench, not the MVP path.** 2026-05-30. Cost-blind and
+   testing a different signal family. Cost model added and used as promotion gate (Phase 3).
+
+4. **Start outcome-labeling + paper trades in Phase 1, analyse in Phase 9.** 2026-05-30.
+   Labeling infra is cheap; the *data* takes months. Front-load the plumbing.
+
+5. **Cost realism before trusting any P&L.** 2026-05-30. Governing Rule 4. The cost
+   structure (STT 0.025% + ~10bps total round-trip) eats most marginal edges.
+   SEBI data confirms: 93% of F&O traders lose, mostly to costs.
+
+6. **PDF financial extraction in Phase 5, not front-loaded.** 2026-05-30. Text extraction
+   works already. Financial-number extraction only pays off when event signals exist to
+   consume it. The core intraday product ships first.
+
+7. **FastAPI deferred until a second consumer exists.** 2026-05-30. Direct-DB Telegram
+   dispatcher is enough for MVP. Avoids speculative Layer-7 work before the product exists.
+
+8. **Rating intelligence in Phase 5 (alongside event intelligence).** 2026-05-30 (new).
+   Credit rating changes come through `raw_announcements` (already collected). The extractor
+   belongs in Layer 3 alongside other PDF processing. Analyst ratings require a new scraper.
+   Extend announcements collector to 21:30 to catch after-hours filings.
+
+9. **Psychological layer as Phase 6 (standalone phase).** 2026-05-30 (new). Buy-rumor/sell-news,
+   FOMO, capitulation, stop-hunt detection are systematic and measurable. They deserve a
+   dedicated phase rather than being scattered across later phases.
+
+10. **GEX / options Greeks added to Phase 7.** 2026-05-30 (new). Currently entirely missing.
+    Mibian library computes Greeks on NSE option chain data. GEX sign determines mean-revert
+    vs trend tape regime — one of the most powerful intraday structural signals available.
+
+11. **Message quality as a first-class design standard.** 2026-05-30 (new). Defined the
+    6-section message template. The message is the product — every architectural decision
+    is evaluated against whether it makes the message more accurate, actionable, or trusted.
+
+12. **ML strictly last, behind a data-readiness gate.** Both source docs and research literature
+    confirm: earlier is overfitting theater. Triple-barrier + CPCV + meta-labeling are the
+    correct approach when data exists.
+
+---
+
+*This plan is the compass. `grandplan` is the vision, `FEATURE_CHECKLIST.md` is the inventory.
+When they disagree on what to build next, this file wins. Update this file when a phase closes.*

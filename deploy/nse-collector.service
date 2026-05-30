@@ -5,8 +5,13 @@
 # missed. main.py also runs a catch-up pass on every start, so a reboot or brief
 # outage self-heals the same-day misses.
 Description=NSE data collector (scheduler)
-After=network-online.target
+After=network-online.target redis-server.service
 Wants=network-online.target
+# Redis is a soft dependency: main.py falls back to an in-process memory cache
+# if it's unreachable. Wants (not Requires) means "start Redis first if present,
+# but don't fail the collector when it isn't". Enable redis-server on boot too:
+#   sudo systemctl enable --now redis-server
+Wants=redis-server.service
 
 [Service]
 Type=simple
@@ -17,7 +22,7 @@ ExecStart=/opt/nse-data-service/.venv/bin/python -m nse_data.main
 # --------------------------------------
 Restart=on-failure
 RestartSec=10
-# Optional: load secrets (GROWW_*, REDIS_URL, …) from an env file.
+# Optional: load secrets (AZURE_OPENAI_*, GROWW_*, …) from an env file.
 EnvironmentFile=-/opt/nse-data-service/.env
 # Journald captures stdout JSON logs: `journalctl -u nse-collector -f`
 StandardOutput=journal
