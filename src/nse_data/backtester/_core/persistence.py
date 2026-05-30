@@ -6,6 +6,10 @@ the run row are updated.
 
 Read paths live in `webcore/repositories/backtests.py` — keep this module
 write-only so the dependency arrow is clean.
+
+Step-2 note: typed against the v1 BBEma30mConfig (under TYPE_CHECKING to
+avoid coupling). Step 3 introduces a StrategyConfig base so this can be
+type-safely strategy-agnostic.
 """
 
 from __future__ import annotations
@@ -16,23 +20,18 @@ import time
 from dataclasses import asdict
 from typing import Iterable
 
-from typing import TYPE_CHECKING
-
-from .config import BacktestConfig
-
-if TYPE_CHECKING:
-    from .runner import SymbolTrade
+from .types import StrategyConfig, SymbolTrade
 
 
 def write_run(
     conn: sqlite3.Connection,
     *,
-    cfg: BacktestConfig,
+    cfg: StrategyConfig,
     universe: str,
     symbols_count: int,
     start_date: str,
     end_date: str,
-    trades: Iterable["SymbolTrade"],
+    trades: Iterable[SymbolTrade],
     total_signals: int,
     notes: str | None = None,
 ) -> int:
@@ -78,11 +77,11 @@ def write_run(
                 INSERT INTO backtest_trades (
                     run_id, symbol, direction, setup_ts, entry_ts, entry_price,
                     sl, target, exit_ts, exit_price, exit_reason, qty,
-                    pnl_raw, pnl_leveraged, rr_at_entry
+                    pnl_raw, pnl_leveraged, rr_at_entry, signal_tags
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                [_trade_row(run_id, t, cfg.leverage) for t in trades],
+                [_trade_row(run_id, t) for t in trades],
             )
         conn.commit()
         return int(run_id)
@@ -93,7 +92,7 @@ def write_run(
 
 # ----------------------------------------------------------- helpers
 
-def _params_dict(cfg: BacktestConfig) -> dict:
+def _params_dict(cfg: StrategyConfig) -> dict:
     """A round-trippable view of cfg for params_json. Trims `extras` to
     plain JSON-safe primitives."""
     d = asdict(cfg)
@@ -103,15 +102,14 @@ def _params_dict(cfg: BacktestConfig) -> dict:
     return d
 
 
-def _trade_row(run_id: int, t, leverage: float):  # noqa: ARG001
-    """Tuple matching the INSERT in write_run. Expects a SymbolTrade
-    (runner.py) — flat fields, no methods."""
+def _trade_row(run_id: int, t: SymbolTrade):
+    """Tuple matching the INSERT in write_run."""
     return (
         run_id, t.symbol, t.direction,
         t.setup_ts, t.entry_ts, t.entry_price,
         t.sl, t.target,
         t.exit_ts, t.exit_price, t.exit_reason, t.qty,
-        t.pnl_raw, t.pnl_leveraged, t.rr_at_entry,
+        t.pnl_raw, t.pnl_leveraged, t.rr_at_entry, t.signal_tags,
     )
 
 

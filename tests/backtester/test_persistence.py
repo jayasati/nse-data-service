@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from nse_data.backtester.config import BacktestConfig
-from nse_data.backtester.persistence import write_run
-from nse_data.backtester.runner import SymbolTrade
+from nse_data.backtester._core.persistence import write_run
+from nse_data.backtester._core.types import SymbolTrade
+from nse_data.backtester.strategies.bb_ema9_30m.config import BacktestConfig
 
 
 def _make_trade(symbol: str, pnl_raw: float, leverage: float = 5.0) -> SymbolTrade:

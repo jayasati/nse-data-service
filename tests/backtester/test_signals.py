@@ -10,8 +10,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from nse_data.backtester.config import BacktestConfig
-from nse_data.backtester.signals import (
+from nse_data.backtester.strategies.bb_ema9_30m.config import BacktestConfig
+from nse_data.backtester.strategies.bb_ema9_30m.signals import (
     detect_long_setup,
     detect_short_setup,
     _same_ist_day,

@@ -22,6 +22,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 _MIGRATIONS = (
     MIGRATIONS_DIR / "025_intraday_candles.sql",
     MIGRATIONS_DIR / "032_backtests.sql",
+    MIGRATIONS_DIR / "033_backtest_signal_tags.sql",
 )
 
 IST_TZ = timezone(timedelta(hours=5, minutes=30))

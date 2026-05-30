@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from nse_data.backtester.config import BacktestConfig
-from nse_data.backtester.persistence import write_run
-from nse_data.backtester.runner import SymbolTrade
+from nse_data.backtester._core.persistence import write_run
+from nse_data.backtester._core.types import SymbolTrade
+from nse_data.backtester.strategies.bb_ema9_30m.config import BacktestConfig
 from nse_data.webcore.errors import NotFound
 from nse_data.webcore.repositories.backtests import BacktestRepository
 from nse_data.webcore.services.backtests import BacktestService

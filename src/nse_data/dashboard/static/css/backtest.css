@@ -81,6 +81,15 @@ tr.row.sel { background: var(--sel); }
 .dir.short { background: rgba(232, 120, 120, .15); color: #e87878; }
 .reason { font-size: 11px; color: var(--dim); }
 
+.tag { display: inline-block; font-size: 10px; font-weight: 700;
+       padding: 1px 6px; border-radius: 4px; margin-right: 3px;
+       letter-spacing: .03em; text-transform: uppercase; }
+.tag.basic   { background: rgba(91, 141, 239, .15); color: #5b8def; }
+.tag.div     { background: rgba(196, 122, 217, .18); color: #c47ad9; }
+.tag.other   { background: var(--panel2); color: var(--txt2); }
+.tag.none    { color: var(--dim); font-weight: 500; background: transparent;
+               padding: 0; }
+
 .footer { padding: 14px 24px; color: var(--dim); font-size: 12px; border-top: 1px solid var(--line); }
 .footer code { background: var(--panel2); padding: 2px 8px; border-radius: 5px;
                font-size: 12px; color: var(--txt2); }

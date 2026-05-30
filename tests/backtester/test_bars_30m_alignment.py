@@ -8,7 +8,7 @@ from the IST session — these tests pin that down.
 
 from __future__ import annotations
 
-from nse_data.backtester.bars import read_intraday_30m
+from nse_data.backtester.strategies.bb_ema9_30m.bars import read_intraday_30m
 
 from .conftest import IST, insert_flat_minutes, ts_to_ist_hhmm
 

@@ -41,52 +41,20 @@
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Optional
 
 import pandas as pd
 
+from ..._core.types import Direction, ExitReason, Signal, Trade
 from .bars import read_intraday_30m
 from .config import BacktestConfig
 from .indicators import add_bb_ema9
 from .signals import Setup, detect_long_setup, detect_short_setup
 
-Direction = Literal["LONG", "SHORT"]
-ExitReason = Literal["TARGET", "STOP", "EOD_1515"]
-
 _IST_OFFSET = 19800            # +5:30 in seconds
-
-
-@dataclass(frozen=True)
-class Signal:
-    """A detected pattern, regardless of whether it became a trade."""
-    direction: Direction
-    setup_ts: int
-    rr: float
-    armed: bool                # passed rr_min AND not already-traded-today
-
-
-@dataclass(frozen=True)
-class Trade:
-    direction: Direction
-    setup_ts: int
-    entry_ts: int
-    entry_price: float
-    sl: float
-    target: float
-    exit_ts: int
-    exit_price: float
-    exit_reason: ExitReason
-    rr_at_entry: float
-    qty: int = 1
-
-    def pnl_raw(self) -> float:
-        sign = 1.0 if self.direction == "LONG" else -1.0
-        return (self.exit_price - self.entry_price) * self.qty * sign
-
-    def pnl_leveraged(self, leverage: float) -> float:
-        return self.pnl_raw() * leverage
 
 
 # ------------------------------------------------------------- public API
@@ -147,7 +115,7 @@ def run_backtest_on_bars(
             current_ist_day = bar_ist_day
         elif bar_ist_day != current_ist_day:
             if pos is not None:
-                trades.append(_force_close(pos, ts, float(row["open"]), "EOD_1515"))
+                trades.append(_force_close(pos, ts, float(row["open"]), "EOD_1515", cfg))
                 pos = None
             pending = None
             traded_today = False
@@ -156,10 +124,10 @@ def run_backtest_on_bars(
         # 2) Exit logic for an open position
         if pos is not None:
             if bar_ist_min >= force_exit_at_minutes:
-                trades.append(_force_close(pos, ts, float(row["open"]), "EOD_1515"))
+                trades.append(_force_close(pos, ts, float(row["open"]), "EOD_1515", cfg))
                 pos = None
             else:
-                exit_trade = _check_exit(pos, ts, row)
+                exit_trade = _check_exit(pos, ts, row, cfg)
                 if exit_trade is not None:
                     trades.append(exit_trade)
                     pos = None
@@ -198,7 +166,7 @@ def run_backtest_on_bars(
     if pos is not None and timestamps:
         last_ts = timestamps[-1]
         last_close = float(rows[-1]["close"])
-        trades.append(_force_close(pos, last_ts, last_close, "EOD_1515"))
+        trades.append(_force_close(pos, last_ts, last_close, "EOD_1515", cfg))
 
     return signals, trades
 
@@ -247,7 +215,8 @@ def _try_fill(setup: Setup, bar_ts: int, row: dict) -> Optional[_OpenPosition]:
     return None
 
 
-def _check_exit(pos: _OpenPosition, bar_ts: int, row: dict) -> Optional[Trade]:
+def _check_exit(pos: _OpenPosition, bar_ts: int, row: dict,
+                cfg: BacktestConfig) -> Optional[Trade]:
     """SL-first within a bar. Returns Trade if exited, None otherwise."""
     high = float(row["high"])
     low  = float(row["low"])
@@ -256,26 +225,27 @@ def _check_exit(pos: _OpenPosition, bar_ts: int, row: dict) -> Optional[Trade]:
         hit_sl     = low  <= pos.sl
         hit_target = high >= pos.target
         if hit_sl:
-            return _make_trade(pos, bar_ts, pos.sl, "STOP")
+            return _make_trade(pos, bar_ts, pos.sl, "STOP", cfg)
         if hit_target:
-            return _make_trade(pos, bar_ts, pos.target, "TARGET")
+            return _make_trade(pos, bar_ts, pos.target, "TARGET", cfg)
     else:
         hit_sl     = high >= pos.sl
         hit_target = low  <= pos.target
         if hit_sl:
-            return _make_trade(pos, bar_ts, pos.sl, "STOP")
+            return _make_trade(pos, bar_ts, pos.sl, "STOP", cfg)
         if hit_target:
-            return _make_trade(pos, bar_ts, pos.target, "TARGET")
+            return _make_trade(pos, bar_ts, pos.target, "TARGET", cfg)
     return None
 
 
 def _force_close(pos: _OpenPosition, bar_ts: int, price: float,
-                 reason: ExitReason) -> Trade:
-    return _make_trade(pos, bar_ts, price, reason)
+                 reason: ExitReason, cfg: BacktestConfig) -> Trade:
+    return _make_trade(pos, bar_ts, price, reason, cfg)
 
 
 def _make_trade(pos: _OpenPosition, exit_ts: int, exit_price: float,
-                reason: ExitReason) -> Trade:
+                reason: ExitReason, cfg: BacktestConfig) -> Trade:
+    qty = _qty_for(pos.entry_price, cfg.notional_per_trade)
     return Trade(
         direction=pos.direction,
         setup_ts=pos.setup_ts,
@@ -287,7 +257,14 @@ def _make_trade(pos: _OpenPosition, exit_ts: int, exit_price: float,
         exit_price=exit_price,
         exit_reason=reason,
         rr_at_entry=pos.rr_at_entry,
+        qty=qty,
     )
+
+
+def _qty_for(entry_price: float, notional: float) -> int:
+    if entry_price <= 0 or notional <= 0:
+        return 1
+    return max(1, math.floor(notional / entry_price))
 
 
 def _ist_day_index(ts: int) -> int:

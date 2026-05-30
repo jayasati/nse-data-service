@@ -38,7 +38,7 @@ async function loadRuns() {
     ? `<option value="">No runs yet</option>`
     : state.runs.map(run => {
         const date = new Date(run.created_at * 1000).toISOString().slice(0, 16).replace("T", " ");
-        return `<option value="${run.id}">#${run.id} · ${date} · ${run.symbols_count} sym · ${run.total_trades} tr</option>`;
+        return `<option value="${run.id}">#${run.id} · ${run.strategy} · ${date} · ${run.symbols_count} sym · ${run.total_trades} tr</option>`;
       }).join("");
 
   if (state.runs.length === 0) {
@@ -164,16 +164,18 @@ function renderBySym() {
 function renderTrades(trades) {
   const tbody = $("tradesBody");
   if (!trades.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="none">No trades</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="none">No trades</td></tr>`;
     return;
   }
   tbody.innerHTML = trades.map(t => {
     const dirClass = t.direction === "LONG" ? "long" : "short";
     const pnl = state.pnlMode === "leveraged" ? t.pnl_leveraged : t.pnl_raw;
     const cls = pnl > 0 ? "pos" : pnl < 0 ? "neg" : "";
+    const tagHtml = renderSignalTag(t.signal_tags);
     return `<tr>
       <td>${t.symbol}</td>
       <td><span class="dir ${dirClass}">${t.direction}</span></td>
+      <td>${tagHtml}</td>
       <td>${tsToIst(t.entry_ts)}</td>
       <td class="num">${fmt2(t.entry_price)}</td>
       <td>${tsToIst(t.exit_ts)}</td>
@@ -182,6 +184,18 @@ function renderTrades(trades) {
       <td class="num ${cls}">${fmt2(pnl)}</td>
     </tr>`;
   }).join("");
+}
+
+function renderSignalTag(tags) {
+  if (!tags) return `<span class="tag none">—</span>`;
+  // Render one badge per tag in the comma/plus-separated list (e.g. "basic+divergence").
+  const parts = tags.split(/[+,]/).map(p => p.trim()).filter(Boolean);
+  return parts.map(p => {
+    const cls = p === "divergence" ? "div"
+              : p === "basic"      ? "basic"
+              : "other";
+    return `<span class="tag ${cls}">${p}</span>`;
+  }).join(" ");
 }
 
 // ============================================================== events

@@ -4,6 +4,10 @@ The engine is per-symbol; this module fans out, attaches `symbol` to each
 trade, and rolls up aggregates. Persistence is delegated to
 `persistence.write_run` when `commit=True`.
 
+Strategy dispatch: step 3 introduces a registry so this module routes
+to the right per-symbol engine based on `cfg.strategy`. Until then, only
+bb_ema9_30m exists and is imported directly.
+
 No threading in MVP — even ~600 symbols × ~5.5 months of 30-min bars runs in
 under a minute on a typical laptop, and Python's GIL plus pandas internals
 make naive thread pools a wash here. If we hit a wall, add multiprocessing.
@@ -13,99 +17,40 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from dataclasses import dataclass
 from typing import Iterable
 
-from .config import BacktestConfig
-from .engine import run_backtest_for_symbol
 from .persistence import write_run
+from .types import RunReport, StrategyConfig, SymbolSignal, SymbolTrade
 
 LOG = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class SymbolTrade:
-    """A Trade with its symbol attached, plus pre-computed pnl fields so the
-    persistence layer doesn't have to call methods or know about leverage."""
-    symbol: str
-    direction: str
-    setup_ts: int
-    entry_ts: int
-    entry_price: float
-    sl: float
-    target: float
-    exit_ts: int
-    exit_price: float
-    exit_reason: str
-    qty: int
-    rr_at_entry: float
-    pnl_raw: float
-    pnl_leveraged: float
-
-
-@dataclass(frozen=True)
-class SymbolSignal:
-    symbol: str
-    direction: str
-    setup_ts: int
-    rr: float
-    armed: bool
-
-
-@dataclass(frozen=True)
-class RunReport:
-    signals: list[SymbolSignal]
-    trades: list[SymbolTrade]
-
-    @property
-    def total_signals(self) -> int:
-        return len(self.signals)
-
-    @property
-    def total_trades(self) -> int:
-        return len(self.trades)
-
-    @property
-    def wins(self) -> int:
-        return sum(1 for t in self.trades if t.pnl_raw > 0)
-
-    @property
-    def losses(self) -> int:
-        return sum(1 for t in self.trades if t.pnl_raw < 0)
-
-    @property
-    def pnl_raw(self) -> float:
-        return sum(t.pnl_raw for t in self.trades)
-
-    @property
-    def pnl_leveraged(self) -> float:
-        return sum(t.pnl_leveraged for t in self.trades)
-
-    @property
-    def win_rate(self) -> float:
-        decided = self.wins + self.losses
-        return self.wins / decided if decided > 0 else 0.0
 
 
 def run_backtest_for_universe(
     conn: sqlite3.Connection,
     symbols: Iterable[str],
     *,
-    cfg: BacktestConfig,
+    cfg: StrategyConfig,
     start_date: str | None = None,
     end_date: str | None = None,
     progress_every: int = 25,
 ) -> RunReport:
     """Fan out the engine across `symbols`. Pure compute — no DB writes.
 
-    Logs a progress line every `progress_every` symbols so long full-universe
-    runs aren't silent. Set progress_every=0 to disable.
+    Dispatches to the right strategy engine via the strategies registry
+    (lookup keyed on `cfg.strategy`). Logs progress every `progress_every`
+    symbols (set 0 to disable).
     """
+    # Local import to avoid a strategies → _core → strategies cycle.
+    from ..strategies.registry import resolve
+
+    run_backtest_for_symbol = resolve(cfg.strategy).engine_fn
+
     all_signals: list[SymbolSignal] = []
     all_trades: list[SymbolTrade] = []
 
     symbols = list(symbols)
     total = len(symbols)
+    skipped = 0
 
     for i, symbol in enumerate(symbols, start=1):
         if progress_every and (i == 1 or i % progress_every == 0 or i == total):
@@ -120,6 +65,7 @@ def run_backtest_for_universe(
             )
         except Exception as e:
             LOG.warning("backtest failed for %s: %r", symbol, e)
+            skipped += 1
             continue
 
         for s in signals:
@@ -138,7 +84,11 @@ def run_backtest_for_universe(
                 exit_ts=t.exit_ts, exit_price=t.exit_price, exit_reason=t.exit_reason,
                 qty=t.qty, rr_at_entry=t.rr_at_entry,
                 pnl_raw=raw, pnl_leveraged=lev,
+                signal_tags=t.signal_tags,
             ))
+
+    if skipped:
+        LOG.warning("skipped %d/%d symbols due to errors", skipped, total)
 
     return RunReport(signals=all_signals, trades=all_trades)
 
@@ -147,7 +97,7 @@ def commit_report(
     conn: sqlite3.Connection,
     report: RunReport,
     *,
-    cfg: BacktestConfig,
+    cfg: StrategyConfig,
     universe: str,
     symbols_count: int,
     start_date: str,

@@ -129,4 +129,5 @@ class BacktestService:
             "pnl_raw": round(float(r["pnl_raw"]), 2),
             "pnl_leveraged": round(float(r["pnl_leveraged"]), 2),
             "rr_at_entry": round(float(r["rr_at_entry"]), 2),
+            "signal_tags": r["signal_tags"],
         }

@@ -49,7 +49,7 @@ class BacktestRepository:
         sql = (
             "SELECT symbol, direction, setup_ts, entry_ts, entry_price, sl, target, "
             "exit_ts, exit_price, exit_reason, qty, pnl_raw, pnl_leveraged, "
-            "rr_at_entry "
+            "rr_at_entry, signal_tags "
             "FROM backtest_trades WHERE run_id = ?"
         )
         params: list[Any] = [run_id]

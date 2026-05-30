@@ -12,8 +12,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from nse_data.backtester.config import BacktestConfig
-from nse_data.backtester.indicators import add_bb_ema9
+from nse_data.backtester.strategies.bb_ema9_30m.config import BacktestConfig
+from nse_data.backtester.strategies.bb_ema9_30m.indicators import add_bb_ema9
 
 
 def _make_df(closes: list[float]) -> pd.DataFrame:

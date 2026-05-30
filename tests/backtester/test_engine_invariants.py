@@ -15,8 +15,8 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from nse_data.backtester.config import BacktestConfig
-from nse_data.backtester.engine import (
+from nse_data.backtester.strategies.bb_ema9_30m.config import BacktestConfig
+from nse_data.backtester.strategies.bb_ema9_30m.engine import (
     _ist_minutes, run_backtest_on_bars,
 )
 
