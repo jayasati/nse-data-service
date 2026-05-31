@@ -16,6 +16,7 @@ from .momentum.macd_intraday import MacdIntraday
 from .momentum.rsi import RelativeStrengthIndex
 from .momentum.rsi_intraday import RsiIntraday
 from .trend.sma import SimpleMovingAverage
+from .volume.vwap_intraday import VwapIntraday
 
 INDICATORS: tuple[Indicator, ...] = (
     # EOD (daily, off raw_bhavcopy_cm) — see indicators/compute.py
@@ -26,4 +27,5 @@ INDICATORS: tuple[Indicator, ...] = (
     # every minute during market hours by the live scheduler.
     RsiIntraday(),
     MacdIntraday(),
+    VwapIntraday(),
 )

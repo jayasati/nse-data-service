@@ -63,29 +63,45 @@ All 32 collectors running 5 consecutive trading days. Zero laptop dependency. Da
 
 ## Week 2 — Intraday Candle Builder
 
+> **As-built note (reconciled 2026-05-31).** The intent below — 1m+5m candles for
+> the whole universe with session VWAP — is met, but via a **read-time synthesis**
+> architecture rather than a persisted minute-cadence candle-builder. History
+> comes from a broker backfill into `raw_intraday_candles` (1-min, kept
+> permanently); *today's* candles are synthesized on demand from
+> `raw_equity_quotes` and resampled to 5m at read time
+> (`indicators/intraday_ohlcv.py`). This avoids a stateful minute-writer and
+> double storage. The original task text (persisted `bar_time/timeframe/vwap`
+> table, 30-day candle retention) is superseded; the boxes below reflect reality.
+
 ### Tasks
 
-- [ ] **2.1** Write migration `migrations/0XX_intraday_candles.sql`:
-  ```sql
-  CREATE TABLE IF NOT EXISTS raw_intraday_candles (
-    symbol TEXT NOT NULL,
-    bar_time TEXT NOT NULL,
-    timeframe TEXT NOT NULL,  -- '1m' or '5m'
-    open REAL, high REAL, low REAL, close REAL,
-    volume INTEGER,
-    vwap REAL,
-    session_date TEXT NOT NULL,
-    PRIMARY KEY (symbol, bar_time, timeframe)
-  );
-  ```
-- [ ] **2.2** Write `indicators/candle_builder.py` — runs every minute during market hours. For each symbol in the universe (F&O ∪ Nifty500), reads the last 5 LTP polls from `raw_equity_quotes`, computes OHLCV for the current 1m and 5m bar, upserts to `raw_intraday_candles`
-- [ ] **2.3** VWAP computation inside candle builder — session-running sum: `vwap = cumsum(typical_price × volume) / cumsum(volume)`. Reset at 09:15 each day
-- [ ] **2.4** Register `candle_builder` as a DBJob in the scheduler — every 1 minute, `market_hours_only`
-- [ ] **2.5** Write nightly retention job — delete rows in `raw_intraday_candles` older than 30 days
-- [ ] **2.6** Verify: manually check that candle OHLCV for RELIANCE at 10:15 matches what you see on NSE chart for the same bar
+- [x] **2.1** Intraday candle table — `migrations/025_intraday_candles.sql`
+  (`raw_intraday_candles`: `symbol, interval, ts(epoch), open, high, low, close,
+  volume, source`). Broker-backfilled 1-min history; 5m derived by resampling.
+  *(No `vwap`/`session_date` columns — VWAP is its own indicator table, see 2.3.)*
+- [x] **2.2** Candle source — `indicators/intraday_ohlcv.py:read_intraday_5m`
+  merges broker-backfilled 1-min history with today's live 1-min bars synthesized
+  from `raw_equity_quotes`, deduped per day, resampled to 5m. Live indicators run
+  over the F&O ∪ Nifty500 universe (`indicators/universe.py`).
+- [x] **2.3** Session-anchored VWAP — `indicators/volume/vwap_intraday.py` +
+  `migrations/034_indicator_vwap_5m.sql` (table `indicator_vwap_5m`).
+  `vwap = cumsum(typical_price × volume) / cumsum(volume)`, reset at 09:15 IST.
+  Registered as an intraday indicator; tests in `tests/indicators/test_vwap_intraday.py`.
+- [x] **2.4** Every-minute market-hours job — `indicators/live_job.py`
+  (`register_live_job`, wired in `main.py`), `IntervalTrigger(60s)`, gated by
+  `is_market_open()`. Recomputes all intraday indicators (RSI/MACD/VWAP).
+- [x] **2.5** Retention — `indicators/retention.py` sweeps intraday *indicator*
+  tables to a rolling 30 days nightly. The backfilled *candle* history is kept on
+  purpose (it's the historical record), so candles are not pruned.
+- [ ] **2.6** Verify: spot-check RELIANCE 10:15 candle + VWAP against the NSE
+  chart during a live session. *(Programmatic sanity done 2026-05-31: VWAP stays
+  within each session's [low, high] and tracks price; live-chart eyeball still
+  pending a trading day.)*
 
 ### Week 2 gate
-1m and 5m candles building correctly for all symbols. VWAP resetting at 09:15 each session.
+1m and 5m candles building correctly for all symbols. VWAP resetting at 09:15 each
+session. **Met** via the as-built architecture; only the live-session eyeball (2.6)
+remains.
 
 ---
 

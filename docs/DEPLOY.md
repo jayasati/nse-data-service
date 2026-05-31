@@ -1,5 +1,32 @@
 # Deployment — Phase 1, Week 1 (the VPS gate)
 
+> ## ⚡ Daily ops cheat-sheet
+>
+> **Instance:** `i-0a2677d417ab9109c` · `ap-south-1` · public IP `13.200.215.86`
+>
+> **Connect (preferred — AWS SSM, immune to dynamic-IP changes):**
+> ```bash
+> nse-shell     # SSM shell  (then: sudo su - ubuntu && cd /opt/nse-data-service)
+> nse-tunnel    # dashboard → http://localhost:8000
+> ```
+> (`nse-shell`/`nse-tunnel` are bash functions in `~/.bashrc`. SSH fallback:
+> `./scripts/allow_ssh.sh && ssh -i ~/nse-data-service/stock-key.pem ubuntu@13.200.215.86`.)
+>
+> **Update the server after pushing from the laptop** (laptop → GitHub → server):
+> ```bash
+> # on the laptop:  git add -A && git commit -m "..." && git push origin main
+> # then on the server (data/.env are gitignored — DB & secrets untouched):
+> ./scripts/deploy.sh ubuntu     # pull + deps + migrations + restart services
+> ```
+>
+> **Check it's alive:**
+> ```bash
+> systemctl is-active nse-collector@ubuntu       # expect: active
+> tail -1 data/backfill_7d.log                    # backfill: "done · ... errors"
+> ```
+>
+> Full details below; SSM/SSH access is in [§2](#2-connect).
+
 **What this file is:** the step-by-step runbook for standing up the always-on
 host. It is the deliverable for checklist task **1.12**, and every section maps
 to a Week-1 task (1.1–1.11) so you can tick them off as you go.

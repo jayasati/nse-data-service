@@ -31,6 +31,7 @@ def test_run_intraday_pass_invokes_compute_when_market_open(tmp_path):
     for m in [
         "003_bhavcopy.sql", "010_phase7_day5.sql", "025_intraday_candles.sql",
         "029_indicator_rsi_5m.sql", "030_indicator_macd_5m.sql",
+        "034_indicator_vwap_5m.sql",
     ]:
         conn.executescript((migrations / m).read_text())
 
