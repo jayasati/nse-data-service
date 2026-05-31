@@ -43,18 +43,18 @@ Nothing in Phase 1 proceeds until this week is complete. Do not start Week 2 unt
 
 ### Tasks
 
-- [ ] **1.1** Provision cloud VPS — 4 vCPU, 8 GB RAM, 100 GB SSD, Ubuntu 24.04. Providers: Hetzner CX32 (cheapest), DigitalOcean Droplet, or AWS t3.medium
-- [ ] **1.2** Install dependencies on VPS: Python 3.12, Redis, Git, tmux/screen
-- [ ] **1.3** Transfer `data/nse.db` to VPS (use `rsync` with compression — file is ~5.4 GB)
-- [ ] **1.4** Transfer full project codebase to VPS via Git or rsync
-- [ ] **1.5** Configure `.env` on VPS — all API keys, DB path, Redis URL
-- [ ] **1.6** Set up Redis on VPS and verify it starts on boot
-- [ ] **1.7** Create systemd unit file for the data service — start on boot, restart on crash. Save as `/etc/systemd/system/nse-data.service`
-- [ ] **1.8** Enable and start the service: `systemctl enable nse-data && systemctl start nse-data`
-- [ ] **1.9** Verify all 32 collectors fire on their schedules for **one full trading day**
+- [x] **1.1** Provision cloud VPS — 4 vCPU, 8 GB RAM, 100 GB SSD, Ubuntu 24.04. Providers: Hetzner CX32 (cheapest), DigitalOcean Droplet, or AWS t3.medium → *AWS EC2 `m7i-flex.large` (2 vCPU / 8 GB), 100 GB gp3, ap-south-1 (Mumbai), Ubuntu 24.04.4. Instance `Stock-Bot` i-0a2677d417ab9109c.*
+- [x] **1.2** Install dependencies on VPS: Python 3.12, Redis, Git, tmux/screen → *Python 3.12.3, redis 7.0.15, git, tmux, rsync, sqlite3.*
+- [x] **1.3** Transfer `data/nse.db` to VPS (use `rsync` with compression — file is ~5.4 GB) → *5.1 GB via `scripts/transfer_db.sh` (sqlite3 .backup snapshot + rsync); `PRAGMA integrity_check` = ok, 25,956 announcements verified.*
+- [x] **1.4** Transfer full project codebase to VPS via Git or rsync → *`git clone` to `/opt/nse-data-service`.*
+- [x] **1.5** Configure `.env` on VPS — all API keys, DB path, Redis URL → *`.env` copied from laptop. NOTE: code reads only AZURE_OPENAI_*/GROWW_* — DB path is hardcoded `data/nse.db`, Redis uses default localhost:6379 (no URL vars). See `.env.example`.*
+- [x] **1.6** Set up Redis on VPS and verify it starts on boot → *`redis-server` enabled on boot; `redis-cli ping` = PONG; collector logs `dedup_cache_redis_ok`.*
+- [x] **1.7** Create systemd unit file for the data service — start on boot, restart on crash. Save as `/etc/systemd/system/nse-data.service` → *Implemented as `nse-collector@.service` (`%i`-templated) + `nse-dashboard@.service`, not `nse-data.service`.*
+- [x] **1.8** Enable and start the service: `systemctl enable nse-data && systemctl start nse-data` → *`systemctl enable --now nse-collector@ubuntu` (+ dashboard). Status active (running); NSE accepting the Mumbai IP (200 OK).*
+- [ ] **1.9** Verify all 32 collectors fire on their schedules for **one full trading day** → *clock starts Mon 2026-06-01 (deployed Sat, a non-trading day).*
 - [ ] **1.10** Spot-check 10 values by hand against NSE website — prices, OI numbers, VIX level
 - [ ] **1.11** Repeat for **4 more consecutive trading days** (5 total)
-- [ ] **1.12** Write `docs/DEPLOY.md` — step-by-step reproduction of everything above
+- [x] **1.12** Write `docs/DEPLOY.md` — step-by-step reproduction of everything above
 
 ### Week 1 gate
 All 32 collectors running 5 consecutive trading days. Zero laptop dependency. Data spot-checked.

@@ -30,7 +30,7 @@ dashboard = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
 broker = ["growwapi>=0.1", "pyotp>=2.9", "kiteconnect>=4.2"]
 # Optional: technical indicators nightly compute (indicators/*). pandas-ta-classic
 # is the maintained pandas-ta fork that's compatible with numpy 2.x.
-indicators = ["pandas>=2.0", "pandas-ta-classic>=0.6"]
+indicators = ["pandas>=2.0,<3", "pandas-ta-classic>=0.6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

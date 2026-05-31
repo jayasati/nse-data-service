@@ -73,9 +73,36 @@ EC2 → Launch instance:
 
 ## 2. Connect
 
+### Preferred: AWS SSM Session Manager (no SSH, no IP allowlist)
+
+The home connection has a **dynamic public IP**, so the "SSH from My IP only"
+security-group rule breaks on every laptop/router restart (SSH then hangs until
+it times out). SSM sidesteps this entirely — it connects through the AWS API, so
+there's no open port and no IP rule to maintain.
+
+One-time setup (already done for this box):
+- Instance has IAM role **`nse-ec2-ssm-role`** (`AmazonSSMManagedInstanceCore`) attached.
+- IAM user `jay` has an `allow-ssm-session` inline policy (`ssm:StartSession`, …).
+- Laptop has the `session-manager-plugin` installed.
+
+Daily use (shortcuts are in `~/.bashrc` — `nse-shell` / `nse-tunnel`):
+
 ```bash
-chmod 400 ~/Downloads/stock-key.pem
-ssh -i ~/Downloads/stock-key.pem ubuntu@<13.200.215.86>
+# interactive shell (lands as ssm-user; `sudo su - ubuntu` for the app user)
+aws ssm start-session --target i-0a2677d417ab9109c --region ap-south-1
+
+# dashboard tunnel -> http://localhost:8000 (replaces the SSH -L tunnel in §10)
+aws ssm start-session --target i-0a2677d417ab9109c --region ap-south-1 \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["8000"],"localPortNumber":["8000"]}'
+```
+
+### Fallback: plain SSH (needs the SG rule to match your current IP)
+
+```bash
+chmod 400 /home/jay/nse-data-service/stock-key.pem
+./scripts/allow_ssh.sh    # updates the SG to your current public IP (dynamic-IP fix)
+ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.200.215.86
 ```
 
 ---
@@ -152,9 +179,9 @@ everything collected so far. Migrations are applied automatically against the
 Run this **from the laptop** (repo root), pointing at the VPS:
 
 ```bash
-./scripts/transfer_db.sh ubuntu@<EC2_PUBLIC_IP> \
+./scripts/transfer_db.sh ubuntu@13.200.215.86 \
     /opt/nse-data-service/data \
-    ~/Downloads/nse-key.pem
+    /home/jay/nse-data-service/stock-key.pem
 ```
 
 The script takes a consistent `sqlite3 .backup` snapshot (safe even while the
@@ -166,7 +193,7 @@ it resume.
 Verify on the server once it finishes:
 
 ```bash
-ssh -i ~/Downloads/nse-key.pem ubuntu@<EC2_PUBLIC_IP> \
+ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.200.215.86 \
   "sqlite3 /opt/nse-data-service/data/nse.db 'PRAGMA integrity_check;'"   # expect: ok
 ```
 
@@ -196,12 +223,16 @@ flags there if needed.
 
 ## 8. Install the systemd units (tasks 1.7, 1.8)
 
+The units are `%i`-templated on the run user, so they must be installed under
+the template filename (`name@.service`) — that's what lets `@ubuntu` resolve
+`%i` to the `ubuntu` user.
+
 ```bash
-sudo cp deploy/nse-collector.service /etc/systemd/system/
-sudo cp deploy/nse-dashboard.service /etc/systemd/system/   # optional UI/API
+sudo cp deploy/nse-collector@.service /etc/systemd/system/
+sudo cp deploy/nse-dashboard@.service /etc/systemd/system/   # optional UI/API
 sudo systemctl daemon-reload
-sudo systemctl enable --now nse-collector@ubuntu            # %i = the run user
-sudo systemctl enable --now nse-dashboard@ubuntu            # optional
+sudo systemctl enable --now nse-collector@ubuntu             # %i = ubuntu
+sudo systemctl enable --now nse-dashboard@ubuntu             # optional
 ```
 
 The unit files point at `/opt/nse-data-service`, run as the `%i` user (`ubuntu`),
@@ -256,13 +287,78 @@ dependency, data spot-checked. Only then start Week 2.
 The dashboard has no auth — never expose port 8000. Tunnel from the laptop:
 
 ```bash
-ssh -i ~/Downloads/nse-key.pem -L 8000:localhost:8000 ubuntu@<EC2_PUBLIC_IP>
+ssh -i /home/jay/nse-data-service/stock-key.pem -L 8000:localhost:8000 ubuntu@13.200.215.86
 # then open http://localhost:8000
 ```
 
 ---
 
-## 11. Backups (preview of task 6.2)
+## 11. Checking server status (quick reference)
+
+Day-to-day "is it alive and collecting?" checks. The SSH key lives at
+`/home/jay/nse-data-service/stock-key.pem` and the instance is `ubuntu@13.200.215.86`
+(ap-south-1, Mumbai).
+
+> First time only: `chmod 400 /home/jay/nse-data-service/stock-key.pem`
+> (SSH refuses a key that's group/world-readable).
+
+> **If SSH hangs / "freezes" after a laptop restart:** the security group allows
+> SSH from "My IP" only, but a home connection gets a *new* public IP on each
+> restart — so the old rule no longer matches and `ssh` silently times out.
+> Fix in one command from the laptop (needs AWS CLI configured once via
+> `aws configure`):
+> ```bash
+> ./scripts/allow_ssh.sh      # detects current public IP, updates the SG rule
+> ```
+> If it reports "no running instance", the box is stopped or its public IP
+> changed — check the EC2 console.
+
+**Fastest check — liveness from the laptop, no full login:**
+
+```bash
+ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.200.215.86 \
+  "systemctl is-active nse-collector@ubuntu; redis-cli ping"
+# expect: active   /   PONG
+```
+
+**Full session — SSH in, then inspect:**
+
+```bash
+ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.200.215.86
+```
+
+Once on the server:
+
+```bash
+# Service health
+systemctl status nse-collector@ubuntu          # collector (the critical one)
+systemctl status nse-dashboard@ubuntu          # optional UI/API
+sudo systemctl is-enabled redis-server         # expect: enabled
+redis-cli ping                                 # expect: PONG
+
+# Logs / freshness
+journalctl -u nse-collector@ubuntu -f                              # live JSON logs
+journalctl -u nse-collector@ubuntu --since "06:00" | grep -E 'collector_run|error'
+cd /opt/nse-data-service
+.venv/bin/python scripts/run_collectors.py --due --dry-run         # what's overdue now
+
+# Spot-check the data is current
+sqlite3 /opt/nse-data-service/data/nse.db \
+  "SELECT symbol, last_price FROM raw_equity_quotes ORDER BY ts DESC LIMIT 5;"
+sqlite3 /opt/nse-data-service/data/nse.db \
+  "SELECT * FROM raw_india_vix ORDER BY ts DESC LIMIT 1;"
+```
+
+**View the dashboard (no auth — tunnel from the laptop):**
+
+```bash
+ssh -i /home/jay/nse-data-service/stock-key.pem -L 8000:localhost:8000 ubuntu@13.200.215.86
+# then open http://localhost:8000
+```
+
+---
+
+## 12. Backups (preview of task 6.2)
 
 Not a Week-1 gate item, but cheap to set up now. Nightly local snapshot, 30-day
 rotation:
