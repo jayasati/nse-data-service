@@ -9,6 +9,9 @@ import { SearchBox } from "../components/search.js";
 const chart = new ChartController("chart", "panes", "tip");
 
 let current = null, tf = "1D", mode = "area", lastBars = [];
+// Intraday bar size for the 1D timeframe: "5m" (default, indicators comparable
+// with Groww/TV) or "1m" (a new candle every minute). Persisted across visits.
+let bar = localStorage.getItem("nse_intraday_bar") === "1m" ? "1m" : "5m";
 const overlays = { vwap: false, ema20: false, ema50: false, ema200: false, bb: false };
 let wl = new Set(JSON.parse(localStorage.getItem("nse_watchlist") || "[]"));
 
@@ -26,13 +29,12 @@ const STUDY_LABEL = { rsi: "RSI 14", macd: "MACD", adx: "ADX", chop: "CHOP" };
 
 // timeframe -> {interval, days} fetch plan.
 function plan() {
-  // 1D always uses 5-minute bars regardless of render mode. Previously Line
-  // mode used 1-min bars and Candle used 5-min, which silently changed the
-  // basis of every indicator (RSI, MACD, ADX) — RSI 14 on 1-min bars covers
-  // only the last 14 minutes, vs the 70-minute window that TradingView/Groww
-  // show on a 5-min chart. Sticking to 5-min keeps our indicators comparable
-  // with Groww/TV at the same wall-clock moment.
-  if (tf === "1D") return { interval: "5m", days: 4 };
+  // 1D uses the `bar` toggle (5m default, or 1m). 5-min keeps RSI/MACD/ADX
+  // comparable with Groww/TV (RSI 14 = a 70-min window vs only 14 min on
+  // 1-min bars), so it's the default; 1m is opt-in for a candle every minute.
+  // The render mode (line/candle/ha) does NOT change the bar size — that kept
+  // the indicator basis stable when only the chart style changed.
+  if (tf === "1D") return { interval: bar, days: 4 };
   const d = { "1W": 7, "1M": 23, "3M": 66, "6M": 132, "1Y": 260, "3Y": 1100, "5Y": 1900, "All": 6000 }[tf] || 260;
   return { interval: "1d", days: d };
 }
@@ -222,12 +224,26 @@ $("modes").onclick = e => { if (e.target.tagName === "BUTTON") setMode(e.target.
 $("candleBtn").onclick = () => setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
 
 // ---- timeframe & terminal ----
+// The intraday bar toggle (5m/1m) only applies to 1D; hide it elsewhere so it
+// doesn't imply it affects daily/weekly timeframes.
+function syncBarsUI() {
+  $("bars").style.display = (tf === "1D") ? "" : "none";
+  document.querySelectorAll("#bars button").forEach(b => b.classList.toggle("on", b.dataset.b === bar));
+}
 $("tfs").onclick = e => {
   if (e.target.tagName !== "BUTTON") return;
   tf = e.target.dataset.t;
   document.querySelectorAll("#tfs button").forEach(b => b.classList.toggle("on", b === e.target));
   $("tftag").textContent = tf;
+  syncBarsUI();
   if (current) { loadChart(); loadSrvIndicators(); }
+};
+$("bars").onclick = e => {
+  if (e.target.tagName !== "BUTTON") return;
+  bar = e.target.dataset.b;
+  localStorage.setItem("nse_intraday_bar", bar);
+  document.querySelectorAll("#bars button").forEach(b => b.classList.toggle("on", b === e.target));
+  if (current && tf === "1D") { loadChart(); loadSrvIndicators(); }
 };
 $("termBtn").onclick = () => {
   const on = document.body.classList.toggle("terminal");
@@ -260,6 +276,7 @@ $("fundaHead").onclick = () => $("funda").classList.toggle("collapsed");
 new SearchBox({ inputId: "search", dropdownId: "dropdown", onSelect: select, inWatchlist: s => wl.has(s) });
 initThemeToggle("themeBtn", () => chart.themeAll());
 chart.themeAll();  // sync chart to the (possibly persisted) theme on load
+syncBarsUI();      // reflect the persisted bar size and 1D-only visibility
 
 // Open with the most-traded stock so the page isn't empty.
 (async () => { try { const r = await Api.search(""); if (r.results && r.results.length) select(r.results[0].symbol); } catch (e) {} })();
