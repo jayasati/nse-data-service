@@ -138,13 +138,15 @@ endpoints:
   live_equity_total_market:
       collector: nse_data.collectors.live_equity:LiveEquityTotalMarket
       response: json
-      cadence: 1m              # broad live universe — one call returns ~750 stocks
+      cadence: 1m              # broad live universe — 2 calls/tick, ~755 stocks
       market_hours_only: true
       table: raw_equity_quotes
       enabled: true
-      # NIFTY TOTAL MARKET ≈ the full liquid tradeable universe. Powers the
-      # dashboard's live /stocks view; index_name column keeps it distinct
-      # from the NIFTY 50 feed in the shared table.
+      # NIFTY 500 ∪ NIFTY SMALLCAP 500 — the broadest constituents NSE still
+      # serves here (~755 distinct; "NIFTY TOTAL MARKET" went empty 2026-05-27).
+      # Merged + deduped by the collector under one index_name label. Powers the
+      # dashboard's live /stocks view; the label keeps it distinct from the
+      # NIFTY 50 feed in the shared table.
 
   indices:
     collector: nse_data.collectors.indices:Indices

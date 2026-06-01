@@ -16,7 +16,10 @@ INTRADAY = "raw_intraday_candles"   # backfilled broker minute candles
 QUOTE_META = "raw_quote_metadata"   # sector / P-E / mcap for ~F&O names
 SCREENER = "raw_fundamentals_screener"
 
-LIVE_INDEX = "NIFTY TOTAL MARKET"   # index whose constituents the broad feed polls
+LIVE_INDEX = "NIFTY 500 + SMALLCAP 500"   # label the broad live feed writes
+                                          # (NIFTY 500 ∪ NIFTY SMALLCAP 500 ≈ 755
+                                          # names; replaced NIFTY TOTAL MARKET,
+                                          # which NSE stopped serving 2026-05-27)
 LIVE_FRESH_SECS = 300               # a snapshot older than this isn't "live"
 IST_OFFSET = 19800                  # +5:30; makes lightweight-charts (UTC) axis read IST
 
