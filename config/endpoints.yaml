@@ -128,7 +128,7 @@ endpoints:
   live_equity_nifty50:
       collector: nse_data.collectors.live_equity:LiveEquity
       response: json
-      cadence: 5m
+      cadence: 1m
       market_hours_only: true
       table: raw_equity_quotes
       enabled: true
