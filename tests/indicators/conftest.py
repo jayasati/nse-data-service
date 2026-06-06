@@ -27,7 +27,79 @@ _INDICATOR_MIGRATIONS = (
     MIGRATIONS_DIR / "030_indicator_macd_5m.sql",
     MIGRATIONS_DIR / "031_drop_redundant_intraday_indexes.sql",
     MIGRATIONS_DIR / "034_indicator_vwap_5m.sql",
+    MIGRATIONS_DIR / "035_indicator_live.sql",
 )
+
+
+class FakeRedis:
+    """Tiny in-memory stand-in for redis.Redis used by the snapshot/loader tests.
+
+    Implements only what the code under test calls — pipelined hset/expire/
+    sadd/delete — plus a handful of read accessors for assertions. State is
+    public (`hashes`, `sets`, `ttls`) so tests can inspect it directly.
+    """
+
+    def __init__(self) -> None:
+        self.hashes: dict[str, dict] = {}
+        self.sets: dict[str, set] = {}
+        self.ttls: dict[str, int] = {}
+
+    # --- write ops (also reachable through the pipeline) ---
+    def hset(self, key, mapping):
+        self.hashes.setdefault(key, {}).update(mapping)
+
+    def expire(self, key, ttl):
+        self.ttls[key] = ttl
+
+    def sadd(self, key, *vals):
+        self.sets.setdefault(key, set()).update(vals)
+
+    def delete(self, key):
+        self.hashes.pop(key, None)
+        self.sets.pop(key, None)
+        self.ttls.pop(key, None)
+
+    def pipeline(self):
+        return _FakePipeline(self)
+
+    # --- read accessors for assertions ---
+    def hgetall(self, key):
+        return dict(self.hashes.get(key, {}))
+
+    def smembers(self, key):
+        return set(self.sets.get(key, set()))
+
+    def ttl(self, key):
+        return self.ttls.get(key, -1)
+
+
+class _FakePipeline:
+    """Queues ops and replays them on execute(), like redis-py's pipeline."""
+
+    def __init__(self, store: "FakeRedis") -> None:
+        self._store = store
+        self._ops: list = []
+
+    def hset(self, key, mapping):
+        self._ops.append(lambda: self._store.hset(key, mapping=mapping))
+        return self
+
+    def expire(self, key, ttl):
+        self._ops.append(lambda: self._store.expire(key, ttl))
+        return self
+
+    def sadd(self, key, *vals):
+        self._ops.append(lambda: self._store.sadd(key, *vals))
+        return self
+
+    def delete(self, key):
+        self._ops.append(lambda: self._store.delete(key))
+        return self
+
+    def execute(self):
+        for op in self._ops:
+            op()
+        self._ops.clear()
 
 
 @pytest.fixture

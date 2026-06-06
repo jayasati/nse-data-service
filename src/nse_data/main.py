@@ -15,6 +15,7 @@ import sys
 import structlog
 
 from .indicators.live_job import register_live_job
+from .indicators.pre_market_loader import register_pre_market_loader
 from .scheduler.catchup import run_due
 from .scheduler.jobs import register_jobs
 from .scheduler.runner import make_runner, make_scheduler
@@ -86,6 +87,10 @@ def main() -> int:
     # the FNO + Nifty 500 universe, writes to indicator_*_5m. Gated internally
     # on is_market_open() so off-hours ticks are cheap no-ops.
     registered.append(register_live_job(scheduler, db_path))
+    # Pre-market loader: 08:45 IST on trading days, seeds indicator_live with the
+    # previous session's values and publishes the blacklist + quality flags to
+    # Redis before the 09:15 open.
+    registered.append(register_pre_market_loader(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:

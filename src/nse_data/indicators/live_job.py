@@ -26,6 +26,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from ..scheduler.market_hours import is_market_open
 from ..storage.db import open_db
 from .compute import run_all
+from .live_snapshot import run_snapshot_pass
 from .universe import fno_plus_nifty500
 
 log = structlog.get_logger()
@@ -35,15 +36,23 @@ _INTERVAL_SECONDS = 60
 
 
 def run_intraday_pass(db_path: str) -> dict:
-    """One pass over the intraday universe. Returns a small report dict."""
+    """One pass over the intraday universe. Returns a small report dict.
+
+    Two stages on the same connection: first recompute the per-bar 5-min
+    indicator series (RSI/MACD/VWAP), then roll those — plus daily ATR and the
+    SMA regime — into the per-symbol `indicator_live` snapshot and mirror it to
+    Redis. The snapshot reads what the first stage just wrote, so order matters.
+    """
     if not is_market_open():
         return {"skipped": "market_closed"}
 
     started = time.time()
+    redis_client = _connect_redis()
     conn = open_db(db_path)
     try:
         symbols = fno_plus_nifty500(conn)
         results = run_all(conn, symbols, cadence="intraday")
+        snapshot = run_snapshot_pass(conn, symbols, redis_client=redis_client)
     finally:
         conn.close()
 
@@ -54,7 +63,25 @@ def run_intraday_pass(db_path: str) -> dict:
         "elapsed_secs": round(time.time() - started, 2),
         "symbols": len(symbols),
         "rows_written": by_ind,
+        "snapshot": snapshot,
     }
+
+
+def _connect_redis():
+    """Best-effort Redis client for the snapshot mirror; None if unavailable.
+
+    Mirrors main.py's discovery (default localhost, decoded responses). A down
+    Redis is not fatal — the snapshot still lands in SQLite and the signal
+    engine falls back to reading there; we just lose the hot-path cache.
+    """
+    try:
+        import redis  # type: ignore
+
+        client = redis.Redis(decode_responses=True)
+        client.ping()
+        return client
+    except Exception:
+        return None
 
 
 def register_live_job(scheduler: BlockingScheduler, db_path: str) -> str:
