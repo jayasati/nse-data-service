@@ -1,10 +1,50 @@
 # nse-data-service
 
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for how the whole system works (data
+flow, indicators, and how signals are generated end-to-end).
+
 Inspect the database:
 
 ```
 sqlitebrowser data/nse.db
 ```
+
+## Pre-open readiness check (run before the market opens)
+
+One command that says whether the system will generate and send signals today —
+prints a ✅/⚠️/🔴 line per check and an overall **READY / NOT READY** verdict.
+Read-only (sends nothing):
+
+```
+cd /opt/nse-data-service
+PYTHONPATH=src python scripts/preopen_check.py
+```
+
+It verifies the critical chain: trading day · `nse-collector`/`nse-bot` services
+active · Telegram configured · **`indicator_live` seeded** · live universe
+non-empty — plus informational context (feed freshness, regime/sector, signals
+so far today). The check that most often blocks alerts is `indicator_live`: if it
+reads **EMPTY**, the confidence scorer has no context and nothing clears the gate.
+
+Quick manual equivalents:
+
+```
+systemctl is-active nse-collector@ubuntu nse-bot@ubuntu        # expect: active / active
+sqlite3 data/nse.db "SELECT COUNT(*) FROM indicator_live;"     # want >0 (seeded at 08:45)
+.venv/bin/python scripts/send_test_alert.py                    # proves the Telegram path
+```
+
+During the session, watch signals fire vs. dispatch:
+
+```
+sqlite3 data/nse.db \
+  "SELECT COUNT(*) fired, SUM(dispatched) sent FROM signals
+   WHERE substr(detected_at,1,10)=date('now','localtime');"
+```
+
+(Few or zero alerts can be normal — the confidence gate is selective. "Signals
+fired but not dispatched" = gated by confidence/time; "no signals at all" = a
+universe or `indicator_live` problem.)
 
 ## Backfill intraday candles (Groww)
 

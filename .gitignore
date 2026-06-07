@@ -13,3 +13,4 @@ tests/financial_extraction
 Research
 *.pem
 src/*.egg-info/
+VERIFICATION_CHECKLIST.md
