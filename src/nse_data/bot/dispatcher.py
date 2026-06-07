@@ -148,8 +148,12 @@ def dispatch_pass(
         )
 
         if confidence > threshold:
-            text = format_message(sig, context, confidence, market=market,
-                                  sector=sector, sector_info=sec)
+            text = format_message(
+                sig, context, confidence, market=market,
+                sector=sector, sector_info=sec,
+                levels=_load_levels(conn, sig["symbol"]),
+                delivery=_load_delivery(conn, sig["symbol"]),
+            )
             if sender(token, chat_id, text):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
@@ -163,6 +167,38 @@ def dispatch_pass(
 
     conn.commit()
     return counts
+
+
+def _load_levels(conn: sqlite3.Connection, symbol: str) -> dict | None:
+    """Latest indicator_levels row (PDH/52w/pivots) for `symbol`, or None."""
+    try:
+        cur = conn.execute(
+            "SELECT pdh, high_52w, low_52w, r1, s1 FROM indicator_levels "
+            "WHERE symbol = ? ORDER BY session_date DESC LIMIT 1",
+            (symbol,),
+        )
+    except sqlite3.OperationalError:
+        return None
+    row = cur.fetchone()
+    if not row:
+        return None
+    return dict(zip(("pdh", "high_52w", "low_52w", "r1", "s1"), row))
+
+
+def _load_delivery(conn: sqlite3.Connection, symbol: str) -> dict | None:
+    """Latest delivery_conviction row for `symbol`, or None."""
+    try:
+        cur = conn.execute(
+            "SELECT delivery_ratio, delivery_trend, delivery_conviction_score "
+            "FROM delivery_conviction WHERE symbol = ? ORDER BY session_date DESC LIMIT 1",
+            (symbol,),
+        )
+    except sqlite3.OperationalError:
+        return None
+    row = cur.fetchone()
+    if not row:
+        return None
+    return dict(zip(("delivery_ratio", "delivery_trend", "delivery_conviction_score"), row))
 
 
 def _row_to_signal(row) -> dict:
@@ -194,8 +230,9 @@ def format_message(
     sig: dict, context: dict, confidence: float,
     market: dict | None = None,
     sector: str | None = None, sector_info: dict | None = None,
+    levels: dict | None = None, delivery: dict | None = None,
 ) -> str:
-    """Alert text with market + sector + stock context (task 9.3)."""
+    """Alert text with market + sector + stock + delivery/levels context (9.3 / 13.6)."""
     label = _SIGNAL_LABELS.get(sig["signal_type"], sig["signal_type"])
     arrow = _slope_arrow(context.get("vwap_slope"))
     sl_t1 = _format_bracket(sig.get("price"), sig.get("atr_14_daily"))
@@ -209,10 +246,33 @@ def format_message(
         f"{_format_sector(sector, sector_info)}\n"
         f"Stock: VWAP {context.get('price_vs_vwap') or 'n/a'} {arrow} | "
         f"RSI(5m): {_fmt(context.get('rsi_5m'))} | "
-        f"Trend: {context.get('trend_regime') or 'n/a'}\n\n"
+        f"Trend: {context.get('trend_regime') or 'n/a'}\n"
+        f"{_format_delivery(delivery)}"
+        f"{_format_levels(levels)}\n"
         f"Confidence: {_tier(confidence)} ({confidence:.2f})\n"
         f"{sl_t1} | Flat by: 15:20"
     )
+
+
+def _format_delivery(delivery: dict | None) -> str:
+    """Delivery conviction line (task 13.6), or '' if unavailable."""
+    if not delivery or delivery.get("delivery_ratio") is None:
+        return ""
+    ratio = delivery["delivery_ratio"]
+    trend = delivery.get("delivery_trend") or "n/a"
+    return f"Delivery: {trend} ({ratio * 100:.0f}%)\n"
+
+
+def _format_levels(levels: dict | None) -> str:
+    """Key reference levels line (task 13.6), or '' if unavailable."""
+    if not levels:
+        return ""
+    parts = []
+    if levels.get("pdh") is not None:
+        parts.append(f"PDH: {levels['pdh']:.1f}")
+    if levels.get("high_52w") is not None:
+        parts.append(f"52wH: {levels['high_52w']:.1f}")
+    return ("Levels: " + " | ".join(parts) + "\n") if parts else ""
 
 
 def _tier(confidence: float) -> str:

@@ -30,6 +30,8 @@ _INDICATOR_MIGRATIONS = (
     MIGRATIONS_DIR / "035_indicator_live.sql",
     MIGRATIONS_DIR / "043_indicator_eod_set.sql",   # indicator_eod + live columns
     MIGRATIONS_DIR / "044_intraday_supertrend_voldelta.sql",
+    MIGRATIONS_DIR / "045_indicator_levels.sql",
+    MIGRATIONS_DIR / "046_delivery_conviction.sql",
 )
 
 

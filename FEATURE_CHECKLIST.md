@@ -677,7 +677,7 @@ _(✅ met: indicator_eod computes nightly; EMA/BB/ADX/Supertrend/OBV surfaced in
 
 ### Tasks
 
-- [ ] **13.1** Write migration `migrations/0XX_indicator_levels.sql`:
+- [x] **13.1** Write migration `migrations/0XX_indicator_levels.sql`: _(✅ migration 045_indicator_levels.sql)_
   ```sql
   CREATE TABLE IF NOT EXISTS indicator_levels (
     symbol TEXT NOT NULL,
@@ -694,7 +694,7 @@ _(✅ met: indicator_eod computes nightly; EMA/BB/ADX/Supertrend/OBV surfaced in
   );
   ```
 
-- [ ] **13.2** Write `indicators/levels.py` — runs nightly at 19:00 from bhavcopy:
+- [x] **13.2** Write `indicators/levels.py` — runs nightly at 19:00 from bhavcopy: _(✅ extended levels.py: PDH/PDL, 52w + days-since, 5d/20d ranges, nearest round number + prior-failure count, pivots; registered 19:00 trading-day)_
   - PDH, PDL from yesterday's bhavcopy HIGH/LOW
   - 52w high/low and days-since from `raw_high_low_52w`
   - 5d/20d high-low ranges from last N rows of bhavcopy
@@ -702,9 +702,9 @@ _(✅ met: indicator_eod computes nightly; EMA/BB/ADX/Supertrend/OBV surfaced in
   - Prior round number failure count: how many times in last 20 sessions did price approach within 0.5% of this round number and fail to break it
   - Pivot points: P = (H+L+C)/3 from yesterday. R1 = 2P−L, R2 = P+(H−L), S1 = 2P−H, S2 = P−(H−L)
 
-- [ ] **13.3** Add levels to `pre_market_loader.py` — loads today's levels into Redis `levels:{symbol}` hash at 08:45. Static for the session.
+- [x] **13.3** Add levels to `pre_market_loader.py` — loads today's levels into Redis `levels:{symbol}` hash at 08:45. Static for the session. _(✅ read_levels + write_levels_to_redis in run_pre_market_load)_
 
-- [ ] **13.4** Write migration `migrations/0XX_delivery_conviction.sql`:
+- [x] **13.4** Write migration `migrations/0XX_delivery_conviction.sql`: _(✅ migration 046_delivery_conviction.sql)_
   ```sql
   CREATE TABLE IF NOT EXISTS delivery_conviction (
     symbol TEXT NOT NULL,
@@ -718,7 +718,7 @@ _(✅ met: indicator_eod computes nightly; EMA/BB/ADX/Supertrend/OBV surfaced in
   );
   ```
 
-- [ ] **13.5** Write `indicators/delivery_tracker.py` — nightly at 18:30 from `raw_bhavcopy_cm`:
+- [x] **13.5** Write `indicators/delivery_tracker.py` — nightly at 18:30 from `raw_bhavcopy_cm`:
   - `delivery_ratio = DELIV_QTY / TOTTRDQTY` per symbol per day
   - 5d rolling avg, z-score vs 20d
   - Trend direction (rising if today > 5d avg by >5%)
@@ -728,7 +728,7 @@ _(✅ met: indicator_eod computes nightly; EMA/BB/ADX/Supertrend/OBV surfaced in
     - Low delivery + price up → score = 0.4 (weak-hands chase)
     - High z-score (> 2) → bonus +0.1
 
-- [ ] **13.6** Add levels and delivery to alert message:
+- [x] **13.6** Add levels and delivery to alert message: _(✅ Delivery + Levels lines in format_message)_
   ```
   Stock: Quality n/a | Delivery: {trend} ({ratio:.0%})
   Tech:  VWAP {side} | RSI {rsi_5m} | {trend_regime}
@@ -737,6 +737,7 @@ _(✅ met: indicator_eod computes nightly; EMA/BB/ADX/Supertrend/OBV surfaced in
 
 ### Week 13 gate
 Levels computed nightly for all symbols. Delivery conviction scores available. Alert message shows levels.
+_(✅ met: indicator_levels (19:00) + delivery_conviction (18:30) nightly over the F&O+Nifty500 set; levels loaded to Redis at 08:45; alerts carry Delivery + Levels lines. 724 tests green.)_
 
 ---
 

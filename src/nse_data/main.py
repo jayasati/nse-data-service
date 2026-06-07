@@ -14,6 +14,8 @@ import sys
 
 import structlog
 
+from .indicators.delivery_tracker import register_delivery_job
+from .indicators.levels import register_levels_job
 from .indicators.live_job import register_live_job
 from .indicators.pre_market_loader import register_pre_market_loader
 from .bot.morning_brief import register_morning_brief
@@ -125,6 +127,10 @@ def main() -> int:
     # Live watchlist: every 15 min, refreshes the dynamic watchlist (rating/news/
     # OI-spurt/52wh triggers) that the live universe adds to the F&O core (Phase 4).
     registered.append(register_watchlist_job(scheduler, db_path))
+    # Nightly per-symbol levels (19:00) + delivery conviction (18:30) off
+    # bhavcopy — reference levels loaded at 08:45 and shown in alerts (Week 13).
+    registered.append(register_levels_job(scheduler, db_path))
+    registered.append(register_delivery_job(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:

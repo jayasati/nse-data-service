@@ -74,6 +74,7 @@ def run_pre_market_load(
 
         blacklist = compute_blacklist(conn)
         quality = compute_quality(conn, symbols, blacklist)
+        levels = read_levels(conn, now.date().isoformat())   # task 13.3
     finally:
         conn.close()
 
@@ -82,6 +83,7 @@ def run_pre_market_load(
         try:
             write_blacklist_to_redis(redis_client, blacklist)
             write_quality_to_redis(redis_client, quality)
+            write_levels_to_redis(redis_client, levels)
             published = True
         except Exception:
             log.exception("pre_market_redis_publish_failed")
@@ -90,8 +92,41 @@ def run_pre_market_load(
         "symbols": len(symbols),
         "seeded": seeded,
         "blacklisted": len(blacklist),
+        "levels": len(levels),
         "redis_published": published,
     }
+
+
+# ----------------------------------------------------------- levels (13.3)
+
+_LEVEL_FIELDS = (
+    "pdh", "pdl", "high_52w", "low_52w", "r1", "r2", "s1", "s2",
+    "nearest_round_number", "dist_from_round_pct", "round_number_prior_failures",
+    "range_5d_high", "range_5d_low", "range_20d_high", "range_20d_low",
+    "days_since_52w_high", "days_since_52w_low",
+)
+
+
+def read_levels(conn: sqlite3.Connection, session_date: str) -> dict[str, dict]:
+    """Today's per-symbol levels from indicator_levels (computed last night)."""
+    if not _has_table(conn, "indicator_levels"):
+        return {}
+    cols = ",".join(("symbol", *_LEVEL_FIELDS))
+    rows = conn.execute(
+        f"SELECT {cols} FROM indicator_levels WHERE session_date = ?",
+        (session_date,),
+    ).fetchall()
+    return {r[0]: dict(zip(_LEVEL_FIELDS, r[1:])) for r in rows}
+
+
+def write_levels_to_redis(redis_client, levels: dict[str, dict], ttl: int = _REDIS_TTL_SECS) -> None:
+    """Write each symbol's session levels to a Redis hash `levels:{symbol}`."""
+    pipe = redis_client.pipeline()
+    for symbol, fields in levels.items():
+        key = f"levels:{symbol}"
+        pipe.hset(key, mapping={k: ("" if v is None else v) for k, v in fields.items()})
+        pipe.expire(key, ttl)
+    pipe.execute()
 
 
 # ----------------------------------------------------------- blacklist / qa
