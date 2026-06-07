@@ -413,15 +413,29 @@ ssh -i /home/jay/nse-data-service/stock-key.pem -L 8000:localhost:8000 ubuntu@13
 
 ---
 
-## 12. Backups (preview of task 6.2)
+## 12. Backups + ops health check (tasks 6.2, 6.3)
 
-Not a Week-1 gate item, but cheap to set up now. Nightly local snapshot, 30-day
-rotation:
+Both are server cron jobs. **Timezone:** cron uses the *system* clock — confirm
+it with `timedatectl`. If the box is UTC (AWS default), 02:00 IST = **20:30
+UTC**; either set the host to `Asia/Kolkata` (`sudo timedatectl set-timezone
+Asia/Kolkata`) and use the IST times below, or translate the times to UTC.
+
+### 12a. Nightly DB backup (task 6.2)
+
+Use `scripts/backup_db.sh` — it takes a consistent `sqlite3 .backup` snapshot
+(safe while the collector is writing, unlike a raw `cp`), gzips it, runs an
+integrity check, and prunes to the last `RETAIN` (default 30) snapshots in
+`data/archive/db_backups/`.
 
 ```bash
 # crontab -e   (on the server)
-0 2 * * *  cd /opt/nse-data-service && sqlite3 data/nse.db ".backup data/archive/db_backups/nse_$(date +\%Y\%m\%d).db" && find data/archive/db_backups/ -name '*.db' -mtime +30 -delete
+0 2 * * *  /opt/nse-data-service/scripts/backup_db.sh >> /opt/nse-data-service/logs/backup.log 2>&1
 ```
+
+> **Disk math:** `nse.db` is ~5.5 GB and grows. A gzip'd snapshot is a few GB,
+> so 30 of them is **tens of GB**. Check headroom (`df -h`) before enabling, and
+> lower retention if needed: `RETAIN=7 /opt/.../backup_db.sh`. The script aborts
+> if there isn't enough free space for the snapshot.
 
 For off-box durability, also copy to S3 (attach an IAM role with write access to
 the bucket, install `awscli`):
@@ -429,6 +443,29 @@ the bucket, install `awscli`):
 ```bash
 30 2 * * *  aws s3 cp /opt/nse-data-service/data/nse.db s3://<your-bucket>/nse.db.$(date +\%F)
 ```
+
+### 12b. Ops collector health check (task 6.3)
+
+`python -m nse_data.ops.health_check` builds the same per-collector freshness
+report as the dashboard and sends a 🔴 Telegram alert when an intraday (5-minute)
+feed hasn't produced data within ~15 min. It runs as **system cron — not a job
+inside the collector** — so it still fires if the whole `nse-collector` process
+is down. It self-gates on market hours, de-dups repeat alerts, and sends a ✅
+all-clear on recovery.
+
+Set the ops chat in `.env` (a dedicated chat is cleaner; otherwise it reuses the
+signals chat, always 🔴-prefixed):
+
+```bash
+TELEGRAM_OPS_CHAT_ID=-1001234567890   # optional; falls back to TELEGRAM_CHAT_ID
+```
+
+```bash
+# crontab -e   (every 15 min, 09:00–15:59 IST, Mon–Fri; the script also self-gates)
+*/15 9-15 * * 1-5  cd /opt/nse-data-service && .venv/bin/python -m nse_data.ops.health_check >> logs/health_check.log 2>&1
+```
+
+Verify by hand any time: `.venv/bin/python -m nse_data.ops.health_check --force --dry-run`.
 
 ---
 
