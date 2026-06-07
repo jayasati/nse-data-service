@@ -357,24 +357,24 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
 
 ### Tasks
 
-- [ ] **6.1** Run both services (data + bot) for 5 consecutive trading days. No crashes, no missed alerts due to technical failures
+- [ ] **6.1** Run both services (data + bot) for 5 consecutive trading days. No crashes, no missed alerts due to technical failures _(⏳ needs the 5-day live run on EC2)_
 
-- [ ] **6.2** Set up nightly SQLite backup: `cron` job at 02:00 IST:
+- [ ] **6.2** Set up nightly SQLite backup: `cron` job at 02:00 IST: _(✅ `scripts/backup_db.sh` + cron documented in DEPLOY.md §12a; ⏳ install the cron on the server)_
   ```bash
   sqlite3 /data/nse.db ".backup /data/archive/db_backups/nse_$(date +%Y%m%d).db"
   # Keep 30 days, delete older
   find /data/archive/db_backups/ -name "*.db" -mtime +30 -delete
   ```
 
-- [ ] **6.3** Set up Telegram alert for collector failures: write `ops/health_check.py` — runs every 15 minutes during market hours. If any 5-minute collector hasn't run successfully in 15 minutes, send a Telegram alert to a separate ops chat (or same chat with a 🔴 prefix)
+- [x] **6.3** Set up Telegram alert for collector failures: write `ops/health_check.py` — runs every 15 minutes during market hours. If any 5-minute collector hasn't run successfully in 15 minutes, send a Telegram alert to a separate ops chat (or same chat with a 🔴 prefix) _(✅ written, tested, scoped to market_hours_only heartbeat feeds; ⏳ install the cron + set `TELEGRAM_OPS_CHAT_ID`)_
 
-- [ ] **6.4** Spot-check `signal_outcomes` data manually: take 5 signals from the past week. Manually verify that the T+30m return, T+EOD return, and MAE/MFE values are correct against the actual intraday data
+- [ ] **6.4** Spot-check `signal_outcomes` data manually: take 5 signals from the past week. Manually verify that the T+30m return, T+EOD return, and MAE/MFE values are correct against the actual intraday data _(✅ `scripts/spot_check.py outcomes` built; ⏳ run on server once signals exist)_
 
-- [ ] **6.5** Spot-check `paper_trades`: verify that P&L numbers match what you would have made/lost if you had actually traded those signals (including costs)
+- [ ] **6.5** Spot-check `paper_trades`: verify that P&L numbers match what you would have made/lost if you had actually traded those signals (including costs) _(✅ `scripts/spot_check.py trades` built; ⏳ run on server once trades exist)_
 
-- [ ] **6.6** Review every alert that fired. For each: does the message make sense? Was the signal genuine or noise? Log any false signals with notes in `LEARNINGS.md`
+- [ ] **6.6** Review every alert that fired. For each: does the message make sense? Was the signal genuine or noise? Log any false signals with notes in `LEARNINGS.md` _(✅ `LEARNINGS.md` created + 2 findings logged; ⏳ ongoing per-alert review once alerts fire)_
 
-- [ ] **6.7** Check: is `pre_market_loader.py` running at 08:45 every day? Is `indicator_live` fully seeded before 09:15?
+- [ ] **6.7** Check: is `pre_market_loader.py` running at 08:45 every day? Is `indicator_live` fully seeded before 09:15? _(✅ 08:45 cron confirmed in code + `spot_check.py premarket`; ⏳ `indicator_live` empty on server — recheck Mon)_
 
 ### Phase 1 exit criteria (ALL must be met before moving to Phase 2)
 - [ ] VPS running all 32 collectors for 5 consecutive trading days with zero laptop dependency
@@ -400,7 +400,7 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
 
 ### Tasks
 
-- [ ] **7.1** Write migration `migrations/0XX_market_state.sql`:
+- [x] **7.1** Write migration `migrations/0XX_market_state.sql`: _(✅ `migrations/037_market_state.sql`, applied)_
   ```sql
   CREATE TABLE IF NOT EXISTS market_state (
     as_of TEXT PRIMARY KEY,
@@ -419,7 +419,7 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
   );
   ```
 
-- [ ] **7.2** Write `market/regime_job.py` — DBJob, runs every 5 minutes, `market_hours_only`:
+- [x] **7.2** Write `market/regime_job.py` — DBJob, runs every 5 minutes, `market_hours_only`:
   - Reads `raw_india_vix` for VIX level and direction (vs 30 min ago)
   - Reads `raw_indices` for Nifty level and direction
   - Reads `raw_gift_nifty` for last pre-open reading vs previous close gap
@@ -433,16 +433,16 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
     - Otherwise → neutral
   - Upserts to `market_state`
 
-- [ ] **7.3** VIX state thresholds:
+- [x] **7.3** VIX state thresholds:
   - VIX < 12 → low (complacent, option sellers win, mean-reversion works)
   - VIX 12–18 → normal
   - VIX 18–22 → elevated (caution)
   - VIX 22–28 → high (trending moves, reduce size)
   - VIX > 28 → extreme (panic, full defensive)
 
-- [ ] **7.4** Expiry detection: `market/expiry.py` — given today's IST date, returns: `is_nifty_expiry` (Tuesday), `is_banknifty_expiry` (Thursday), `is_monthly_expiry` (last Thursday of month). Returns max-pain alignment multiplier: +5 if signal direction matches expected max-pain drift, −10 if against
+- [x] **7.4** Expiry detection: `market/expiry.py` — given today's IST date, returns: `is_nifty_expiry` (Tuesday), `is_banknifty_expiry` (Thursday), `is_monthly_expiry` (last Thursday of month). Returns max-pain alignment multiplier: +5 if signal direction matches expected max-pain drift, −10 if against _(✅ holiday-adjusted; `max_pain_multiplier` ready — needs a max-pain source from option_chain to feed it live)_
 
-- [ ] **7.5** Wire regime into confidence scorer in `signals/confidence.py` — add regime_contribution:
+- [x] **7.5** Wire regime into confidence scorer in `signals/confidence.py` — add regime_contribution:
   ```
   risk_on  → +0.10
   neutral  → 0.00
@@ -450,7 +450,7 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
   panic    → −0.20 (suppress most signals)
   ```
 
-- [ ] **7.6** Register `market/regime_job.py`: every 5 minutes, `market_hours_only`
+- [x] **7.6** Register `market/regime_job.py`: every 5 minutes, `market_hours_only` _(✅ registered in `main.py`)_
 
 ### Week 7 gate
 `market_state` table updating every 5 minutes. Confidence scores changing based on regime.

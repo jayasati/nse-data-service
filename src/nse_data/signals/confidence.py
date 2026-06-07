@@ -12,11 +12,14 @@ signal's volume ratio and produces a single 0–1 number the dispatcher gates on
     trend regime     strong_uptrend   +0.10   | uptrend +0.05
                      downtrend        −0.10   | strong_downtrend −0.20
     volume ratio     >3×              +0.05   | <1×  −0.10
+    market regime    risk_on          +0.10   | risk_off −0.10 | panic −0.20
 
 The result is clamped to [0, 1]. Every input is optional: a missing value
 contributes 0 (neutral) rather than erroring, so a thin-data symbol still gets
-a score (it just sits near the 0.50 base). Phase 8 replaces this with the
-learned scorer trained on `signal_features` + `signal_outcomes`.
+a score (it just sits near the 0.50 base). The market-regime contribution
+(Phase 2, task 7.5) lets the same setup score higher in a risk-on tape and get
+suppressed in a panic. Phase 8 replaces this with the learned scorer trained on
+`signal_features` + `signal_outcomes`.
 """
 
 from __future__ import annotations
@@ -24,17 +27,23 @@ from __future__ import annotations
 BASE_SCORE = 0.50
 
 
-def score_confidence(context: dict, volume_ratio: float | None = None) -> float:
-    """Confidence in [0, 1] from the live context + volume ratio.
+def score_confidence(
+    context: dict,
+    volume_ratio: float | None = None,
+    regime: str | None = None,
+) -> float:
+    """Confidence in [0, 1] from the live context + volume ratio + market regime.
 
     `context` keys used: price_vs_vwap ('above'/'below'), vwap_slope (float),
-    rsi_5m (float), trend_regime (str). All optional.
+    rsi_5m (float), trend_regime (str). `regime` is the current market_state
+    overall_regime ('risk_on'/'neutral'/'risk_off'/'panic'). All optional.
     """
     score = BASE_SCORE
     score += _vwap_adjustment(context.get("price_vs_vwap"), context.get("vwap_slope"))
     score += _rsi_adjustment(context.get("rsi_5m"))
     score += _trend_adjustment(context.get("trend_regime"))
     score += _volume_adjustment(volume_ratio)
+    score += _regime_adjustment(regime)
     return _clamp01(score)
 
 
@@ -67,6 +76,16 @@ def _trend_adjustment(trend_regime: str | None) -> float:
         "downtrend": -0.10,
         "strong_downtrend": -0.20,
     }.get(trend_regime or "", 0.0)
+
+
+def _regime_adjustment(regime: str | None) -> float:
+    """Task 7.5: lift setups in a risk-on tape, suppress them in a panic."""
+    return {
+        "risk_on": 0.10,
+        "neutral": 0.0,
+        "risk_off": -0.10,
+        "panic": -0.20,
+    }.get(regime or "", 0.0)
 
 
 def _volume_adjustment(volume_ratio: float | None) -> float:

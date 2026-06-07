@@ -57,3 +57,15 @@ def test_rsi_zones(rsi, delta):
 ])
 def test_trend_zones(regime, delta):
     assert score_confidence({"trend_regime": regime}, None) == pytest.approx(BASE_SCORE + delta)
+
+
+@pytest.mark.parametrize("regime,delta", [
+    ("risk_on", 0.10),
+    ("neutral", 0.0),
+    ("risk_off", -0.10),
+    ("panic", -0.20),
+    (None, 0.0),          # no regime context -> no contribution
+])
+def test_market_regime_contribution(regime, delta):
+    # task 7.5: market regime nudges the score; passed as the 3rd arg.
+    assert score_confidence({}, None, regime) == pytest.approx(BASE_SCORE + delta)

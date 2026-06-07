@@ -16,6 +16,7 @@ import structlog
 
 from .indicators.live_job import register_live_job
 from .indicators.pre_market_loader import register_pre_market_loader
+from .market.regime_job import register_regime_job
 from .signals.detect import register_signal_job
 from .signals.outcome_labeler import register_outcome_labeler
 from .signals.paper_tracker import register_paper_tracker
@@ -106,6 +107,10 @@ def main() -> int:
     # Outcome labeler: nightly at 19:30 IST (trading days), fills signal_outcomes
     # with forward returns + MAE/MFE — the label side of the ML dataset.
     registered.append(register_outcome_labeler(scheduler, db_path))
+    # Market regime classifier: every 5 minutes during market hours, snapshots
+    # VIX/Nifty/breadth/GIFT into market_state with an overall_regime tag the
+    # confidence scorer reads (Phase 2, Week 7). Internally gated on market hours.
+    registered.append(register_regime_job(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:

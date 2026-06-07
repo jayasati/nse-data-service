@@ -106,6 +106,7 @@ def dispatch_pass(
     blacklist = _load_blacklist(redis_client)
     price_bands = _load_price_bands(conn)
     listing_bars = _load_listing_bars(conn)
+    regime = _load_current_regime(conn)   # market_state context (task 7.5)
 
     counts = {"sent": 0, "gated": 0, "low_confidence": 0, "aged_out": 0, "held": 0}
 
@@ -119,7 +120,7 @@ def dispatch_pass(
             continue
 
         context = enrich.read_live_context(redis_client, sig["symbol"], conn)
-        confidence = score_confidence(context, sig["volume_ratio"])
+        confidence = score_confidence(context, sig["volume_ratio"], regime)
 
         if confidence > CONFIDENCE_THRESHOLD:
             text = format_message(sig, context, confidence)
@@ -136,6 +137,21 @@ def dispatch_pass(
 
     conn.commit()
     return counts
+
+
+def _load_current_regime(conn: sqlite3.Connection) -> str | None:
+    """Latest market_state.overall_regime, or None if the table is absent/empty.
+
+    Tolerant of a pre-Phase-2 DB (no market_state table yet) so the dispatcher
+    keeps working before/while the regime job is rolled out.
+    """
+    try:
+        row = conn.execute(
+            "SELECT overall_regime FROM market_state ORDER BY as_of DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return row[0] if row else None
 
 
 def _row_to_signal(row) -> dict:
