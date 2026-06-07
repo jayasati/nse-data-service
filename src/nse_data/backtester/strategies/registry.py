@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .._core.types import Signal, StrategyConfig, Trade
-from . import bb_ema9_30m, macd_willr_daily
+from . import bb_ema9_30m, breakout_52wh, macd_willr_daily
 
 EngineFn = Callable[..., tuple[list[Signal], list[Trade]]]
 
@@ -33,6 +33,10 @@ STRATEGIES: dict[str, StrategySpec] = {
     "macd_willr_daily": StrategySpec(
         engine_fn=macd_willr_daily.run_backtest_for_symbol,
         config_cls=macd_willr_daily.MacdWillrDailyConfig,
+    ),
+    "breakout_52wh": StrategySpec(
+        engine_fn=breakout_52wh.run_backtest_for_symbol,
+        config_cls=breakout_52wh.Breakout52whConfig,
     ),
 }
 

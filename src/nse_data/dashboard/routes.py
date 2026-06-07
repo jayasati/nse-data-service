@@ -31,3 +31,8 @@ def stocks() -> FileResponse:
 @router.get("/backtest", include_in_schema=False)
 def backtest() -> FileResponse:
     return FileResponse(PAGES_DIR / "backtest.html")
+
+
+@router.get("/trades", include_in_schema=False)
+def trades() -> FileResponse:
+    return FileResponse(PAGES_DIR / "trades.html")

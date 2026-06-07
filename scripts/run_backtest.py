@@ -36,6 +36,9 @@ from nse_data.backtester.strategies.bb_ema9_30m.config import (  # noqa: E402
 from nse_data.backtester.strategies.macd_willr_daily.config import (  # noqa: E402
     MacdWillrDailyConfig,
 )
+from nse_data.backtester.strategies.breakout_52wh.config import (  # noqa: E402
+    Breakout52whConfig,
+)
 from nse_data.indicators.universe import fno_plus_nifty500  # noqa: E402
 
 LOG = logging.getLogger("backtest_cli")
@@ -44,7 +47,8 @@ LOG = logging.getLogger("backtest_cli")
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--strategy", choices=["bb_ema9_30m", "macd_willr_daily"],
+    p.add_argument("--strategy",
+                   choices=["bb_ema9_30m", "macd_willr_daily", "breakout_52wh"],
                    default="bb_ema9_30m",
                    help="Which strategy to run (default: bb_ema9_30m).")
 
@@ -80,6 +84,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--md-willr-hook-lookback", type=int, default=3)
     p.add_argument("--md-swing-lookback", type=int, default=10)
 
+    # breakout_52wh flags (prefixed --bo-)
+    p.add_argument("--bo-vol-ratio", type=float, default=1.5,
+                   help="min volume / 20d-avg to confirm the breakout")
+    p.add_argument("--bo-atr-mult", type=float, default=1.5,
+                   help="ATR multiple for the SL/T1 bracket")
+    p.add_argument("--bo-max-hold", type=int, default=5,
+                   help="exit at close after N bars if neither level hit")
+    p.add_argument("--bo-lookback", type=int, default=252,
+                   help="trading-day window for the 52-week high")
+
     return p.parse_args()
 
 
@@ -98,6 +112,18 @@ def _build_config(args: argparse.Namespace) -> StrategyConfig:
             notional_per_trade=args.notional,
             gap_pct=args.bb_gap_pct,
             gap_mode=args.bb_gap_mode,
+            allow_reentry=args.allow_reentry,
+        )
+
+    if args.strategy == "breakout_52wh":
+        return Breakout52whConfig(
+            leverage=args.leverage if args.leverage is not None else 1.0,
+            rr_min=args.rr_min if args.rr_min is not None else 0.0,
+            notional_per_trade=args.notional,
+            vol_ratio_min=args.bo_vol_ratio,
+            atr_mult=args.bo_atr_mult,
+            max_hold_days=args.bo_max_hold,
+            lookback_52w=args.bo_lookback,
             allow_reentry=args.allow_reentry,
         )
 
