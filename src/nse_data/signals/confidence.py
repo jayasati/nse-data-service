@@ -13,6 +13,8 @@ signal's volume ratio and produces a single 0–1 number the dispatcher gates on
                      downtrend        −0.10   | strong_downtrend −0.20
     volume ratio     >3×              +0.05   | <1×  −0.10
     market regime    risk_on          +0.10   | risk_off −0.10 | panic −0.20
+    sector RS rank   1–3 (leading)    +0.08   | 9–11 (lagging) −0.08
+    sector RS trend  improving        +0.03   | deteriorating −0.03
 
 The result is clamped to [0, 1]. Every input is optional: a missing value
 contributes 0 (neutral) rather than erroring, so a thin-data symbol still gets
@@ -31,12 +33,16 @@ def score_confidence(
     context: dict,
     volume_ratio: float | None = None,
     regime: str | None = None,
+    sector_rank: int | None = None,
+    sector_trend: str | None = None,
 ) -> float:
-    """Confidence in [0, 1] from the live context + volume ratio + market regime.
+    """Confidence in [0, 1] from live context + volume + market regime + sector RS.
 
     `context` keys used: price_vs_vwap ('above'/'below'), vwap_slope (float),
-    rsi_5m (float), trend_regime (str). `regime` is the current market_state
-    overall_regime ('risk_on'/'neutral'/'risk_off'/'panic'). All optional.
+    rsi_5m (float), trend_regime (str). `regime` is the market_state
+    overall_regime. `sector_rank` (1=best..11=worst) and `sector_trend`
+    ('improving'/'flat'/'deteriorating') come from the signal's sector in
+    sector_state. All optional.
     """
     score = BASE_SCORE
     score += _vwap_adjustment(context.get("price_vs_vwap"), context.get("vwap_slope"))
@@ -44,6 +50,7 @@ def score_confidence(
     score += _trend_adjustment(context.get("trend_regime"))
     score += _volume_adjustment(volume_ratio)
     score += _regime_adjustment(regime)
+    score += _sector_adjustment(sector_rank, sector_trend)
     return _clamp01(score)
 
 
@@ -86,6 +93,21 @@ def _regime_adjustment(regime: str | None) -> float:
         "risk_off": -0.10,
         "panic": -0.20,
     }.get(regime or "", 0.0)
+
+
+def _sector_adjustment(sector_rank: int | None, sector_trend: str | None) -> float:
+    """Task 8.4: favour signals in a leading, improving sector; fade lagging ones."""
+    adj = 0.0
+    if sector_rank is not None:
+        if sector_rank <= 3:
+            adj += 0.08
+        elif sector_rank >= 9:
+            adj -= 0.08
+    if sector_trend == "improving":
+        adj += 0.03
+    elif sector_trend == "deteriorating":
+        adj -= 0.03
+    return adj
 
 
 def _volume_adjustment(volume_ratio: float | None) -> float:

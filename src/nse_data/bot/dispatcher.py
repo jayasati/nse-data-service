@@ -30,6 +30,8 @@ from datetime import datetime
 
 import structlog
 
+from ..market.sector_map import load_sector_map
+from ..market.sector_radar_job import latest_sector_ranks
 from ..scheduler.market_hours import is_market_open, now_ist
 from ..signals import enrich
 from ..signals.confidence import score_confidence
@@ -107,6 +109,8 @@ def dispatch_pass(
     price_bands = _load_price_bands(conn)
     listing_bars = _load_listing_bars(conn)
     regime = _load_current_regime(conn)   # market_state context (task 7.5)
+    sector_map = load_sector_map()        # symbol -> sector (task 8.4)
+    sector_ranks = latest_sector_ranks(conn)
 
     counts = {"sent": 0, "gated": 0, "low_confidence": 0, "aged_out": 0, "held": 0}
 
@@ -120,10 +124,16 @@ def dispatch_pass(
             continue
 
         context = enrich.read_live_context(redis_client, sig["symbol"], conn)
-        confidence = score_confidence(context, sig["volume_ratio"], regime)
+        sector = sector_map.get(sig["symbol"])
+        sec = sector_ranks.get(sector or "", {})
+        confidence = score_confidence(
+            context, sig["volume_ratio"], regime,
+            sector_rank=sec.get("rs_rank"), sector_trend=sec.get("rs_trend"),
+        )
 
         if confidence > CONFIDENCE_THRESHOLD:
-            text = format_message(sig, context, confidence)
+            text = format_message(sig, context, confidence,
+                                  sector=sector, sector_rank=sec.get("rs_rank"))
             if sender(token, chat_id, text):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
@@ -179,7 +189,10 @@ def _age_minutes(detected_at: str, now: datetime) -> float:
 # Message formatting (task 5.8)
 # ============================================================================
 
-def format_message(sig: dict, context: dict, confidence: float) -> str:
+def format_message(
+    sig: dict, context: dict, confidence: float,
+    sector: str | None = None, sector_rank: int | None = None,
+) -> str:
     """Phase-1 alert text (polished in Phase 8)."""
     label = _SIGNAL_LABELS.get(sig["signal_type"], sig["signal_type"])
     arrow = _slope_arrow(context.get("vwap_slope"))
@@ -193,9 +206,19 @@ def format_message(sig: dict, context: dict, confidence: float) -> str:
         f"VWAP: {context.get('price_vs_vwap') or 'n/a'} {arrow} | "
         f"RSI(5m): {_fmt(context.get('rsi_5m'))} | "
         f"Trend: {context.get('trend_regime') or 'n/a'}\n"
+        f"{_format_sector(sector, sector_rank)}"
         f"Confidence: {confidence:.2f}\n"
         f"{sl_t1} | Flat by: 15:20"
     )
+
+
+def _format_sector(sector: str | None, sector_rank: int | None) -> str:
+    """Sector RS line for the alert (Week 8 gate), or '' if the symbol's
+    sector is unmapped/unranked."""
+    if not sector or sector_rank is None:
+        return ""
+    label = sector.replace("NIFTY ", "")
+    return f"Sector: {label} (RS rank {sector_rank}/11)\n"
 
 
 def _format_bracket(price, atr) -> str:

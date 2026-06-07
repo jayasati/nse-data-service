@@ -461,7 +461,7 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
 
 ### Tasks
 
-- [ ] **8.1** Write migration `migrations/0XX_sector_state.sql`:
+- [x] **8.1** Write migration `migrations/0XX_sector_state.sql`: _(✅ `migrations/038_sector_state.sql`, applied)_
   ```sql
   CREATE TABLE IF NOT EXISTS sector_state (
     sector_name TEXT NOT NULL,
@@ -475,16 +475,16 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
   );
   ```
 
-- [ ] **8.2** Write `market/sector_radar_job.py` — DBJob, every 5 minutes, `market_hours_only`:
+- [x] **8.2** Write `market/sector_radar_job.py` — DBJob, every 5 minutes, `market_hours_only`: _(✅ ranks all 11; ranking uses excess return — sector%−nifty% — to stay stable when Nifty is flat; `rs_ratio` stored for display)_
   - For each of 11 NSE sectoral indices: NIFTY BANK, NIFTY IT, NIFTY AUTO, NIFTY PHARMA, NIFTY FMCG, NIFTY METAL, NIFTY REALTY, NIFTY ENERGY, NIFTY INFRA, NIFTY PSU BANK, NIFTY MEDIA
   - Compute RS ratio = sector_return_today / nifty_return_today
   - Rank all 11 by RS ratio (1=best)
   - Compare RS ratio now vs 30 min ago → trend direction
   - Upsert to `sector_state`
 
-- [ ] **8.3** Write sector-to-stock mapping: `config/sector_mapping.yaml` — maps each symbol to its sector. Use `raw_quote_metadata` sector field as source
+- [x] **8.3** Write sector-to-stock mapping: `config/sector_mapping.yaml` — maps each symbol to its sector. Use `raw_quote_metadata` sector field as source _(✅ built from `raw_index_members` instead — exact match to the ranked indices; 139 symbols / 8 sectors via `scripts/build_sector_mapping.py`. INFRA/PSU BANK/MEDIA have no constituent data → unmapped)_
 
-- [ ] **8.4** Wire sector into confidence scorer — add sector_contribution:
+- [x] **8.4** Wire sector into confidence scorer — add sector_contribution: _(✅ + alert message shows sector RS rank)_
   ```
   RS rank 1–3 (leading sector) → +0.08
   RS rank 4–8 (middle)         → 0.00
@@ -493,7 +493,7 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
   RS trend deteriorating       → −0.03
   ```
 
-- [ ] **8.5** Register `market/sector_radar_job.py`: every 5 minutes, `market_hours_only`
+- [x] **8.5** Register `market/sector_radar_job.py`: every 5 minutes, `market_hours_only` _(✅ registered in `main.py`)_
 
 ### Week 8 gate
 `sector_state` updating every 5 minutes. Alerts show sector RS rank in message.

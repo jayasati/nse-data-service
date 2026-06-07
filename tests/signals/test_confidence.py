@@ -69,3 +69,26 @@ def test_trend_zones(regime, delta):
 def test_market_regime_contribution(regime, delta):
     # task 7.5: market regime nudges the score; passed as the 3rd arg.
     assert score_confidence({}, None, regime) == pytest.approx(BASE_SCORE + delta)
+
+
+@pytest.mark.parametrize("rank,delta", [
+    (1, 0.08), (3, 0.08),     # leading sector
+    (5, 0.0),  (8, 0.0),      # middle
+    (9, -0.08), (11, -0.08),  # lagging
+    (None, 0.0),
+])
+def test_sector_rank_contribution(rank, delta):
+    assert score_confidence({}, None, None, sector_rank=rank) == pytest.approx(BASE_SCORE + delta)
+
+
+@pytest.mark.parametrize("trend,delta", [
+    ("improving", 0.03), ("deteriorating", -0.03), ("flat", 0.0), (None, 0.0),
+])
+def test_sector_trend_contribution(trend, delta):
+    assert score_confidence({}, None, None, sector_trend=trend) == pytest.approx(BASE_SCORE + delta)
+
+
+def test_sector_rank_and_trend_combine():
+    # leading (+0.08) AND improving (+0.03)
+    assert score_confidence({}, None, None, sector_rank=1, sector_trend="improving") \
+        == pytest.approx(BASE_SCORE + 0.11)

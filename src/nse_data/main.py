@@ -17,6 +17,7 @@ import structlog
 from .indicators.live_job import register_live_job
 from .indicators.pre_market_loader import register_pre_market_loader
 from .market.regime_job import register_regime_job
+from .market.sector_radar_job import register_sector_radar_job
 from .signals.detect import register_signal_job
 from .signals.outcome_labeler import register_outcome_labeler
 from .signals.paper_tracker import register_paper_tracker
@@ -111,6 +112,10 @@ def main() -> int:
     # VIX/Nifty/breadth/GIFT into market_state with an overall_regime tag the
     # confidence scorer reads (Phase 2, Week 7). Internally gated on market hours.
     registered.append(register_regime_job(scheduler, db_path))
+    # Sector radar: every 5 minutes during market hours, ranks the 11 NSE
+    # sectoral indices by relative strength vs NIFTY 50 into sector_state; the
+    # confidence scorer reads a signal's sector rank/trend (Phase 2, Week 8).
+    registered.append(register_sector_radar_job(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:
