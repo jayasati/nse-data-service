@@ -194,7 +194,7 @@ only the live-session eyeball remains.
 
 ### Tasks
 
-- [ ] **4.1** Write migrations:
+- [x] **4.1** Write migrations:
   ```sql
   -- signals table
   CREATE TABLE IF NOT EXISTS signals (
@@ -255,12 +255,12 @@ only the live-session eyeball remains.
   );
   ```
 
-- [ ] **4.2** Write `signals/compute.py` — pure functions:
+- [x] **4.2** Write `signals/compute.py` — pure functions:
   - `compute_oi_change(symbol)` — reads `raw_oi_spurts`, returns (oi_change_pct, prev_oi, curr_oi)
   - `compute_price_change(symbol)` — reads `raw_equity_quotes`, returns (price_change_pct, price)
   - `compute_volume_ratio(symbol)` — current 5m volume / 20d avg 5m volume from bhavcopy
 
-- [ ] **4.3** Write `signals/detect.py` — main dispatcher, runs every 1 minute, gated on `is_market_open()`:
+- [x] **4.3** Write `signals/detect.py` — main dispatcher, runs every 1 minute, gated on `is_market_open()`:
   - Loads all hard gate lists from Redis (blacklist, quality flags)
   - For each symbol in F&O ∪ Nifty500:
     - Apply hard gates (see §4.4)
@@ -268,7 +268,7 @@ only the live-session eyeball remains.
     - If `long_buildup` conditions met → write signal
     - If `breakout_52wh` conditions met → write signal
 
-- [ ] **4.4** Implement hard gates in `signals/detect.py` — these are binary kills. If any triggers, skip silently:
+- [x] **4.4** Implement hard gates in `signals/detect.py` — these are binary kills. If any triggers, skip silently:
   - Blacklisted? (Redis `blacklist:` key) → skip
   - Newly listed < 30 days? → skip
   - Promoter pledge > 50%? → skip (Phase 4 adds more fundamentals; for now use what exists)
@@ -277,26 +277,26 @@ only the live-session eyeball remains.
   - In 09:15–09:30 window? → skip
   - In lunch zone 11:30–13:30? → skip for now (revisit confidence threshold in Phase 2)
 
-- [ ] **4.5** `long_buildup` signal rule (NOTE from LEARNINGS: oi_spurts has NO price field — must JOIN with raw_equity_quotes):
+- [x] **4.5** `long_buildup` signal rule (NOTE from LEARNINGS: oi_spurts has NO price field — must JOIN with raw_equity_quotes):
   ```
   oi_change_pct >= +3.0
   AND price_change_pct >= +1.0
   AND volume_ratio >= 1.5
   ```
 
-- [ ] **4.6** `breakout_52wh` signal rule:
+- [x] **4.6** `breakout_52wh` signal rule:
   ```
   new 52w high today (from raw_high_low_52w)
   AND volume_ratio >= 1.5
   ```
 
-- [ ] **4.7** Write `signals/dedup.py` — Redis-based fingerprint. Key: `sigdedup:{symbol}:{signal_type}`. TTL: 30 minutes. If key exists, do not re-fire the same signal. This prevents the same setup flooding alerts every minute.
+- [x] **4.7** Write `signals/dedup.py` — Redis-based fingerprint. Key: `sigdedup:{symbol}:{signal_type}`. TTL: 30 minutes. If key exists, do not re-fire the same signal. This prevents the same setup flooding alerts every minute.
 
-- [ ] **4.8** Write `signals/enrich.py` — reads Redis `ind:{symbol}` hash, attaches live indicator context to the signal row before writing to DB
+- [x] **4.8** Write `signals/enrich.py` — reads Redis `ind:{symbol}` hash, attaches live indicator context to the signal row before writing to DB
 
-- [ ] **4.9** Write `signals/feature_store.py` — after a signal is written to `signals`, snapshot ALL live indicator values into `signal_features`. This is the ML training archive. **Must start from day one.**
+- [x] **4.9** Write `signals/feature_store.py` — after a signal is written to `signals`, snapshot ALL live indicator values into `signal_features`. This is the ML training archive. **Must start from day one.**
 
-- [ ] **4.10** Register `signals/detect.py` in scheduler: every 1 minute, `market_hours_only`
+- [x] **4.10** Register `signals/detect.py` in scheduler: every 1 minute, `market_hours_only`
 
 ### Week 4 gate
 Signals appearing in `signals` table during market hours. No duplicate signals within 30 minutes for same symbol+type. Features being snapshotted in `signal_features`.

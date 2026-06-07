@@ -24,6 +24,5 @@ Requires-Dist: growwapi>=0.1; extra == "broker"
 Requires-Dist: pyotp>=2.9; extra == "broker"
 Requires-Dist: kiteconnect>=4.2; extra == "broker"
 Provides-Extra: indicators
-Requires-Dist: pandas>=2.0; extra == "indicators"
-Requires-Dist: numpy<2; extra == "indicators"
-Requires-Dist: pandas-ta>=0.3.14b; extra == "indicators"
+Requires-Dist: pandas<3,>=2.0; extra == "indicators"
+Requires-Dist: pandas-ta-classic>=0.6; extra == "indicators"

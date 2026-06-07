@@ -16,6 +16,7 @@ import structlog
 
 from .indicators.live_job import register_live_job
 from .indicators.pre_market_loader import register_pre_market_loader
+from .signals.detect import register_signal_job
 from .scheduler.catchup import run_due
 from .scheduler.jobs import register_jobs
 from .scheduler.runner import make_runner, make_scheduler
@@ -91,6 +92,11 @@ def main() -> int:
     # previous session's values and publishes the blacklist + quality flags to
     # Redis before the 09:15 open.
     registered.append(register_pre_market_loader(scheduler, db_path))
+    # Signal detector: every minute during market hours, sweeps the same
+    # FNO + Nifty 500 universe, applies hard gates + the Phase-1 rules, and
+    # writes fresh signals (+ their feature snapshot). Gated internally on
+    # is_market_open(); reads the indicator_live snapshot the live job just wrote.
+    registered.append(register_signal_job(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:
