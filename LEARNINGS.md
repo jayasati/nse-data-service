@@ -45,7 +45,15 @@ _See Week-6 spot-check results below as they land._
 
 > Collector outages, missed scheduled runs, backup/health-check failures.
 
-_None logged yet._
+**2026-06-07 — health check was over-broad → false alarms on event-driven feeds.**
+First server run of `ops.health_check` flagged 8 feeds (announcements_*,
+corporate_actions, board_meetings, insider_trading, large_deals,
+financial_results). All are `market_hours_only: False` event-driven feeds that
+legitimately go quiet for hours — freshness is not a health signal for them.
+**Fix:** `find_failing` now alerts only on `market_hours_only` heartbeat feeds
+(indices, gainers, oi_spurts, option_chain, live_equity, price_band, india_vix,
+52w high/low) — the ones that genuinely produce a row every interval the session
+is open. This also matches task 6.3's "5-minute collector" intent.
 
 ---
 
@@ -66,3 +74,15 @@ tracker / labeler run on the **EC2 host**, so 6.4 and 6.5 must be verified there
 (SSM in, or `scripts/transfer_db.sh` a fresh copy first). Running spot_check
 locally only confirms the tool works and degrades cleanly on an empty DB.
 **TODO:** run `spot_check.py all -n 5` on the server and paste the diffs here.
+
+**2026-06-07 (Sunday) — first server run.** On EC2: `signals`, `signal_outcomes`,
+`paper_trades` all 0 rows; `indicator_live` **empty (0 rows)**. Today is a
+non-trading day, so empty signals/trades is expected. But `indicator_live` uses
+`INSERT OR REPLACE` (never DELETE) — 0 rows means it has *never* been written, so
+neither the 08:45 pre-market loader nor the every-minute live job has populated
+it on this host yet. Heartbeat market-data feeds *were* fresh (collector is
+running), so the likely cause is a freshly-deployed pipeline that hasn't seen a
+trading-day 08:45 run. **TODO (Mon 2026-06-08, after 08:45):** run
+`spot_check.py premarket` — expect ~755 symbols seeded before 09:15. If still 0,
+check `journalctl -u nse-collector@ubuntu | grep -iE "pre_market|live_snapshot"`
+for errors in `register_pre_market_loader` / `register_live_job`.

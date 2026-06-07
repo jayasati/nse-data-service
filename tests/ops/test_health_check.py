@@ -36,16 +36,21 @@ def test_threshold_scales_for_slower_intraday():
 
 # ---- find_failing ----------------------------------------------------------
 
+def _heartbeat(*names: str) -> dict:
+    """endpoints config marking each name as a market_hours_only heartbeat feed."""
+    return {n: {"market_hours_only": True} for n in names}
+
+
 def test_flags_stale_5m_collector():
     report = {"collectors": [_collector("oi_spurts", lag_seconds=1200)]}  # 20m > 15m
-    failing = health_check.find_failing(report)
+    failing = health_check.find_failing(report, _heartbeat("oi_spurts"))
     assert [c["name"] for c in failing] == ["oi_spurts"]
     assert "stale" in failing[0]["reason"]
 
 
 def test_ignores_fresh_collector():
     report = {"collectors": [_collector("indices", lag_seconds=300)]}  # 5m < 15m
-    assert health_check.find_failing(report) == []
+    assert health_check.find_failing(report, _heartbeat("indices")) == []
 
 
 def test_ignores_disabled_and_non_intraday():
@@ -53,7 +58,15 @@ def test_ignores_disabled_and_non_intraday():
         _collector("off", enabled=False, lag_seconds=99999),
         _collector("fii_dii", cadence="daily", lag_seconds=99999),
     ]}
-    assert health_check.find_failing(report) == []
+    assert health_check.find_failing(report, _heartbeat("off", "fii_dii")) == []
+
+
+def test_ignores_event_driven_feeds():
+    # An announcement feed is intraday + stale but NOT market_hours_only, so it
+    # legitimately goes quiet and must never alert.
+    report = {"collectors": [_collector("announcements_equity", lag_seconds=99999)]}
+    endpoints = {"announcements_equity": {"market_hours_only": False}}
+    assert health_check.find_failing(report, endpoints) == []
 
 
 def test_flags_empty_and_missing_table():
@@ -61,7 +74,8 @@ def test_flags_empty_and_missing_table():
         _collector("empty_feed", status="empty", lag_seconds=None),
         _collector("nomig", status="no_table", lag_seconds=None),
     ]}
-    names = {c["name"] for c in health_check.find_failing(report)}
+    names = {c["name"] for c in
+             health_check.find_failing(report, _heartbeat("empty_feed", "nomig"))}
     assert names == {"empty_feed", "nomig"}
 
 
@@ -70,7 +84,8 @@ def test_sorted_worst_first():
         _collector("mild", lag_seconds=1000),
         _collector("severe", lag_seconds=9000),
     ]}
-    assert [c["name"] for c in health_check.find_failing(report)] == ["severe", "mild"]
+    failing = health_check.find_failing(report, _heartbeat("mild", "severe"))
+    assert [c["name"] for c in failing] == ["severe", "mild"]
 
 
 # ---- run_check dedup -------------------------------------------------------
@@ -87,7 +102,7 @@ class _Recorder:
 def _run(monkeypatch, canned, state_path, sender):
     monkeypatch.setattr(health, "build_report", lambda conn, endpoints, now=None: canned)
     return health_check.run_check(
-        conn=None, endpoints={}, token="t", chat_id="c",  # type: ignore[arg-type]
+        conn=None, endpoints=_heartbeat("oi_spurts"), token="t", chat_id="c",  # type: ignore[arg-type]
         now=dt("2026-06-05T10:00:00"), state_path=state_path, sender=sender,
     )
 

@@ -77,18 +77,32 @@ def alert_threshold_seconds(cadence: str) -> int:
     return max(900, 3 * base)
 
 
-def find_failing(report: dict[str, Any]) -> list[dict[str, Any]]:
-    """Intraday collectors that are unhealthy right now, worst-first.
+def find_failing(report: dict[str, Any], endpoints: dict) -> list[dict[str, Any]]:
+    """Market-data heartbeat collectors that are unhealthy right now, worst-first.
 
-    A collector is failing if it's enabled, intraday, and either has no data at
-    all this session (`empty`/`no_table`) or its newest row lags further than
-    `alert_threshold_seconds`. Disabled feeds and slower-than-intraday cadences
-    are ignored.
+    Scope is deliberately narrow: only `market_hours_only` intraday feeds — the
+    market-data heartbeat (indices, gainers, oi_spurts, option_chain,
+    live_equity, price_band, india_vix, 52w high/low). Those genuinely produce a
+    row every interval the session is open, so staleness == the collector is
+    broken.
+
+    Event-driven feeds (announcements, corporate actions, board meetings,
+    insider trading, large deals, financial results — `market_hours_only:
+    False`) are EXCLUDED: they legitimately go quiet for hours when there's
+    nothing to report, so freshness is not a health signal and alerting on them
+    is a false alarm.
+
+    A collector is failing if it's enabled, a market-hours heartbeat feed, and
+    either has no data this session (`empty`/`no_table`) or its newest row lags
+    further than `alert_threshold_seconds`.
     """
     failing = []
     for c in report.get("collectors", []):
+        cfg = endpoints.get(c["name"], {})
         if not c.get("enabled") or c.get("cadence") not in _INTRADAY:
             continue
+        if not cfg.get("market_hours_only"):
+            continue  # event-driven / non-heartbeat feed — freshness != health
 
         status = c.get("status")
         lag = c.get("lag_seconds")
@@ -190,7 +204,7 @@ def run_check(
     changes. Returns a report dict (also useful for tests/dry-run)."""
     now = now or market_hours.now_ist()
     report = health.build_report(conn, endpoints, now=now)
-    failing = find_failing(report)
+    failing = find_failing(report, endpoints)
     failing_names = {c["name"] for c in failing}
     previous = _load_state(state_path)
 
