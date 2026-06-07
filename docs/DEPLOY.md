@@ -436,6 +436,10 @@ integrity check, and prunes to the last `RETAIN` (default 30) snapshots in
 > so 30 of them is **tens of GB**. Check headroom (`df -h`) before enabling, and
 > lower retention if needed: `RETAIN=7 /opt/.../backup_db.sh`. The script aborts
 > if there isn't enough free space for the snapshot.
+>
+> **Integrity check is tunable via `CHECK`** (a full check on 5.5 GB takes
+> minutes): `quick` (default, fast), `full` (exhaustive, for the nightly cron if
+> you want it), or `skip`. For a quick manual test: `CHECK=skip ./scripts/backup_db.sh`.
 
 For off-box durability, also copy to S3 (attach an IAM role with write access to
 the bucket, install `awscli`):

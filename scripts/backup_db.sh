@@ -43,9 +43,23 @@ fi
 echo "==> snapshotting $DB -> $snap (consistent .backup)"
 sqlite3 "$DB" ".backup '$snap'"
 
-echo "==> integrity check"
-ok=$(sqlite3 "$snap" 'PRAGMA integrity_check;')
-if [ "$ok" != "ok" ]; then
+# Integrity check. On a multi-GB DB a full `integrity_check` is slow (minutes),
+# so it's tunable via CHECK:
+#   quick  (default) -> PRAGMA quick_check — fast, catches most corruption
+#   full             -> PRAGMA integrity_check — exhaustive, slow
+#   skip             -> no verification (fastest; use only for manual tests)
+CHECK="${CHECK:-quick}"
+case "$CHECK" in
+  skip)
+    echo "==> integrity check skipped (CHECK=skip)" ;;
+  full)
+    echo "==> integrity check (full — this can take minutes on a large DB)"
+    ok=$(sqlite3 "$snap" 'PRAGMA integrity_check;') ;;
+  *)
+    echo "==> integrity check (quick)"
+    ok=$(sqlite3 "$snap" 'PRAGMA quick_check;') ;;
+esac
+if [ "$CHECK" != "skip" ] && [ "$ok" != "ok" ]; then
   echo "backup_db: integrity check FAILED on $snap: $ok" >&2
   rm -f "$snap"
   exit 1
