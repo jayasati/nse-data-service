@@ -36,6 +36,9 @@ def score_confidence(
     sector_rank: int | None = None,
     sector_trend: str | None = None,
     quality_score: float | None = None,
+    bb_squeeze: bool = False,
+    bearish_divergence: bool = False,
+    fake_breakout: bool = False,
     time_multiplier: float = 1.0,
     long_penalty: float = 1.0,
 ) -> float:
@@ -61,6 +64,7 @@ def score_confidence(
     score += _regime_adjustment(regime)
     score += _sector_adjustment(sector_rank, sector_trend)
     score += _quality_adjustment(quality_score)
+    score += _pattern_adjustment(bb_squeeze, bearish_divergence, fake_breakout)
     score = _clamp01(score)
     return _clamp01(score * time_multiplier * long_penalty)
 
@@ -104,6 +108,23 @@ def _regime_adjustment(regime: str | None) -> float:
         "risk_off": -0.10,
         "panic": -0.20,
     }.get(regime or "", 0.0)
+
+
+def _pattern_adjustment(bb_squeeze: bool, bearish_divergence: bool,
+                        fake_breakout: bool) -> float:
+    """Task 15.3 + Phase-4 exit: pattern flags nudge confidence.
+
+    BB squeeze (coiled, move imminent) boosts; bearish divergence and a
+    fake-breakout (wick-rejected, weak volume) each cut into a long's confidence.
+    """
+    adj = 0.0
+    if bb_squeeze:
+        adj += 0.05
+    if bearish_divergence:
+        adj -= 0.10
+    if fake_breakout:
+        adj -= 0.10
+    return adj
 
 
 def _quality_adjustment(quality_score: float | None) -> float:

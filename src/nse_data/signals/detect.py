@@ -30,6 +30,7 @@ import structlog
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+from ..indicators.intraday_ohlcv import read_intraday_5m
 from ..indicators.universe import live_universe
 from ..scheduler.market_hours import is_market_open, now_ist
 from ..storage.db import open_db
@@ -213,7 +214,31 @@ def _rule_breakout_52wh(
         "oi_change_pct": oi_change,
         "price_change_pct": price_change,
         "volume_ratio": volume_ratio,
+        "fake_breakout_risk": _fake_breakout_risk(conn, symbol, price, volume_ratio, now),
     }
+
+
+def _fake_breakout_risk(
+    conn: sqlite3.Connection, symbol: str, price: float | None,
+    volume_ratio: float | None, now: datetime,
+) -> int:
+    """Task 15.3: 1 when the breakout shows wick rejection on weak volume.
+
+    Wick rejection = the live price sits in the *lower half* of today's session
+    range (the high was sold into). Weak volume = volume_ratio < 1.2×. Both must
+    hold for the risk flag.
+    """
+    if price is None or (volume_ratio is not None and volume_ratio >= 1.2):
+        return 0
+    session_open = int(now.replace(hour=9, minute=15, second=0, microsecond=0).timestamp())
+    bars = read_intraday_5m(conn, symbol, since_ts=session_open)
+    if bars.empty:
+        return 0
+    hi, lo = float(bars["high"].max()), float(bars["low"].min())
+    if hi <= lo:
+        return 0
+    close_position = (price - lo) / (hi - lo)     # 0 = at low, 1 = at high
+    return 1 if close_position < 0.5 else 0
 
 
 # ============================================================================
@@ -288,18 +313,20 @@ def write_signal(
     price_change_pct: float | None,
     volume_ratio: float | None,
     confidence: float | None = None,
+    fake_breakout_risk: int = 0,
 ) -> int:
     """Insert one row into `signals`. Returns the new signal id.
 
     `confidence` is left NULL here — the Week-5 scorer fills it on dispatch.
+    `fake_breakout_risk` (task 15.3) trims confidence on dispatch when set.
     """
     cur = conn.execute(
         "INSERT INTO signals "
         "(symbol, signal_type, detected_at, price, oi_change_pct, "
-        " price_change_pct, volume_ratio, confidence) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        " price_change_pct, volume_ratio, confidence, fake_breakout_risk) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (symbol, signal_type, detected_at, price, oi_change_pct,
-         price_change_pct, volume_ratio, confidence),
+         price_change_pct, volume_ratio, confidence, fake_breakout_risk),
     )
     conn.commit()
     return int(cur.lastrowid or 0)
@@ -323,6 +350,7 @@ def _emit(
         oi_change_pct=metrics.get("oi_change_pct"),
         price_change_pct=metrics.get("price_change_pct"),
         volume_ratio=metrics.get("volume_ratio"),
+        fake_breakout_risk=metrics.get("fake_breakout_risk", 0),
     )
     context = enrich.read_live_context(redis_client, symbol, conn)
     feature_store.snapshot_features(

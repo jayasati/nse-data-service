@@ -802,7 +802,7 @@ _(✅ met: nightly quality job over F&O+Nifty500 → stock_fundamentals; quality
 
 ### Tasks
 
-- [ ] **15.1** Write `indicators/patterns.py` — per-minute DBJob during market hours:
+- [x] **15.1** Write `indicators/patterns.py` — per-minute DBJob during market hours: _(✅ inside bar, volume dry-up, S/R proximity, HH/LL; → patterns table; registered intraday over the live universe)_
   - Inside bar: today's high < yesterday's high AND today's low > yesterday's low
   - Volume dry-up: current 5m volume < 50% of 20-bar avg 5m volume
   - Support proximity: price within 0.5% of S1 or S2 from levels table
@@ -810,24 +810,24 @@ _(✅ met: nightly quality job over F&O+Nifty500 → stock_fundamentals; quality
   - Higher-high: last bar high > prior bar high (simple momentum check)
   - Lower-low: last bar low < prior bar low
 
-- [ ] **15.2** Add RSI–price divergence detector:
+- [x] **15.2** Add RSI–price divergence detector: _(✅ bullish/bearish over last 10 bars → patterns)_
   - Bullish divergence: price making lower low BUT RSI making higher low (over last 10 bars)
   - Bearish divergence: price making higher high BUT RSI making lower high
   - Write to `patterns` with `pattern_type = 'bullish_divergence'` / `'bearish_divergence'`
 
-- [ ] **15.3** Add fake-breakout filter to `breakout_52wh` signal: if `wick_rejection > 50%` (close is less than 50% of the way from low to high) AND volume < 1.2× avg → add `fake_breakout_risk = True` flag to signal. Reduce confidence by 0.10 when this flag is set
+- [x] **15.3** Add fake-breakout filter to `breakout_52wh` signal: if `wick_rejection > 50%` (close is less than 50% of the way from low to high) AND volume < 1.2× avg → add `fake_breakout_risk = True` flag to signal. Reduce confidence by 0.10 when this flag is set _(✅ flag on signal (migration 049) + −0.10 in scorer)_
 
-- [ ] **15.4** Write `profile/builder.py` — nightly DBJob at 19:30. For each symbol: join all Layer 4 outputs into a single row in `stock_profile_daily`. Include: quality_score, trend_regime, momentum_state, delivery_conviction_score, bb_squeeze, adx, levels (pdh/pdl/52w), pattern flags. This table is the ML training archive
+- [x] **15.4** Write `profile/builder.py` — nightly DBJob at 19:30. For each symbol: join all Layer 4 outputs into a single row in `stock_profile_daily`. Include: quality_score, trend_regime, momentum_state, delivery_conviction_score, bb_squeeze, adx, levels (pdh/pdl/52w), pattern flags. This table is the ML training archive _(✅ joins fundamentals/delivery/eod/sma/rsi/macd/levels/live + pattern flags; tolerant of missing sources)_
 
-- [ ] **15.5** Write migration for `stock_profile_daily` (~60 columns)
+- [x] **15.5** Write migration for `stock_profile_daily` (~60 columns) _(✅ migration 050, 64 columns)_
 
 ### Phase 4 exit criteria (ALL must be met)
-- [ ] Quality score in every alert
-- [ ] Key levels (PDH, PDL, 52w High) visible in alert action section
-- [ ] Delivery conviction trend in every alert
-- [ ] `stock_profile_daily` populating nightly
-- [ ] Pattern flags feeding into confidence (divergence reduces confidence, BB squeeze boosts it)
-- [ ] All prior stability criteria still met
+- [x] Quality score in every alert _(✅ Quality line, when fundamentals exist)_
+- [x] Key levels (PDH, PDL, 52w High) visible in alert action section _(✅ Levels line)_
+- [x] Delivery conviction trend in every alert _(✅ Delivery line)_
+- [x] `stock_profile_daily` populating nightly _(✅ builder registered 19:30; ⏳ first rows after a post-deploy night)_
+- [x] Pattern flags feeding into confidence (divergence reduces confidence, BB squeeze boosts it) _(✅ bb_squeeze +0.05, bearish_divergence −0.10, fake_breakout −0.10)_
+- [ ] All prior stability criteria still met _(✅ 741 tests green; ⏳ the live 5-day run remains the standing Phase-1 item)_
 
 ---
 ---

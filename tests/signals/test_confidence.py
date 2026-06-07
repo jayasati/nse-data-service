@@ -106,3 +106,12 @@ def test_long_penalty_scales_final():
 def test_time_and_long_penalty_compound():
     assert score_confidence({}, None, time_multiplier=0.75, long_penalty=0.90) \
         == pytest.approx(0.50 * 0.75 * 0.90)
+
+
+def test_pattern_flag_contributions():
+    assert score_confidence({}, None, bb_squeeze=True) == pytest.approx(BASE_SCORE + 0.05)
+    assert score_confidence({}, None, bearish_divergence=True) == pytest.approx(BASE_SCORE - 0.10)
+    assert score_confidence({}, None, fake_breakout=True) == pytest.approx(BASE_SCORE - 0.10)
+    # squeeze boost partially offset by a fake-breakout penalty
+    assert score_confidence({}, None, bb_squeeze=True, fake_breakout=True) \
+        == pytest.approx(BASE_SCORE - 0.05)

@@ -101,7 +101,8 @@ def dispatch_pass(
 
     rows = conn.execute(
         "SELECT s.id, s.symbol, s.signal_type, s.detected_at, s.price, "
-        "s.oi_change_pct, s.price_change_pct, s.volume_ratio, sf.atr_14_daily "
+        "s.oi_change_pct, s.price_change_pct, s.volume_ratio, sf.atr_14_daily, "
+        "s.fake_breakout_risk "
         "FROM signals s LEFT JOIN signal_features sf ON sf.signal_id = s.id "
         "WHERE s.dispatched = 0 ORDER BY s.detected_at ASC LIMIT ?",
         (_POLL_LIMIT,),
@@ -148,6 +149,9 @@ def dispatch_pass(
             context, sig["volume_ratio"], regime,
             sector_rank=sec.get("rs_rank"), sector_trend=sec.get("rs_trend"),
             quality_score=quality,
+            bb_squeeze=_load_bb_squeeze(conn, sig["symbol"]),
+            bearish_divergence=_has_pattern(conn, sig["symbol"], "bearish_divergence", now),
+            fake_breakout=bool(sig.get("fake_breakout_risk")),
             time_multiplier=rule.multiplier, long_penalty=long_penalty,
         )
 
@@ -171,6 +175,30 @@ def dispatch_pass(
 
     conn.commit()
     return counts
+
+
+def _load_bb_squeeze(conn: sqlite3.Connection, symbol: str) -> bool:
+    """True if the symbol's latest indicator_live row flags a BB squeeze."""
+    try:
+        row = conn.execute(
+            "SELECT bb_squeeze FROM indicator_live WHERE symbol = ?", (symbol,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    return bool(row and row[0])
+
+
+def _has_pattern(conn: sqlite3.Connection, symbol: str, pattern_type: str, now: datetime) -> bool:
+    """True if `pattern_type` was detected for `symbol` today."""
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM patterns WHERE symbol = ? AND pattern_type = ? "
+            "AND session_date = ? LIMIT 1",
+            (symbol, pattern_type, now.date().isoformat()),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    return row is not None
 
 
 def _load_levels(conn: sqlite3.Connection, symbol: str) -> dict | None:
@@ -207,7 +235,8 @@ def _load_delivery(conn: sqlite3.Connection, symbol: str) -> dict | None:
 
 def _row_to_signal(row) -> dict:
     keys = ("id", "symbol", "signal_type", "detected_at", "price",
-            "oi_change_pct", "price_change_pct", "volume_ratio", "atr_14_daily")
+            "oi_change_pct", "price_change_pct", "volume_ratio", "atr_14_daily",
+            "fake_breakout_risk")
     return dict(zip(keys, row))
 
 

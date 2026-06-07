@@ -36,6 +36,7 @@ _MIGRATIONS = (
     "034_indicator_vwap_5m.sql",
     "035_indicator_live.sql",   # indicator_live (enrich fallback)
     "036_signals.sql",          # signals, signal_features, ...
+    "049_signal_fake_breakout.sql",   # signals.fake_breakout_risk
 )
 
 # A fixed mid-morning instant outside the opening (≤09:30) and lunch

@@ -17,6 +17,7 @@ _MIGRATIONS = (
     "018_price_bands.sql",    # raw_price_bands (T2T gate)
     "035_indicator_live.sql", # indicator_live (enrich fallback)
     "036_signals.sql",        # signals, signal_features
+    "049_signal_fake_breakout.sql",   # signals.fake_breakout_risk
 )
 
 NOW = datetime(2025, 6, 2, 10, 0, 0, tzinfo=IST)
