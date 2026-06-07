@@ -1,0 +1,31 @@
+[Unit]
+# NSE Telegram alert bot — the dispatcher process (python -m nse_data.bot.dispatcher).
+# Runs as a SEPARATE process from the data collector (task 5.9): it only reads
+# the SQLite DB and pushes alerts, so a bot crash never touches collection, and
+# a collector restart never drops a queued alert. Both can run on the same host.
+Description=NSE Telegram alert dispatcher
+After=network-online.target redis-server.service nse-collector@%i.service
+Wants=network-online.target
+# Redis is a soft dependency: the dispatcher reads the live indicator context
+# from Redis when present and falls back to the indicator_live table otherwise.
+Wants=redis-server.service
+
+[Service]
+Type=simple
+# --- edit these for your host ---
+User=%i
+WorkingDirectory=/opt/nse-data-service
+ExecStart=/opt/nse-data-service/.venv/bin/python -m nse_data.bot.dispatcher
+# --------------------------------
+Restart=on-failure
+RestartSec=10
+# TELEGRAM_TOKEN / TELEGRAM_CHAT_ID (task 5.7) live here, alongside the other
+# secrets. The leading '-' makes the file optional so the unit still starts (and
+# logs "telegram_not_configured") if it's absent.
+EnvironmentFile=-/opt/nse-data-service/.env
+# Journald captures stdout JSON logs: `journalctl -u nse-bot@<user> -f`
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

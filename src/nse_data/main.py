@@ -17,6 +17,8 @@ import structlog
 from .indicators.live_job import register_live_job
 from .indicators.pre_market_loader import register_pre_market_loader
 from .signals.detect import register_signal_job
+from .signals.outcome_labeler import register_outcome_labeler
+from .signals.paper_tracker import register_paper_tracker
 from .scheduler.catchup import run_due
 from .scheduler.jobs import register_jobs
 from .scheduler.runner import make_runner, make_scheduler
@@ -97,6 +99,13 @@ def main() -> int:
     # writes fresh signals (+ their feature snapshot). Gated internally on
     # is_market_open(); reads the indicator_live snapshot the live job just wrote.
     registered.append(register_signal_job(scheduler, db_path))
+    # Paper-trade tracker: every minute during market hours, opens a paper trade
+    # per new signal (ATR bracket) and closes any that hit T1/SL, force-flatting
+    # the rest at 15:20. Internally gated on is_market_open().
+    registered.append(register_paper_tracker(scheduler, db_path))
+    # Outcome labeler: nightly at 19:30 IST (trading days), fills signal_outcomes
+    # with forward returns + MAE/MFE — the label side of the ML dataset.
+    registered.append(register_outcome_labeler(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:

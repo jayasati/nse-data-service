@@ -307,9 +307,9 @@ Signals appearing in `signals` table during market hours. No duplicate signals w
 
 ### Tasks
 
-- [ ] **5.1** Write `signals/outcome_labeler.py` — runs nightly at 19:30. For each signal from the previous session: reads bhavcopy for T+1d price, computes returns (T+30m from intraday candles, T+2h, T+EOD, T+1d), computes MAE and MFE from intraday candles, writes to `signal_outcomes`
+- [x] **5.1** Write `signals/outcome_labeler.py` — runs nightly at 19:30. For each signal from the previous session: reads bhavcopy for T+1d price, computes returns (T+30m from intraday candles, T+2h, T+EOD, T+1d), computes MAE and MFE from intraday candles, writes to `signal_outcomes`
 
-- [ ] **5.2** Write cost model function `costs/model.py` — pure function, takes (entry_price, exit_price, quantity, trade_type) and returns net P&L after all costs:
+- [x] **5.2** Write cost model function `costs/model.py` — pure function, takes (entry_price, exit_price, quantity, trade_type) and returns net P&L after all costs:
   - Brokerage: min(₹20, 0.03% × trade_value) per leg
   - STT: 0.025% of sell value (intraday equity)
   - Exchange charges: 0.00345% per leg
@@ -319,11 +319,11 @@ Signals appearing in `signals` table during market hours. No duplicate signals w
   - Slippage: 1 tick minimum + 1bps
   - Returns gross P&L and net P&L both
 
-- [ ] **5.3** Write `signals/paper_tracker.py` — runs every minute. For each open paper_trade: check if T1 or SL has been hit using latest quote from `raw_equity_quotes`. If hit, close the trade with net P&L from cost model. At 15:20 force-flat all remaining open trades
+- [x] **5.3** Write `signals/paper_tracker.py` — runs every minute. For each open paper_trade: check if T1 or SL has been hit using latest quote from `raw_equity_quotes`. If hit, close the trade with net P&L from cost model. At 15:20 force-flat all remaining open trades
 
-- [ ] **5.4** SL calculation for Phase 1: `SL = entry_price - 1.5 × atr_14_daily`. T1 = `entry_price + 1.5 × atr_14_daily` (1R target). Simple ATR-based sizing is enough for Phase 1. Phase 8 adds structure-based SL
+- [x] **5.4** SL calculation for Phase 1: `SL = entry_price - 1.5 × atr_14_daily`. T1 = `entry_price + 1.5 × atr_14_daily` (1R target). Simple ATR-based sizing is enough for Phase 1. Phase 8 adds structure-based SL
 
-- [ ] **5.5** Write basic confidence scorer `signals/confidence.py` — Phase 1 version uses only 4 inputs:
+- [x] **5.5** Write basic confidence scorer `signals/confidence.py` — Phase 1 version uses only 4 inputs:
   - Base score: 0.50
   - VWAP alignment: price above VWAP AND slope positive → +0.10; price below → −0.10
   - RSI zone: 50–65 (healthy) → +0.10; > 75 (overbought) → −0.10; > 80 → −0.20
@@ -331,11 +331,11 @@ Signals appearing in `signals` table during market hours. No duplicate signals w
   - Volume: ratio > 3× → +0.05; ratio < 1× → −0.10
   - Output: normalised 0–1
 
-- [ ] **5.6** Write Telegram bot `bot/dispatcher.py` — polls `signals` table every minute for undispatched signals. For each: apply hard gates again, compute confidence, if confidence > 0.65 → send Telegram message, mark `dispatched=1`. Reads SQLite directly (no FastAPI yet)
+- [x] **5.6** Write Telegram bot `bot/dispatcher.py` — polls `signals` table every minute for undispatched signals. For each: apply hard gates again, compute confidence, if confidence > 0.65 → send Telegram message, mark `dispatched=1`. Reads SQLite directly (no FastAPI yet)
 
-- [ ] **5.7** Bot must read `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID` from `.env`
+- [x] **5.7** Bot must read `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID` from `.env`
 
-- [ ] **5.8** Phase-1 message format (simple — polished in Phase 8):
+- [x] **5.8** Phase-1 message format (simple — polished in Phase 8):
   ```
   🟢 {SYMBOL} — {Signal Type}
   OI: {oi_change_pct}% | Price: {price_change_pct}% | Vol: {volume_ratio}×
@@ -344,7 +344,7 @@ Signals appearing in `signals` table during market hours. No duplicate signals w
   SL: ₹{sl_price} | T1: ₹{t1_price} | Flat by: 15:20
   ```
 
-- [ ] **5.9** Create systemd unit for bot: `/etc/systemd/system/nse-bot.service`. Runs as a separate process from the data service
+- [x] **5.9** Create systemd unit for bot: `/etc/systemd/system/nse-bot.service`. Runs as a separate process from the data service
 
 - [ ] **5.10** First real test: during market hours, watch a signal fire and arrive on Telegram. Verify the numbers are correct against NSE website
 

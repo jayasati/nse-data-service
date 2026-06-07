@@ -276,10 +276,19 @@ the template filename (`name@.service`) — that's what lets `@ubuntu` resolve
 ```bash
 sudo cp deploy/nse-collector@.service /etc/systemd/system/
 sudo cp deploy/nse-dashboard@.service /etc/systemd/system/   # optional UI/API
+sudo cp deploy/nse-bot@.service        /etc/systemd/system/   # Week-5 Telegram alerts
 sudo systemctl daemon-reload
 sudo systemctl enable --now nse-collector@ubuntu             # %i = ubuntu
 sudo systemctl enable --now nse-dashboard@ubuntu             # optional
+sudo systemctl enable --now nse-bot@ubuntu                   # needs TELEGRAM_* in .env
 ```
+
+> **The bot (`nse-bot@`) is a separate process from the collector (task 5.9).** It
+> polls `signals` and pushes Telegram alerts; it reads the same DB but never
+> writes collected data, so it can crash/restart independently. It starts even
+> without `TELEGRAM_TOKEN`/`TELEGRAM_CHAT_ID` set — it just logs
+> `telegram_not_configured` and sends nothing until you fill them in `.env` and
+> `sudo systemctl restart nse-bot@ubuntu`.
 
 The unit files point at `/opt/nse-data-service`, run as the `%i` user (`ubuntu`),
 restart on crash, and load `.env`. Verify:
