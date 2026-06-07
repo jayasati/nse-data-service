@@ -106,7 +106,8 @@ def _seed_db() -> sqlite3.Connection:
             vix_level REAL, vix_state TEXT, vix_direction TEXT,
             gift_nifty_signal TEXT, advance_decline_ratio REAL, pct_above_vwap REAL,
             fii_partial_day REAL, overall_regime TEXT, regime_confidence REAL,
-            updated_at TEXT
+            updated_at TEXT, fragile_rally INTEGER, internal_weakness INTEGER,
+            regime_warnings TEXT
         );
     """)
     # VIX falling: 13.0 now, 14.0 thirty+ minutes ago.
@@ -160,7 +161,8 @@ def test_run_regime_pass_handles_empty_db():
             vix_level REAL, vix_state TEXT, vix_direction TEXT,
             gift_nifty_signal TEXT, advance_decline_ratio REAL, pct_above_vwap REAL,
             fii_partial_day REAL, overall_regime TEXT, regime_confidence REAL,
-            updated_at TEXT
+            updated_at TEXT, fragile_rally INTEGER, internal_weakness INTEGER,
+            regime_warnings TEXT
         );
     """)
     now = datetime(2026, 6, 5, 10, 0, tzinfo=IST)

@@ -92,3 +92,17 @@ def test_sector_rank_and_trend_combine():
     # leading (+0.08) AND improving (+0.03)
     assert score_confidence({}, None, None, sector_rank=1, sector_trend="improving") \
         == pytest.approx(BASE_SCORE + 0.11)
+
+
+def test_time_multiplier_scales_final():
+    # base 0.50 with no contributions; lunch ×0.80 -> 0.40
+    assert score_confidence({}, None, time_multiplier=0.80) == pytest.approx(0.40)
+
+
+def test_long_penalty_scales_final():
+    assert score_confidence({}, None, long_penalty=0.90) == pytest.approx(0.45)
+
+
+def test_time_and_long_penalty_compound():
+    assert score_confidence({}, None, time_multiplier=0.75, long_penalty=0.90) \
+        == pytest.approx(0.50 * 0.75 * 0.90)

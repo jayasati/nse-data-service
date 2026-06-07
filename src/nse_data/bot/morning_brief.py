@@ -1,0 +1,241 @@
+"""
+Morning brief (FEATURE_CHECKLIST Phase 2, Week 9, tasks 9.4/9.5).
+
+A single Telegram message at 09:00 IST every trading day: where global markets
+closed, GIFT Nifty's implied open, today's regime + posture, overnight corporate
+announcements, expiry status, and Nifty's pivot S/R. Every field degrades to
+"n/a" if its feed is missing, so the brief always sends.
+
+Registered from main.py via `register_morning_brief` (CronTrigger 09:00 IST,
+trading-day gated).
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from datetime import date, datetime, time, timedelta
+
+import structlog
+from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+from ..indicators.levels import index_pivots
+from ..market.expiry import expiry_flags
+from ..market.regime_job import latest_market_state
+from ..scheduler import market_hours
+from ..scheduler.market_hours import IST
+from ..storage.db import open_db
+from .dispatcher import load_telegram_config, send_telegram
+
+log = structlog.get_logger()
+
+JOB_ID = "bot_morning_brief"
+NIFTY = "NIFTY 50"
+
+POSTURE = {
+    "risk_on": "Lean long — favour leading-sector breakouts.",
+    "neutral": "Selective — wait for clean setups, respect levels.",
+    "risk_off": "Defensive — smaller size, avoid chasing strength.",
+    "panic": "Stand aside — capital preservation; scalps only.",
+}
+
+_MAX_EVENTS = 8
+
+
+# ============================================================================
+# Field readers (all best-effort -> None)
+# ============================================================================
+
+def _macro(conn: sqlite3.Connection, asset: str) -> tuple[float | None, float | None]:
+    try:
+        row = conn.execute(
+            "SELECT price, pct_change FROM raw_macro WHERE asset = ? "
+            "ORDER BY as_of_date DESC LIMIT 1",
+            (asset,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return (None, None)
+    return (row[0], row[1]) if row else (None, None)
+
+
+def _gift(conn: sqlite3.Connection) -> tuple[float | None, float | None]:
+    """(pct_change, curr_value) of the latest GIFT Nifty reading."""
+    try:
+        row = conn.execute(
+            "SELECT pct_change, curr_value FROM raw_gift_nifty "
+            "ORDER BY as_of DESC LIMIT 1"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return (None, None)
+    return (row[0], row[1]) if row else (None, None)
+
+
+def _nifty_prev_close(conn: sqlite3.Connection) -> float | None:
+    try:
+        row = conn.execute(
+            "SELECT last FROM raw_indices WHERE index_symbol = ? ORDER BY as_of DESC LIMIT 1",
+            (NIFTY,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return row[0] if row else None
+
+
+def _safe_pivots(conn: sqlite3.Connection, ref_date: date) -> dict | None:
+    try:
+        return index_pivots(conn, NIFTY, ref_date)
+    except sqlite3.OperationalError:
+        return None
+
+
+def _prev_trading_day(d: date) -> date:
+    dd = d - timedelta(days=1)
+    for _ in range(10):
+        if market_hours.is_trading_day(dd):
+            return dd
+        dd -= timedelta(days=1)
+    return dd
+
+
+def _overnight_events(conn: sqlite3.Connection, now: datetime) -> list[tuple[str, str]]:
+    """(symbol, subject) announcements ingested since the last session's 15:30.
+
+    Filtered on created_at (epoch) — overnight broadcasts are ingested when the
+    collector resumes in the morning, so this window captures both the previous
+    evening and the pre-open catch-up. broadcast_dt is a non-sortable
+    'DD-Mon-YYYY' string, so created_at is the reliable ordering key.
+    """
+    cutoff = datetime.combine(_prev_trading_day(now.date()), time(15, 30), tzinfo=IST)
+    try:
+        rows = conn.execute(
+            "SELECT symbol, subject FROM raw_announcements "
+            "WHERE created_at >= ? AND (deleted_at IS NULL) "
+            "ORDER BY created_at DESC LIMIT ?",
+            (int(cutoff.timestamp()), _MAX_EVENTS),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [(s, subj) for s, subj in rows]
+
+
+# ============================================================================
+# Assembly
+# ============================================================================
+
+def _dir(pct: float | None, flat: float = 0.10) -> str:
+    if pct is None:
+        return "n/a"
+    if pct > flat:
+        return "up"
+    if pct < -flat:
+        return "down"
+    return "flat"
+
+
+def _pct(p: float | None) -> str:
+    return "n/a" if p is None else f"{p:+.2f}%"
+
+
+def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
+    now = now or market_hours.now_ist()
+    today = now.date()
+
+    gift_pct, gift_val = _gift(conn)
+    prev_close = _nifty_prev_close(conn)
+    expected_open = None
+    if gift_val is not None:
+        expected_open = gift_val
+    elif prev_close is not None and gift_pct is not None:
+        expected_open = prev_close * (1 + gift_pct / 100.0)
+
+    _, sp_pct = _macro(conn, "SP500")
+    _, nq_pct = _macro(conn, "NASDAQ")
+    brent_price, brent_pct = _macro(conn, "BRENT")
+
+    state = latest_market_state(conn) or {}
+    regime = state.get("overall_regime")
+    warnings = state.get("regime_warnings")
+
+    flags = expiry_flags(today)
+    expiry_note = _expiry_note(flags)
+
+    pivots = _safe_pivots(conn, today)
+    s1 = f"{pivots['s1']:.0f}" if pivots else "n/a"
+    r1 = f"{pivots['r1']:.0f}" if pivots else "n/a"
+
+    events = _overnight_events(conn, now)
+    if events:
+        ev_lines = "\n".join(f"• {sym}: {subj[:70]}" for sym, subj in events)
+    else:
+        ev_lines = "• none"
+
+    open_str = f"{expected_open:,.0f}" if expected_open is not None else "n/a"
+    posture = POSTURE.get(regime or "", "n/a")
+
+    return (
+        f"🌅 Market Brief — {today.isoformat()}\n"
+        "━━━━━━━━━━━━━━━━━━━\n"
+        f"GIFT Nifty: {_dir(gift_pct)} {_pct(gift_pct)} → Nifty ~{open_str}\n"
+        f"US: S&P {_pct(sp_pct)} | Nasdaq {_pct(nq_pct)}\n"
+        f"Crude: ${_fmt(brent_price)} ({_pct(brent_pct)})\n\n"
+        f"Today's regime: {regime or 'n/a'}"
+        f"{(' ' + warnings) if warnings else ''}\n"
+        f"→ {posture}\n\n"
+        f"Overnight events:\n{ev_lines}\n\n"
+        f"Expiry: {expiry_note}\n"
+        f"Nifty support: {s1} | Resistance: {r1}\n"
+        "━━━━━━━━━━━━━━━━━━━"
+    )
+
+
+def _expiry_note(flags: dict) -> str:
+    parts = []
+    if flags.get("is_nifty_expiry"):
+        parts.append("Nifty expiry")
+    if flags.get("is_banknifty_expiry"):
+        parts.append("Bank Nifty expiry")
+    if flags.get("is_monthly_expiry"):
+        parts.append("monthly expiry")
+    return " + ".join(parts) if parts else "Not expiry day"
+
+
+def _fmt(v: float | None) -> str:
+    return "n/a" if v is None else f"{v:,.2f}"
+
+
+# ============================================================================
+# Send + scheduling
+# ============================================================================
+
+def send_morning_brief(db_path: str, *, sender=send_telegram) -> dict:
+    token, chat_id = load_telegram_config()
+    conn = open_db(db_path)
+    try:
+        text = build_brief(conn)
+    finally:
+        conn.close()
+    sent = sender(token, chat_id, text)
+    return {"sent": sent, "chars": len(text)}
+
+
+def register_morning_brief(scheduler: BlockingScheduler, db_path: str) -> str:
+    """Attach the 09:00-IST morning brief (task 9.5). Trading-day gated."""
+    def _tick():
+        if not market_hours.is_trading_day(market_hours.now_ist().date()):
+            log.info("morning_brief_skipped_non_trading_day")
+            return
+        try:
+            report = send_morning_brief(db_path)
+            log.info("morning_brief", **report)
+        except Exception:
+            log.exception("morning_brief_failed")
+
+    scheduler.add_job(
+        _tick,
+        trigger=CronTrigger(hour=9, minute=0, timezone=IST),
+        id=JOB_ID,
+        max_instances=1,
+        coalesce=True,
+        replace_existing=True,
+    )
+    return JOB_ID

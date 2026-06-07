@@ -134,6 +134,26 @@ def classify_regime(
     return "neutral", _agreement(nifty_dir, vix_dir, ad_ratio, pct_above_vwap, gift)
 
 
+def divergence_flags(
+    nifty_dir: str | None, vix_dir: str | None, bank_pct: float | None,
+) -> tuple[bool, bool, str | None]:
+    """Intermarket divergence (task 9.6): (fragile_rally, internal_weakness, note).
+
+    fragile_rally     — Nifty up while VIX is *also* rising (rally not trusted).
+    internal_weakness — banks (NIFTY BANK) down while the index holds flat.
+    """
+    fragile = nifty_dir == "up" and vix_dir == "rising"
+    bank_down = bank_pct is not None and bank_pct < -_NIFTY_FLAT_PCT
+    internal_weak = bool(bank_down and nifty_dir == "flat")
+
+    notes = []
+    if fragile:
+        notes.append("⚠ fragile rally (Nifty↑ with VIX↑)")
+    if internal_weak:
+        notes.append("⚠ internal weakness (banks↓, Nifty flat)")
+    return fragile, internal_weak, (" | ".join(notes) or None)
+
+
 def _agreement(nifty_dir, vix_dir, ad_ratio, pct_above_vwap, gift) -> float:
     """Net |vote| / number-of-available-factors. +1 bullish, −1 bearish each.
 
@@ -176,12 +196,17 @@ def _latest_vix_and_prior(conn: sqlite3.Connection) -> tuple[float | None, float
     return latest_vix, (prior[0] if prior else None)
 
 
-def _latest_nifty_pct(conn: sqlite3.Connection) -> float | None:
+def _latest_index_pct(conn: sqlite3.Connection, index_symbol: str) -> float | None:
     row = conn.execute(
-        "SELECT pct_change FROM raw_indices WHERE index_symbol = 'NIFTY 50' "
-        "ORDER BY as_of DESC LIMIT 1"
+        "SELECT pct_change FROM raw_indices WHERE index_symbol = ? "
+        "ORDER BY as_of DESC LIMIT 1",
+        (index_symbol,),
     ).fetchone()
     return row[0] if row else None
+
+
+def _latest_nifty_pct(conn: sqlite3.Connection) -> float | None:
+    return _latest_index_pct(conn, "NIFTY 50")
 
 
 def _gift_gap_pct(conn: sqlite3.Connection) -> float | None:
@@ -254,6 +279,8 @@ def build_market_state(conn: sqlite3.Connection, now: datetime) -> dict:
         nifty_dir=n_dir, vix_dir=v_dir, vix_level=vix,
         ad_ratio=ad, pct_above_vwap=above, gift=gift,
     )
+    bank_pct = _latest_index_pct(conn, "NIFTY BANK")
+    fragile, internal_weak, warnings = divergence_flags(n_dir, v_dir, bank_pct)
 
     return {
         "as_of": now.isoformat(),
@@ -269,6 +296,9 @@ def build_market_state(conn: sqlite3.Connection, now: datetime) -> dict:
         "overall_regime": regime,
         "regime_confidence": confidence,
         "updated_at": now.isoformat(),
+        "fragile_rally": int(fragile),
+        "internal_weakness": int(internal_weak),
+        "regime_warnings": warnings,
     }
 
 
@@ -276,7 +306,7 @@ _COLUMNS = (
     "as_of", "nifty_direction", "nifty_return_pct", "vix_level", "vix_state",
     "vix_direction", "gift_nifty_signal", "advance_decline_ratio",
     "pct_above_vwap", "fii_partial_day", "overall_regime", "regime_confidence",
-    "updated_at",
+    "updated_at", "fragile_rally", "internal_weakness", "regime_warnings",
 )
 
 
@@ -296,6 +326,19 @@ def run_regime_pass(conn: sqlite3.Connection, *, now: datetime | None = None) ->
     _upsert(conn, state)
     conn.commit()
     return state
+
+
+def latest_market_state(conn: sqlite3.Connection) -> dict | None:
+    """Most recent market_state row as a dict, or None (tolerant of no table)."""
+    try:
+        cur = conn.execute("SELECT * FROM market_state ORDER BY as_of DESC LIMIT 1")
+    except sqlite3.OperationalError:
+        return None
+    row = cur.fetchone()
+    if not row:
+        return None
+    cols = [c[0] for c in cur.description]
+    return dict(zip(cols, row))
 
 
 # ============================================================================

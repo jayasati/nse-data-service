@@ -16,6 +16,7 @@ import structlog
 
 from .indicators.live_job import register_live_job
 from .indicators.pre_market_loader import register_pre_market_loader
+from .bot.morning_brief import register_morning_brief
 from .market.regime_job import register_regime_job
 from .market.sector_radar_job import register_sector_radar_job
 from .signals.detect import register_signal_job
@@ -116,6 +117,10 @@ def main() -> int:
     # sectoral indices by relative strength vs NIFTY 50 into sector_state; the
     # confidence scorer reads a signal's sector rank/trend (Phase 2, Week 8).
     registered.append(register_sector_radar_job(scheduler, db_path))
+    # Morning brief: 09:00 IST on trading days — one Telegram message with global
+    # cues, GIFT-implied open, regime + posture, overnight events, expiry and
+    # Nifty pivot S/R (Phase 2, Week 9).
+    registered.append(register_morning_brief(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:

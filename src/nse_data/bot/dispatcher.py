@@ -30,8 +30,10 @@ from datetime import datetime
 
 import structlog
 
+from ..market.regime_job import latest_market_state
 from ..market.sector_map import load_sector_map
 from ..market.sector_radar_job import latest_sector_ranks
+from ..market.time_rules import time_rule
 from ..scheduler.market_hours import is_market_open, now_ist
 from ..signals import enrich
 from ..signals.confidence import score_confidence
@@ -108,11 +110,17 @@ def dispatch_pass(
     blacklist = _load_blacklist(redis_client)
     price_bands = _load_price_bands(conn)
     listing_bars = _load_listing_bars(conn)
-    regime = _load_current_regime(conn)   # market_state context (task 7.5)
-    sector_map = load_sector_map()        # symbol -> sector (task 8.4)
+    market = latest_market_state(conn) or {}        # regime + divergence (7.5/9.6)
+    regime = market.get("overall_regime")
+    long_penalty = 0.90 if (market.get("fragile_rally") or
+                            market.get("internal_weakness")) else 1.0   # task 9.6
+    sector_map = load_sector_map()                  # symbol -> sector (task 8.4)
     sector_ranks = latest_sector_ranks(conn)
+    rule = time_rule(now)                            # time-of-day window (task 9.1)
+    threshold = rule.min_confidence or CONFIDENCE_THRESHOLD
 
-    counts = {"sent": 0, "gated": 0, "low_confidence": 0, "aged_out": 0, "held": 0}
+    counts = {"sent": 0, "gated": 0, "low_confidence": 0,
+              "aged_out": 0, "held": 0, "time_suppressed": 0}
 
     for row in rows:
         sig = _row_to_signal(row)
@@ -123,17 +131,25 @@ def dispatch_pass(
             counts["gated"] += 1
             continue
 
+        # Time-of-day suppression (09:15–09:30, 15:20+): hold, don't send. Left
+        # undispatched so a NO_TRADE signal can re-evaluate once the window opens;
+        # post-15:20 signals simply age out.
+        if rule.suppressed:
+            counts["time_suppressed"] += 1
+            continue
+
         context = enrich.read_live_context(redis_client, sig["symbol"], conn)
         sector = sector_map.get(sig["symbol"])
         sec = sector_ranks.get(sector or "", {})
         confidence = score_confidence(
             context, sig["volume_ratio"], regime,
             sector_rank=sec.get("rs_rank"), sector_trend=sec.get("rs_trend"),
+            time_multiplier=rule.multiplier, long_penalty=long_penalty,
         )
 
-        if confidence > CONFIDENCE_THRESHOLD:
-            text = format_message(sig, context, confidence,
-                                  sector=sector, sector_rank=sec.get("rs_rank"))
+        if confidence > threshold:
+            text = format_message(sig, context, confidence, market=market,
+                                  sector=sector, sector_info=sec)
             if sender(token, chat_id, text):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
@@ -147,21 +163,6 @@ def dispatch_pass(
 
     conn.commit()
     return counts
-
-
-def _load_current_regime(conn: sqlite3.Connection) -> str | None:
-    """Latest market_state.overall_regime, or None if the table is absent/empty.
-
-    Tolerant of a pre-Phase-2 DB (no market_state table yet) so the dispatcher
-    keeps working before/while the regime job is rolled out.
-    """
-    try:
-        row = conn.execute(
-            "SELECT overall_regime FROM market_state ORDER BY as_of DESC LIMIT 1"
-        ).fetchone()
-    except sqlite3.OperationalError:
-        return None
-    return row[0] if row else None
 
 
 def _row_to_signal(row) -> dict:
@@ -191,9 +192,10 @@ def _age_minutes(detected_at: str, now: datetime) -> float:
 
 def format_message(
     sig: dict, context: dict, confidence: float,
-    sector: str | None = None, sector_rank: int | None = None,
+    market: dict | None = None,
+    sector: str | None = None, sector_info: dict | None = None,
 ) -> str:
-    """Phase-1 alert text (polished in Phase 8)."""
+    """Alert text with market + sector + stock context (task 9.3)."""
     label = _SIGNAL_LABELS.get(sig["signal_type"], sig["signal_type"])
     arrow = _slope_arrow(context.get("vwap_slope"))
     sl_t1 = _format_bracket(sig.get("price"), sig.get("atr_14_daily"))
@@ -202,23 +204,48 @@ def format_message(
         f"{_SIGNAL_EMOJI} {sig['symbol']} — {label}\n"
         f"OI: {_fmt(sig.get('oi_change_pct'))}% | "
         f"Price: {_fmt(sig.get('price_change_pct'))}% | "
-        f"Vol: {_fmt(sig.get('volume_ratio'))}×\n"
-        f"VWAP: {context.get('price_vs_vwap') or 'n/a'} {arrow} | "
+        f"Vol: {_fmt(sig.get('volume_ratio'))}×\n\n"
+        f"{_format_market(market)}"
+        f"{_format_sector(sector, sector_info)}\n"
+        f"Stock: VWAP {context.get('price_vs_vwap') or 'n/a'} {arrow} | "
         f"RSI(5m): {_fmt(context.get('rsi_5m'))} | "
-        f"Trend: {context.get('trend_regime') or 'n/a'}\n"
-        f"{_format_sector(sector, sector_rank)}"
-        f"Confidence: {confidence:.2f}\n"
+        f"Trend: {context.get('trend_regime') or 'n/a'}\n\n"
+        f"Confidence: {_tier(confidence)} ({confidence:.2f})\n"
         f"{sl_t1} | Flat by: 15:20"
     )
 
 
-def _format_sector(sector: str | None, sector_rank: int | None) -> str:
-    """Sector RS line for the alert (Week 8 gate), or '' if the symbol's
-    sector is unmapped/unranked."""
-    if not sector or sector_rank is None:
+def _tier(confidence: float) -> str:
+    """Confidence tier label (task 9.3): High ≥0.80, Medium ≥0.72, else Low."""
+    if confidence >= 0.80:
+        return "High"
+    if confidence >= 0.72:
+        return "Medium"
+    return "Low"
+
+
+def _format_market(market: dict | None) -> str:
+    """Market line: Nifty dir | VIX state ↑/↓ | Regime (+ ⚠ note). '' if absent."""
+    if not market:
+        return ""
+    vix_arrow = {"rising": "↑", "falling": "↓"}.get(market.get("vix_direction") or "", "")
+    warn = market.get("regime_warnings")
+    return (
+        f"Market: Nifty {market.get('nifty_direction') or 'n/a'} | "
+        f"VIX {market.get('vix_state') or 'n/a'} {vix_arrow} | "
+        f"Regime: {market.get('overall_regime') or 'n/a'}"
+        f"{(' ' + warn) if warn else ''}\n"
+    )
+
+
+def _format_sector(sector: str | None, sector_info: dict | None) -> str:
+    """Sector RS line, or '' if the symbol's sector is unmapped/unranked."""
+    info = sector_info or {}
+    rank = info.get("rs_rank")
+    if not sector or rank is None:
         return ""
     label = sector.replace("NIFTY ", "")
-    return f"Sector: {label} (RS rank {sector_rank}/11)\n"
+    return f"Sector: {label} RS #{rank} | Trend: {info.get('rs_trend') or 'n/a'}\n"
 
 
 def _format_bracket(price, atr) -> str:

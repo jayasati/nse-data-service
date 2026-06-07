@@ -35,6 +35,8 @@ def score_confidence(
     regime: str | None = None,
     sector_rank: int | None = None,
     sector_trend: str | None = None,
+    time_multiplier: float = 1.0,
+    long_penalty: float = 1.0,
 ) -> float:
     """Confidence in [0, 1] from live context + volume + market regime + sector RS.
 
@@ -42,7 +44,13 @@ def score_confidence(
     rsi_5m (float), trend_regime (str). `regime` is the market_state
     overall_regime. `sector_rank` (1=best..11=worst) and `sector_trend`
     ('improving'/'flat'/'deteriorating') come from the signal's sector in
-    sector_state. All optional.
+    sector_state.
+
+    The additive contributions are summed and clamped to [0,1] first, then scaled
+    by two multipliers applied last (task 9.2 / 9.6):
+        time_multiplier  time-of-day factor from market.time_rules (0.75–1.0)
+        long_penalty     0.90 when an intermarket divergence flag is set
+    All inputs optional.
     """
     score = BASE_SCORE
     score += _vwap_adjustment(context.get("price_vs_vwap"), context.get("vwap_slope"))
@@ -51,7 +59,8 @@ def score_confidence(
     score += _volume_adjustment(volume_ratio)
     score += _regime_adjustment(regime)
     score += _sector_adjustment(sector_rank, sector_trend)
-    return _clamp01(score)
+    score = _clamp01(score)
+    return _clamp01(score * time_multiplier * long_penalty)
 
 
 def _vwap_adjustment(price_vs_vwap: str | None, vwap_slope: float | None) -> float:

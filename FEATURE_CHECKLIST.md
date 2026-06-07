@@ -504,7 +504,7 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
 
 ### Tasks
 
-- [ ] **9.1** Write `market/time_rules.py` — given current IST time, returns `time_window` and `confidence_multiplier`:
+- [x] **9.1** Write `market/time_rules.py` — given current IST time, returns `time_window` and `confidence_multiplier`:
   ```
   09:15–09:30  NO_TRADE              → suppress all signals
   09:30–11:00  PRIME_WINDOW          → multiplier 1.00
@@ -516,9 +516,9 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
   15:20+       NO_NEW_TRADES          → suppress all signals
   ```
 
-- [ ] **9.2** Wire time rules into confidence scorer — multiply final confidence by `time_multiplier` after all other contributions
+- [x] **9.2** Wire time rules into confidence scorer — multiply final confidence by `time_multiplier` after all other contributions _(✅ + dispatcher suppresses NO_TRADE/NO_NEW_TRADES windows and applies the lunch 0.72 floor)_
 
-- [ ] **9.3** Upgrade alert message to include regime + sector:
+- [x] **9.3** Upgrade alert message to include regime + sector: _(✅ 3-block layout + High/Medium/Low tier at 0.80/0.72)_
   ```
   🟢 {SYMBOL} — {Signal Type}
   OI: {oi_change_pct}% | Price: {price_change_pct}% | Vol: {volume_ratio}×
@@ -532,7 +532,7 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
   SL: ₹{sl_price} | T1: ₹{t1_price} | Flat by: 15:20
   ```
 
-- [ ] **9.4** Write `bot/morning_brief.py` — DBJob, runs at 09:00 IST every trading day. Reads all available data and sends a single brief message:
+- [x] **9.4** Write `bot/morning_brief.py` — DBJob, runs at 09:00 IST every trading day. Reads all available data and sends a single brief message: _(✅ US/crude from raw_macro, GIFT, regime+posture, overnight events via created_at, expiry, Nifty pivot S/R from new indicators/levels.py; every field degrades to n/a)_
   ```
   🌅 Market Brief — {date}
   ━━━━━━━━━━━━━━━━━━━
@@ -551,17 +551,17 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
   ━━━━━━━━━━━━━━━━━━━
   ```
 
-- [ ] **9.5** Register `bot/morning_brief.py`: daily 09:00, `trading_day_only`
+- [x] **9.5** Register `bot/morning_brief.py`: daily 09:00, `trading_day_only` _(✅ registered in main.py)_
 
-- [ ] **9.6** Write basic intermarket divergence check in `market/regime_job.py` — after computing overall_regime, check: if Nifty up AND VIX up (rising together) → flag `fragile_rally = True`. If banks (NIFTY BANK) down AND Nifty flat → flag `internal_weakness = True`. If either flag is True, add a ⚠ note to regime output and reduce long confidence by 10% session-wide
+- [x] **9.6** Write basic intermarket divergence check in `market/regime_job.py` — after computing overall_regime, check: if Nifty up AND VIX up (rising together) → flag `fragile_rally = True`. If banks (NIFTY BANK) down AND Nifty flat → flag `internal_weakness = True`. If either flag is True, add a ⚠ note to regime output and reduce long confidence by 10% session-wide _(✅ flags stored in market_state via migration 039; ⚠ note in alert; 0.90 long_penalty in scorer)_
 
 ### Phase 2 exit criteria (ALL must be met)
-- [ ] Morning brief landing every trading day at 09:00 with correct GIFT Nifty and US data
-- [ ] Alerts show regime (`overall_regime`) and sector RS rank
-- [ ] Signals suppressed during 09:15–09:30 and 15:20+
-- [ ] Lunch-zone signals reduced in confidence
-- [ ] Confidence score visibly different in risk_on vs risk_off markets (spot check manually)
-- [ ] All Phase 1 stability criteria still met (no regressions)
+- [ ] Morning brief landing every trading day at 09:00 with correct GIFT Nifty and US data _(✅ code complete; ⏳ verify live Mon 09:00 — GIFT feed must be flowing)_
+- [ ] Alerts show regime (`overall_regime`) and sector RS rank _(✅ implemented; ⏳ confirm on a real alert)_
+- [ ] Signals suppressed during 09:15–09:30 and 15:20+ _(✅ implemented in dispatcher via time_rules)_
+- [ ] Lunch-zone signals reduced in confidence _(✅ 0.80 multiplier + 0.72 floor)_
+- [ ] Confidence score visibly different in risk_on vs risk_off markets (spot check manually) _(✅ regime contribution wired; ⏳ live spot-check)_
+- [ ] All Phase 1 stability criteria still met (no regressions) _(✅ 696 tests green; ⏳ confirm 5-day run)_
 
 ---
 ---
