@@ -39,6 +39,7 @@ from ..signals import enrich
 from ..signals.confidence import score_confidence
 from ..signals.detect import (
     _hard_gated, _load_blacklist, _load_listing_bars, _load_price_bands,
+    _load_quality_scores,
 )
 from ..signals.paper_tracker import compute_sl_t1
 from ..storage.db import open_db
@@ -116,6 +117,7 @@ def dispatch_pass(
                             market.get("internal_weakness")) else 1.0   # task 9.6
     sector_map = load_sector_map()                  # symbol -> sector (task 8.4)
     sector_ranks = latest_sector_ranks(conn)
+    quality_scores = _load_quality_scores(conn)     # fundamentals (task 14.4/14.5)
     rule = time_rule(now)                            # time-of-day window (task 9.1)
     threshold = rule.min_confidence or CONFIDENCE_THRESHOLD
 
@@ -126,7 +128,7 @@ def dispatch_pass(
         sig = _row_to_signal(row)
         series = price_bands.get(sig["symbol"], (None, None))[0]
 
-        if _hard_gated(sig["symbol"], series, listing_bars, blacklist):
+        if _hard_gated(sig["symbol"], series, listing_bars, blacklist, quality_scores):
             _mark_dispatched(conn, sig["id"], now)
             counts["gated"] += 1
             continue
@@ -141,16 +143,18 @@ def dispatch_pass(
         context = enrich.read_live_context(redis_client, sig["symbol"], conn)
         sector = sector_map.get(sig["symbol"])
         sec = sector_ranks.get(sector or "", {})
+        quality = quality_scores.get(sig["symbol"])
         confidence = score_confidence(
             context, sig["volume_ratio"], regime,
             sector_rank=sec.get("rs_rank"), sector_trend=sec.get("rs_trend"),
+            quality_score=quality,
             time_multiplier=rule.multiplier, long_penalty=long_penalty,
         )
 
         if confidence > threshold:
             text = format_message(
                 sig, context, confidence, market=market,
-                sector=sector, sector_info=sec,
+                sector=sector, sector_info=sec, quality=quality,
                 levels=_load_levels(conn, sig["symbol"]),
                 delivery=_load_delivery(conn, sig["symbol"]),
             )
@@ -230,9 +234,10 @@ def format_message(
     sig: dict, context: dict, confidence: float,
     market: dict | None = None,
     sector: str | None = None, sector_info: dict | None = None,
+    quality: float | None = None,
     levels: dict | None = None, delivery: dict | None = None,
 ) -> str:
-    """Alert text with market + sector + stock + delivery/levels context (9.3 / 13.6)."""
+    """Alert text with market + sector + stock + quality/delivery/levels context."""
     label = _SIGNAL_LABELS.get(sig["signal_type"], sig["signal_type"])
     arrow = _slope_arrow(context.get("vwap_slope"))
     sl_t1 = _format_bracket(sig.get("price"), sig.get("atr_14_daily"))
@@ -247,11 +252,17 @@ def format_message(
         f"Stock: VWAP {context.get('price_vs_vwap') or 'n/a'} {arrow} | "
         f"RSI(5m): {_fmt(context.get('rsi_5m'))} | "
         f"Trend: {context.get('trend_regime') or 'n/a'}\n"
+        f"{_format_quality(quality)}"
         f"{_format_delivery(delivery)}"
         f"{_format_levels(levels)}\n"
         f"Confidence: {_tier(confidence)} ({confidence:.2f})\n"
         f"{sl_t1} | Flat by: 15:20"
     )
+
+
+def _format_quality(quality: float | None) -> str:
+    """Quality score line (task 14.6), or '' if no fundamentals for the symbol."""
+    return "" if quality is None else f"Quality: {quality:.0f}/100\n"
 
 
 def _format_delivery(delivery: dict | None) -> str:

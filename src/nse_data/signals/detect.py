@@ -55,6 +55,8 @@ VOLUME_RATIO_MIN = 1.5    # ×
 # Nifty-500 names all have years of history, so this only ever bites a genuine
 # new listing that sneaked into the universe.
 MIN_LISTING_BARS = 30
+# Below this fundamental quality score, a long signal is killed (task 14.4).
+QUALITY_KILL = 30
 # Price band ≤ 2% → too tight to run a long into; skip for longs.
 MAX_TIGHT_BAND_PCT = 2
 # Trade-to-trade / restricted series — never trade these.
@@ -103,6 +105,7 @@ def run_detection_pass(
     blacklist = _load_blacklist(redis_client)
     price_bands = _load_price_bands(conn)
     listing_bars = _load_listing_bars(conn)
+    quality_scores = _load_quality_scores(conn)          # task 14.4
     fresh_52w_highs = _load_today_52w_highs(conn, now)
 
     fired = {LONG_BUILDUP: 0, BREAKOUT_52WH: 0}
@@ -110,7 +113,7 @@ def run_detection_pass(
 
     for symbol in symbols:
         series, band = price_bands.get(symbol, (None, None))
-        if _hard_gated(symbol, series, listing_bars, blacklist):
+        if _hard_gated(symbol, series, listing_bars, blacklist, quality_scores):
             gated += 1
             continue
 
@@ -222,13 +225,18 @@ def _hard_gated(
     series: str | None,
     listing_bars: dict[str, int],
     blacklist: set[str],
+    quality_scores: dict[str, float] | None = None,
 ) -> bool:
     """True if any binary-kill gate trips (symbol-level, time-independent).
 
     Time-window gates (opening auction, lunch) are handled once per pass in
     `_time_window_skip`, not here. The promoter-pledge gate (§4.4) has no data
     source yet (pledge isn't collected — only promoter holding %), so it is a
-    deliberate no-op until Phase 4 adds the feed.
+    deliberate no-op.
+
+    Quality gate (task 14.4): kill a long signal whose fundamental quality score
+    is below 30. A None score (no fundamentals available) does NOT kill — absence
+    of data isn't evidence of low quality. All Phase-1 signals are longs.
     """
     if symbol in blacklist:
         return True
@@ -236,7 +244,23 @@ def _hard_gated(
         return True
     if listing_bars.get(symbol, 0) < MIN_LISTING_BARS:   # newly listed < ~30 days
         return True
+    if quality_scores is not None:
+        q = quality_scores.get(symbol)
+        if q is not None and q < QUALITY_KILL:
+            return True
     return False
+
+
+def _load_quality_scores(conn: sqlite3.Connection) -> dict[str, float]:
+    """{symbol: quality_score} from stock_fundamentals (empty if table absent)."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol, quality_score FROM stock_fundamentals "
+            "WHERE quality_score IS NOT NULL"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {s: q for s, q in rows}
 
 
 def _time_window_skip(now: datetime) -> str | None:

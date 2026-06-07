@@ -35,6 +35,7 @@ def score_confidence(
     regime: str | None = None,
     sector_rank: int | None = None,
     sector_trend: str | None = None,
+    quality_score: float | None = None,
     time_multiplier: float = 1.0,
     long_penalty: float = 1.0,
 ) -> float:
@@ -59,6 +60,7 @@ def score_confidence(
     score += _volume_adjustment(volume_ratio)
     score += _regime_adjustment(regime)
     score += _sector_adjustment(sector_rank, sector_trend)
+    score += _quality_adjustment(quality_score)
     score = _clamp01(score)
     return _clamp01(score * time_multiplier * long_penalty)
 
@@ -102,6 +104,20 @@ def _regime_adjustment(regime: str | None) -> float:
         "risk_off": -0.10,
         "panic": -0.20,
     }.get(regime or "", 0.0)
+
+
+def _quality_adjustment(quality_score: float | None) -> float:
+    """Task 14.5: lift high-quality names, penalise low-quality longs. A None
+    score (no fundamentals) contributes 0 — absence isn't a penalty."""
+    if quality_score is None:
+        return 0.0
+    if quality_score > 70:
+        return 0.10
+    if quality_score >= 50:
+        return 0.05
+    if quality_score >= 30:
+        return 0.0
+    return -0.15
 
 
 def _sector_adjustment(sector_rank: int | None, sector_trend: str | None) -> float:

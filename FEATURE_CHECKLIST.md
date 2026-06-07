@@ -745,7 +745,7 @@ _(✅ met: indicator_levels (19:00) + delivery_conviction (18:30) nightly over t
 
 ### Tasks
 
-- [ ] **14.1** Write `fundamentals/quality_score.py` — composite 0–100 score using data already in DB:
+- [x] **14.1** Write `fundamentals/quality_score.py` — composite 0–100 score using data already in DB: _(✅ from screener/quote_metadata/shareholding; pledge unavailable (not collected); revenue uses 3y sales CAGR proxy)_
   - Revenue growth YoY (from `raw_financial_results` — available even without PDF extraction)
   - P/E ratio (from `raw_quote_metadata`)
   - Market cap (proxy for size/liquidity)
@@ -756,7 +756,7 @@ _(✅ met: indicator_levels (19:00) + delivery_conviction (18:30) nightly over t
   - D/E ratio (from `raw_fundamentals_screener`)
   - 3y revenue CAGR (from `raw_fundamentals_screener`)
 
-- [ ] **14.2** Score each component 0–10, weight them, sum to 0–100:
+- [x] **14.2** Score each component 0–10, weight them, sum to 0–100: _(✅ graded per rubric, weighted, normalised over available components → graceful degradation; None when no data)_
   - Revenue growth > 15% → 10pts; 10–15% → 7; 5–10% → 4; < 5% or negative → 0–2
   - ROCE > 20% → 10pts; 15–20% → 7; 10–15% → 4; < 10% → 1
   - ROE > 15% → 10pts; similarly graded
@@ -765,7 +765,7 @@ _(✅ met: indicator_levels (19:00) + delivery_conviction (18:30) nightly over t
   - Pledge > 25% → deduct 15pts; > 50% → hard kill (already in gates)
   - P/E below sector avg → 5pts; above → 0–2
 
-- [ ] **14.3** Write `fundamentals/table.sql` migration and populate nightly:
+- [x] **14.3** Write `fundamentals/table.sql` migration and populate nightly: _(✅ migration 047_stock_fundamentals.sql + nightly job 18:00)_
   ```sql
   CREATE TABLE IF NOT EXISTS stock_fundamentals (
     symbol TEXT PRIMARY KEY,
@@ -780,9 +780,9 @@ _(✅ met: indicator_levels (19:00) + delivery_conviction (18:30) nightly over t
   );
   ```
 
-- [ ] **14.4** Add quality score to hard gates: quality_score < 30 AND long signal → kill
+- [x] **14.4** Add quality score to hard gates: quality_score < 30 AND long signal → kill _(✅ in `_hard_gated`; None score never kills)_
 
-- [ ] **14.5** Add quality score to confidence scorer (Layer 3):
+- [x] **14.5** Add quality score to confidence scorer (Layer 3): _(✅ `_quality_adjustment`)_
   ```
   quality_score > 70 → +0.10
   quality_score 50–70 → +0.05
@@ -790,10 +790,11 @@ _(✅ met: indicator_levels (19:00) + delivery_conviction (18:30) nightly over t
   quality_score < 30  → −0.15 (long signals)
   ```
 
-- [ ] **14.6** Add quality score to alert message: `Quality: {quality_score}/100`
+- [x] **14.6** Add quality score to alert message: `Quality: {quality_score}/100` _(✅ Quality line, shown when fundamentals exist)_
 
 ### Week 14 gate
 `stock_fundamentals` table populated for all watchlist + F&O symbols. Quality score in every alert.
+_(✅ met: nightly quality job over F&O+Nifty500 → stock_fundamentals; quality gates (<30 long-kill), nudges confidence, shows in alerts. 732 tests green. Coverage depends on the sparse screener/shareholding feeds — symbols without fundamentals get a null score that neither gates nor nudges.)_
 
 ---
 

@@ -14,6 +14,7 @@ import sys
 
 import structlog
 
+from .fundamentals.quality_score import register_quality_job
 from .indicators.delivery_tracker import register_delivery_job
 from .indicators.levels import register_levels_job
 from .indicators.live_job import register_live_job
@@ -131,6 +132,8 @@ def main() -> int:
     # bhavcopy — reference levels loaded at 08:45 and shown in alerts (Week 13).
     registered.append(register_levels_job(scheduler, db_path))
     registered.append(register_delivery_job(scheduler, db_path))
+    # Nightly fundamentals quality score (18:00) — gates + nudges signals (Week 14).
+    registered.append(register_quality_job(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:
