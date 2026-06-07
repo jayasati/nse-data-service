@@ -23,6 +23,7 @@ _MIGRATIONS = (
     MIGRATIONS_DIR / "025_intraday_candles.sql",
     MIGRATIONS_DIR / "032_backtests.sql",
     MIGRATIONS_DIR / "033_backtest_signal_tags.sql",
+    MIGRATIONS_DIR / "040_backtest_net_pnl.sql",
 )
 
 IST_TZ = timezone(timedelta(hours=5, minutes=30))

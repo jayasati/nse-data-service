@@ -76,6 +76,7 @@ def run_backtest_for_universe(
         for t in trades:
             raw = t.pnl_raw()
             lev = t.pnl_leveraged(cfg.leverage)
+            net = t.pnl_net()
             all_trades.append(SymbolTrade(
                 symbol=symbol,
                 direction=t.direction,
@@ -83,7 +84,7 @@ def run_backtest_for_universe(
                 sl=t.sl, target=t.target,
                 exit_ts=t.exit_ts, exit_price=t.exit_price, exit_reason=t.exit_reason,
                 qty=t.qty, rr_at_entry=t.rr_at_entry,
-                pnl_raw=raw, pnl_leveraged=lev,
+                pnl_raw=raw, pnl_leveraged=lev, pnl_net=net,
                 signal_tags=t.signal_tags,
             ))
 

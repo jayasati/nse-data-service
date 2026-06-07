@@ -76,6 +76,19 @@ class Trade:
     def pnl_leveraged(self, leverage: float) -> float:
         return self.pnl_raw() * leverage
 
+    def pnl_net(self) -> float:
+        """Gross P&L minus the full round-trip cost model (task 10.2).
+
+        Every simulated trade passes through costs/model.compute_costs, so net
+        P&L reflects brokerage, STT, exchange/SEBI charges, stamp duty, GST and
+        slippage — the same model the live paper tracker uses.
+        """
+        from ...costs.model import compute_costs
+        trade_type = "long" if self.direction == "LONG" else "short"
+        return compute_costs(
+            self.entry_price, self.exit_price, self.qty, trade_type=trade_type
+        ).net_pnl
+
 
 # ----------------------------------------------------- runner-level wrappers
 
@@ -97,6 +110,7 @@ class SymbolTrade:
     rr_at_entry: float
     pnl_raw: float
     pnl_leveraged: float
+    pnl_net: float = 0.0
     signal_tags: str | None = None
 
 
@@ -137,6 +151,10 @@ class RunReport:
     @property
     def pnl_leveraged(self) -> float:
         return sum(t.pnl_leveraged for t in self.trades)
+
+    @property
+    def pnl_net(self) -> float:
+        return sum(t.pnl_net for t in self.trades)
 
     @property
     def win_rate(self) -> float:

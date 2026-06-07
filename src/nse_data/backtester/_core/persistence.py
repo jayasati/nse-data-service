@@ -42,7 +42,9 @@ def write_run(
     trades = list(trades)
     wins, losses, pnl_raw_sum = _summarize(trades)
     pnl_lev_sum = pnl_raw_sum * cfg.leverage
+    pnl_net_sum = sum(t.pnl_net for t in trades)
     max_dd = _max_drawdown_raw(trades)
+    max_dd_net = _max_drawdown(trades, attr="pnl_net")
 
     params_json = json.dumps(_params_dict(cfg), sort_keys=True)
 
@@ -55,16 +57,16 @@ def write_run(
                 strategy, params_json, universe, symbols_count,
                 start_date, end_date, leverage,
                 total_signals, total_trades, wins, losses,
-                pnl_raw, pnl_leveraged, max_dd_raw,
+                pnl_raw, pnl_leveraged, pnl_net, max_dd_raw, max_dd_net,
                 created_at, notes
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 cfg.strategy, params_json, universe, symbols_count,
                 start_date, end_date, cfg.leverage,
                 total_signals, len(trades), wins, losses,
-                pnl_raw_sum, pnl_lev_sum, max_dd,
+                pnl_raw_sum, pnl_lev_sum, pnl_net_sum, max_dd, max_dd_net,
                 int(time.time()), notes,
             ),
         )
@@ -77,9 +79,9 @@ def write_run(
                 INSERT INTO backtest_trades (
                     run_id, symbol, direction, setup_ts, entry_ts, entry_price,
                     sl, target, exit_ts, exit_price, exit_reason, qty,
-                    pnl_raw, pnl_leveraged, rr_at_entry, signal_tags
+                    pnl_raw, pnl_leveraged, pnl_net, rr_at_entry, signal_tags
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [_trade_row(run_id, t) for t in trades],
             )
@@ -109,7 +111,7 @@ def _trade_row(run_id: int, t: SymbolTrade):
         t.setup_ts, t.entry_ts, t.entry_price,
         t.sl, t.target,
         t.exit_ts, t.exit_price, t.exit_reason, t.qty,
-        t.pnl_raw, t.pnl_leveraged, t.rr_at_entry, t.signal_tags,
+        t.pnl_raw, t.pnl_leveraged, t.pnl_net, t.rr_at_entry, t.signal_tags,
     )
 
 
@@ -127,10 +129,14 @@ def _summarize(trades) -> tuple[int, int, float]:
 
 def _max_drawdown_raw(trades) -> float:
     """Worst peak-to-trough on cumulative raw P&L (in absolute INR, negative)."""
+    return _max_drawdown(trades, attr="pnl_raw")
+
+
+def _max_drawdown(trades, *, attr: str) -> float:
+    """Worst peak-to-trough on cumulative P&L for the given trade attribute."""
     cum, peak, worst = 0.0, 0.0, 0.0
     for t in trades:
-        cum += t.pnl_raw
+        cum += getattr(t, attr)
         peak = max(peak, cum)
-        dd = cum - peak  # <= 0
-        worst = min(worst, dd)
+        worst = min(worst, cum - peak)   # <= 0
     return worst

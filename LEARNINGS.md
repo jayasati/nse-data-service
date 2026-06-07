@@ -57,6 +57,54 @@ is open. This also matches task 6.3's "5-minute collector" intent.
 
 ---
 
+## Phase 3 — Backtest Trust (Week 10)
+
+### 10.1 — backtester had zero cost model (confirmed)
+No reference to `costs/model.py` anywhere in `backtester/` before Phase 3. P&L was
+gross only (`pnl_raw` / `pnl_leveraged`). Net-of-cost added in 10.2 (`pnl_net`
+through Trade → runner → persistence; migration 040).
+
+### 10.3 — indicator parity (live vs backtest): PASS
+Both the live engine and the backtester compute indicators via **pandas-ta-classic**
+with identical params, so definitions match by construction:
+- **MACD** (the one overlapping family): live `ta.macd(fast=12, slow=26, signal=9)`
+  == macd_willr_daily `ta.macd` with the same 12/26/9 defaults.
+- **RSI 14 / SMA 20·50·200**: used by the live engine (indicator_live/regime) but
+  **not by any of the three backtested strategies** (they use BB+EMA9, MACD+WillR,
+  52w-high/volume). So there's no SMA/RSI parity gap to fix for these strategies.
+
+### Metrics basis (agreed)
+Net Sharpe = daily-portfolio-returns Sharpe × √252. Sharpe is **capital-invariant**
+(capital cancels in mean/std), so the per-trade notional base doesn't affect it.
+Max drawdown is reported in **absolute INR** (`max_drawdown_inr`) as the headline —
+a % drawdown needs a real account size, which a universe-wide backtest with many
+overlapping positions doesn't define.
+
+### 10.4 / 10.5 / 10.6 — strategy results (net of cost)
+Cost-adjusted run over the FNO+Nifty500 universe (500 symbols on the dev DB),
+full available history. Reproduce with `scripts/phase3_eval.py --strategy <name>`.
+
+| Strategy | Trades | Win% | Profit factor | Gross Sharpe | Net Sharpe | Cost drag (Sharpe) | Max DD (₹) | Verdict |
+|---|---|---|---|---|---|---|---|---|
+| macd_willr_daily | 16,868 | 50.1 | 0.89 | −0.30 | **−2.03** | 1.73 | −2.49M | **SHELVE** — no edge; costs deepen a gross loss |
+| breakout_52wh | 1,142 | 47.9 | 0.93 | −0.15 | **−0.78** | 0.63 | −0.28M | **SHELVE** — net-negative (⚠ this is the *live* Phase-1 strategy) |
+| bb_ema9_30m | **0 trades** on dev DB | — | — | — | — | — | — | **CAN'T EVAL LOCALLY** — too little 30m intraday history; run on server |
+
+**Headline:** every strategy that's run so far is **net-negative after costs** — and
+two of three are even *gross*-negative on this universe/period, so cost drag isn't
+the only problem. `breakout_52wh` being net −0.78 is the important one: **it's the
+strategy currently firing live paper alerts.** That needs a hard look in Week 11
+(CPCV) before it's trusted, and is itself an argument for the Phase-3 gate.
+
+Caveats: profit factor < 1 on all (gross losses); the dev-DB history is short
+(~weeks–months of intraday, longer for daily), so these are provisional until run
+on the server's fuller history. **bb_ema9_30m produced 0 trades locally** (intraday
+candle history too thin) — must be evaluated on the server before any verdict.
+Max-DD in ₹ (capital-independent); net Sharpe is the decision metric (capital
+cancels in the ratio).
+
+---
+
 ## Week-6 spot-check findings (tasks 6.4 / 6.5 / 6.7)
 
 > Manual verification of `signal_outcomes`, `paper_trades`, and pre-market

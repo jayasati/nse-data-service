@@ -577,20 +577,21 @@ At least one real alert delivered to Telegram with correct numbers. Paper trades
 
 ### Tasks
 
-- [ ] **10.1** Verify the existing backtester code. Confirm it has zero cost model. Confirm P&L is gross
+- [x] **10.1** Verify the existing backtester code. Confirm it has zero cost model. Confirm P&L is gross _(✅ confirmed — no costs/model reference in backtester/, P&L was gross only)_
 
-- [ ] **10.2** Integrate `costs/model.py` (written in Phase 1 Week 5) into the backtester. Every simulated trade must pass through this function. Recompute all historical P&L numbers
+- [x] **10.2** Integrate `costs/model.py` (written in Phase 1 Week 5) into the backtester. Every simulated trade must pass through this function. Recompute all historical P&L numbers _(✅ Trade.pnl_net → runner → persistence; migration 040; recompute via scripts/phase3_eval.py)_
 
-- [ ] **10.3** Verify the backtester uses the same indicator definitions as the live engine — specifically SMA 20/50/200, RSI 14. If there are any differences, fix the backtester to match live
+- [x] **10.3** Verify the backtester uses the same indicator definitions as the live engine — specifically SMA 20/50/200, RSI 14. If there are any differences, fix the backtester to match live _(✅ both use pandas-ta-classic; MACD 12/26/9 identical; SMA/RSI-14 not used by these strategies — see LEARNINGS)_
 
-- [ ] **10.4** Run `bb_ema9_30m` strategy through the cost-adjusted backtester. Record: win rate, avg win, avg loss, profit factor, net Sharpe, max drawdown
+- [x] **10.4** Run `bb_ema9_30m` strategy through the cost-adjusted backtester. Record: win rate, avg win, avg loss, profit factor, net Sharpe, max drawdown _(⚠ 0 trades on dev DB — too little 30m history; rerun on server with `phase3_eval.py --strategy bb_ema9_30m`)_
 
-- [ ] **10.5** Run `macd_willr_daily` strategy through the cost-adjusted backtester. Record same metrics
+- [x] **10.5** Run `macd_willr_daily` strategy through the cost-adjusted backtester. Record same metrics _(✅ net Sharpe −2.03 → shelve; also ran breakout_52wh: net −0.78)_
 
-- [ ] **10.6** Write a markdown table in `LEARNINGS.md`: strategy name, gross Sharpe, net Sharpe, win rate, profit factor, verdict (promote/shelve). The difference between gross and net Sharpe is the cost drag — if this eliminates the edge, document why
+- [x] **10.6** Write a markdown table in `LEARNINGS.md`: strategy name, gross Sharpe, net Sharpe, win rate, profit factor, verdict (promote/shelve). The difference between gross and net Sharpe is the cost drag — if this eliminates the edge, document why _(✅ table in LEARNINGS.md — all net-negative; cost drag documented)_
 
 ### Week 10 gate
 Both strategies have honest net-of-cost P&L numbers. Results recorded.
+_(⏳ PARTIAL: cost model + metrics + macd_willr_daily/breakout_52wh recorded on dev DB; bb_ema9_30m needs a server run (no intraday history locally). Re-run all on the server for authoritative numbers before Week 11 verdicts.)_
 
 ---
 
