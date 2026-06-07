@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/backtest.css">
+<link rel="stylesheet" href="/static/css/trades.css">
+</head>
+<body>
+  <header>
+    <h1>Market Context</h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right">
+      <a class="link" href="/">Health →</a>
+      <a class="link" href="/stocks">Stocks →</a>
+      <a class="link" href="/trades">Trades →</a>
+      <button class="icon" id="themeBtn" title="Toggle light/dark">☀</button>
+    </div>
+  </header>
+
+  <section class="cards" id="cards">
+    <div class="card"><div class="card-label">Regime</div><div class="card-val" id="cRegime">—</div></div>
+    <div class="card"><div class="card-label">VIX</div><div class="card-val" id="cVix">—</div></div>
+    <div class="card"><div class="card-label">Nifty</div><div class="card-val" id="cNifty">—</div></div>
+    <div class="card"><div class="card-label">Above VWAP</div><div class="card-val" id="cBreadth">—</div></div>
+    <div class="card"><div class="card-label">A/D ratio</div><div class="card-val" id="cAd">—</div></div>
+    <div class="card"><div class="card-label">Confidence</div><div class="card-val" id="cConf">—</div></div>
+  </section>
+
+  <section class="splits">
+    <div class="split">
+      <div class="section-head">
+        <span>Sector radar — relative strength vs NIFTY 50</span>
+        <span class="dim" id="sectorAsOf"></span>
+      </div>
+      <div class="tablewrap">
+        <table id="sectorTable">
+          <thead>
+            <tr>
+              <th class="num">Rank</th>
+              <th>Sector</th>
+              <th>RS trend</th>
+              <th class="num">Return %</th>
+              <th class="num">RS ratio</th>
+            </tr>
+          </thead>
+          <tbody id="sectorBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">
+    Updated every 5 minutes during market hours by
+    <code>market/regime_job.py</code> and <code>market/sector_radar_job.py</code> ·
+    <a class="tbl" href="/api/market/regime">/api/market/regime</a> ·
+    <a class="tbl" href="/api/market/sectors">/api/market/sectors</a>
+  </div>
+
+  <script type="module" src="/static/js/pages/market.js"></script>
+</body>
+</html>
