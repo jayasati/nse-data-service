@@ -105,6 +105,53 @@ cancels in the ratio).
 
 ---
 
+## Phase 3 — Validation & Promotion (Week 11)
+
+### 11.1 / 11.3 — experiment registry (decisions ledger)
+`backtest_registry` (migration 041) records every evaluated run + verdict.
+Recorded via `scripts/phase3_eval.py --register`.
+
+### 11.2 — CPCV (fold-wise out-of-sample), corrected method
+**Method note (important):** these strategies have fixed rules (nothing to fit),
+so "CPCV" = fold-wise OOS consistency. The harness runs **one** full backtest
+then buckets trades into 10 contiguous date folds by entry date. (An earlier
+version re-ran the engine per fold window — that stripped each strategy's lookback
+(52w-high needs a year; MACD needs warmup) and produced fake 0-trade folds. Fixed.)
+
+### 11.3 — verdicts (dev DB, ~1yr history)
+
+| Strategy | Full net Sharpe | CPCV avg | Folds positive | Verdict |
+|---|---|---|---|---|
+| breakout_52wh | −0.78 | −0.34 | 4/10 | **SHELVED** |
+| macd_willr_daily | −2.03 | −2.60 | 1/10 | **SHELVED** |
+| bb_ema9_30m | — | — | — | not evaluable locally (intraday data) — run on server |
+| orb_vwap (benchmark) | — | — | — | strategy built; needs server intraday to backtest |
+
+**Decision: both existing strategies SHELVED.** Neither clears `net Sharpe > 0.5 +
+CPCV-positive`. `breakout_52wh` is inconsistent (4/10 folds positive — one or two
+good stretches, not a durable edge); `macd_willr_daily` is decisively negative.
+
+### 11.4 — promotion: NONE
+Nothing clears the gate → no new signal type added to `signals/detect.py`. The
+live detector is unchanged. **`breakout_52wh` is still firing live paper alerts
+but backtests/CPCVs net-negative** — flagged for a keep-or-pull call; it should not
+graduate from paper to real capital on this evidence.
+
+### 11.5 — ORB+VWAP benchmark
+Built `backtester/strategies/orb_vwap` (opening-range breakout + VWAP filter +
+ATR stop), registered, unit-tested on synthetic bars. **Can't be backtested
+locally** (no intraday history); run on the server to record its benchmark net
+Sharpe in the registry:
+`PYTHONPATH=src python scripts/phase3_eval.py --strategy orb_vwap --cpcv --register`
+
+### ⚠ Caveat on all Phase-3 numbers
+The dev DB holds only ~1 year of daily history and almost no intraday — so these
+verdicts are **provisional**. Re-run `phase3_eval.py --strategy all --cpcv
+--register` on the **server** (fuller history) before treating any shelve/keep
+decision as final, especially the live `breakout_52wh`.
+
+---
+
 ## Week-6 spot-check findings (tasks 6.4 / 6.5 / 6.7)
 
 > Manual verification of `signal_outcomes`, `paper_trades`, and pre-market

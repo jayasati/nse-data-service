@@ -599,7 +599,7 @@ _(⏳ PARTIAL: cost model + metrics + macd_willr_daily/breakout_52wh recorded on
 
 ### Tasks
 
-- [ ] **11.1** Set up the experiment registry: create `backtest_registry` table:
+- [x] **11.1** Set up the experiment registry: create `backtest_registry` table: _(✅ migration 041 + `_core/registry.py`; recorded via `phase3_eval.py --register`)_
   ```sql
   CREATE TABLE IF NOT EXISTS backtest_registry (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -619,23 +619,23 @@ _(⏳ PARTIAL: cost model + metrics + macd_willr_daily/breakout_52wh recorded on
   );
   ```
 
-- [ ] **11.2** Implement CPCV validation for both strategies: split the data into 10 temporal folds. No random shuffling — time order preserved. For each fold, train on all other folds and test on this one. Report average net Sharpe across folds. If average CPCV Sharpe is positive after costs → strategy passes
+- [x] **11.2** Implement CPCV validation for both strategies: split the data into 10 temporal folds. No random shuffling — time order preserved. For each fold, train on all other folds and test on this one. Report average net Sharpe across folds. If average CPCV Sharpe is positive after costs → strategy passes _(✅ `_core/cpcv.py` — fixed-rule strategies have nothing to fit, so implemented as fold-wise OOS: one full run, trades bucketed into 10 date folds. breakout_52wh CPCV −0.34, macd −2.60 → both FAIL)_
 
-- [ ] **11.3** Decision on each strategy:
+- [x] **11.3** Decision on each strategy: _(✅ both SHELVED in registry — net Sharpe & CPCV both negative; see LEARNINGS)_
   - If net Sharpe > 0.5 AND CPCV average positive → promote: add to `signals/detect.py` as a new signal type, feeding the same `paper_trades` loop
   - If net Sharpe < 0 or CPCV average negative → shelve: write explicit reasons in `backtest_registry.notes`
   - If mixed results → flag as needs_work, note specific conditions where it works
 
-- [ ] **11.4** If promoting: add the new signal type to `signals/detect.py`, enrich it the same way as `long_buildup`, write paper trades from day one of promotion
+- [x] **11.4** If promoting: add the new signal type to `signals/detect.py`, enrich it the same way as `long_buildup`, write paper trades from day one of promotion _(✅ N/A — nothing cleared the gate, so no promotion; live detector unchanged, correctly)_
 
-- [ ] **11.5** Establish ORB-with-VWAP-filter as benchmark: backtest a simple Opening Range Breakout strategy with VWAP filter (long if price breaks opening range high AND above VWAP at 09:30, with ATR-based SL). This becomes the bar that every future strategy must beat. Record benchmark net Sharpe in `backtest_registry`
+- [~] **11.5** Establish ORB-with-VWAP-filter as benchmark: backtest a simple Opening Range Breakout strategy with VWAP filter (long if price breaks opening range high AND above VWAP at 09:30, with ATR-based SL). This becomes the bar that every future strategy must beat. Record benchmark net Sharpe in `backtest_registry` _(✅ strategy built + registered + unit-tested; ⏳ backtest needs server intraday data — run `phase3_eval.py --strategy orb_vwap --register`)_
 
 ### Phase 3 exit criteria (ALL must be met)
-- [ ] Backtester P&L is net-of-cost for all strategies
-- [ ] Experiment registry seeded and being used for all runs
-- [ ] Both existing strategies are either promoted (gate cleared) or shelved with documented reasons
-- [ ] ORB-with-VWAP-filter benchmark backtest recorded
-- [ ] All prior phase stability criteria still met
+- [x] Backtester P&L is net-of-cost for all strategies _(✅ every trade through costs/model; migration 040)_
+- [x] Experiment registry seeded and being used for all runs _(✅ backtest_registry; phase3_eval --register)_
+- [x] Both existing strategies are either promoted (gate cleared) or shelved with documented reasons _(✅ both shelved, reasons in LEARNINGS + registry)_
+- [~] ORB-with-VWAP-filter benchmark backtest recorded _(⏳ strategy built; backtest needs server intraday data)_
+- [ ] All prior phase stability criteria still met _(✅ 709 tests green; ⏳ the live 5-day run is still the Phase-1 open item)_
 
 ---
 ---

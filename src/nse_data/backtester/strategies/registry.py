@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .._core.types import Signal, StrategyConfig, Trade
-from . import bb_ema9_30m, breakout_52wh, macd_willr_daily
+from . import bb_ema9_30m, breakout_52wh, macd_willr_daily, orb_vwap
 
 EngineFn = Callable[..., tuple[list[Signal], list[Trade]]]
 
@@ -37,6 +37,10 @@ STRATEGIES: dict[str, StrategySpec] = {
     "breakout_52wh": StrategySpec(
         engine_fn=breakout_52wh.run_backtest_for_symbol,
         config_cls=breakout_52wh.Breakout52whConfig,
+    ),
+    "orb_vwap": StrategySpec(           # ORB+VWAP benchmark (task 11.5)
+        engine_fn=orb_vwap.run_backtest_for_symbol,
+        config_cls=orb_vwap.OrbVwapConfig,
     ),
 }
 
