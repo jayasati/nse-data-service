@@ -15,7 +15,9 @@ echo "==> [1/5] backing up DB (schema changes are forward-only)"
 if [ -f data/nse.db ]; then
   mkdir -p "$BK"
   cp -a data/nse.db "$BK/nse.db.$(date +%Y%m%d-%H%M%S)"
-  ls -1t "$BK"/nse.db.* | tail -n +31 | xargs -r rm -f   # keep last 30
+  # Keep only the single most recent raw pre-deploy snapshot (rollback for the
+  # last deploy). At ~6 GB each these are huge, so we don't retain history here.
+  ls -1t "$BK"/nse.db.* | tail -n +2 | xargs -r rm -f   # keep last 1
 else
   echo "    (no DB yet — skipping)"
 fi
