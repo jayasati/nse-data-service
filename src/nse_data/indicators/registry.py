@@ -11,11 +11,14 @@ below, and append an instance to INDICATORS.
 from __future__ import annotations
 
 from .base import Indicator
+from .eod_full import EodFullSet
 from .momentum.macd import MovingAverageConvergenceDivergence
 from .momentum.macd_intraday import MacdIntraday
 from .momentum.rsi import RelativeStrengthIndex
 from .momentum.rsi_intraday import RsiIntraday
 from .trend.sma import SimpleMovingAverage
+from .trend.supertrend_intraday import SupertrendIntraday
+from .volume.volume_delta import VolumeDelta
 from .volume.vwap_intraday import VwapIntraday
 
 INDICATORS: tuple[Indicator, ...] = (
@@ -23,9 +26,12 @@ INDICATORS: tuple[Indicator, ...] = (
     SimpleMovingAverage(),
     RelativeStrengthIndex(),
     MovingAverageConvergenceDivergence(),
+    EodFullSet(),
     # Intraday (5-min, off raw_intraday_candles + live feed) — recomputed
     # every minute during market hours by the live scheduler.
     RsiIntraday(),
     MacdIntraday(),
     VwapIntraday(),
+    SupertrendIntraday(),
+    VolumeDelta(),
 )

@@ -40,7 +40,7 @@ from apscheduler.triggers.cron import CronTrigger
 from ..scheduler import market_hours
 from ..storage.db import open_db
 from .live_snapshot import build_snapshot, write_snapshots
-from .universe import fno_plus_nifty500
+from .universe import live_universe
 
 log = structlog.get_logger()
 
@@ -67,7 +67,7 @@ def run_pre_market_load(
     now = now or market_hours.now_ist()
     conn = open_db(db_path)
     try:
-        symbols = fno_plus_nifty500(conn)
+        symbols = live_universe(conn)
 
         rows = [build_snapshot(conn, s, now=now) for s in symbols]
         seeded = write_snapshots(conn, rows)

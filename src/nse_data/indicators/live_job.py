@@ -27,7 +27,7 @@ from ..scheduler.market_hours import is_market_open
 from ..storage.db import open_db
 from .compute import run_all
 from .live_snapshot import run_snapshot_pass
-from .universe import fno_plus_nifty500
+from .universe import live_universe
 
 log = structlog.get_logger()
 
@@ -50,7 +50,7 @@ def run_intraday_pass(db_path: str) -> dict:
     redis_client = _connect_redis()
     conn = open_db(db_path)
     try:
-        symbols = fno_plus_nifty500(conn)
+        symbols = live_universe(conn)
         results = run_all(conn, symbols, cadence="intraday")
         snapshot = run_snapshot_pass(conn, symbols, redis_client=redis_client)
     finally:

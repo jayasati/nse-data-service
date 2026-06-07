@@ -20,6 +20,7 @@ from .bot.morning_brief import register_morning_brief
 from .market.regime_job import register_regime_job
 from .market.sector_radar_job import register_sector_radar_job
 from .signals.detect import register_signal_job
+from .signals.watchlist import register_watchlist_job
 from .signals.outcome_labeler import register_outcome_labeler
 from .signals.paper_tracker import register_paper_tracker
 from .scheduler.catchup import run_due
@@ -121,6 +122,9 @@ def main() -> int:
     # cues, GIFT-implied open, regime + posture, overnight events, expiry and
     # Nifty pivot S/R (Phase 2, Week 9).
     registered.append(register_morning_brief(scheduler, db_path))
+    # Live watchlist: every 15 min, refreshes the dynamic watchlist (rating/news/
+    # OI-spurt/52wh triggers) that the live universe adds to the F&O core (Phase 4).
+    registered.append(register_watchlist_job(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:

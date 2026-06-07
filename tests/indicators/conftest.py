@@ -28,6 +28,8 @@ _INDICATOR_MIGRATIONS = (
     MIGRATIONS_DIR / "031_drop_redundant_intraday_indexes.sql",
     MIGRATIONS_DIR / "034_indicator_vwap_5m.sql",
     MIGRATIONS_DIR / "035_indicator_live.sql",
+    MIGRATIONS_DIR / "043_indicator_eod_set.sql",   # indicator_eod + live columns
+    MIGRATIONS_DIR / "044_intraday_supertrend_voldelta.sql",
 )
 
 

@@ -651,7 +651,7 @@ _(⏳ PARTIAL: cost model + metrics + macd_willr_daily/breakout_52wh recorded on
 
 ### Tasks
 
-- [ ] **12.1** Add to the nightly EOD indicator compute job (`indicators/compute.py`):
+- [x] **12.1** Add to the nightly EOD indicator compute job (`indicators/compute.py`): _(✅ `indicators/eod_full.py` → `indicator_eod`: EMA9/21, BB+squeeze, ADX/DI, Supertrend, OBV, vol SMA20/ratio. Note: ATR14 daily already computed live in the snapshot from bhavcopy; not duplicated into the eod table.)_
   - EMA 9 and EMA 21 (from bhavcopy close)
   - ATR 14 (already have in live_job — add nightly version from bhavcopy OHLC)
   - Bollinger Bands: upper = SMA20 + 2×std, lower = SMA20 − 2×std, width = (upper−lower)/SMA20, `bb_squeeze` = True when width < 20th percentile of width over last 252 days
@@ -660,15 +660,16 @@ _(⏳ PARTIAL: cost model + metrics + macd_willr_daily/breakout_52wh recorded on
   - OBV (running from bhavcopy volume × direction)
   - Volume SMA 20, volume_ratio (vs 20d avg)
 
-- [ ] **12.2** Add to `indicator_live` table (new columns via migration):
+- [x] **12.2** Add to `indicator_live` table (new columns via migration): _(✅ migration 043; live snapshot folds settled EOD values each minute — hybrid: settled nightly, decision-ready vs live price)_
   - `ema9`, `ema21`, `bb_upper`, `bb_lower`, `bb_squeeze`, `adx`, `supertrend_direction`, `obv`
 
-- [ ] **12.3** Upgrade trend_regime classifier to use EMA9/21 in addition to SMA: if `ema9 > ema21 > sma50 > sma200` = strong_uptrend (more precise than SMA-only)
+- [x] **12.3** Upgrade trend_regime classifier to use EMA9/21 in addition to SMA: if `ema9 > ema21 > sma50 > sma200` = strong_uptrend (more precise than SMA-only) _(✅ classify_trend_regime takes optional ema9/ema21; SMA-only fallback preserved)_
 
-- [ ] **12.4** Add 5-min intraday indicators to `live_job.py`: Supertrend (intraday), Volume Delta (buy vol − sell vol, approximated from candle direction and volume)
+- [x] **12.4** Add 5-min intraday indicators to `live_job.py`: Supertrend (intraday), Volume Delta (buy vol − sell vol, approximated from candle direction and volume) _(✅ SupertrendIntraday + VolumeDelta registered (cadence=intraday); latest values surfaced into indicator_live as supertrend_5m_dir / vol_delta)_
 
 ### Week 12 gate
 Full indicator set computing in EOD job. EMA, BB, ADX, Supertrend all in `indicator_live`. BB squeeze flag working.
+_(✅ met: indicator_eod computes nightly; EMA/BB/ADX/Supertrend/OBV surfaced in indicator_live each minute; bb_squeeze works once a symbol has >~272 daily bars (252-day percentile window). PLUS Phase-4 focused universe: live scope cut from ~750 to ~200 core F&O + dynamic watchlist.)_
 
 ---
 

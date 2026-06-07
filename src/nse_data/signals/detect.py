@@ -30,7 +30,7 @@ import structlog
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from ..indicators.universe import fno_plus_nifty500
+from ..indicators.universe import live_universe
 from ..scheduler.market_hours import is_market_open, now_ist
 from ..storage.db import open_db
 from . import compute, enrich, feature_store
@@ -99,7 +99,7 @@ def run_detection_pass(
     detected_at = now.isoformat()
     market_regime = _market_regime(redis_client)
 
-    symbols = fno_plus_nifty500(conn)
+    symbols = live_universe(conn)
     blacklist = _load_blacklist(redis_client)
     price_bands = _load_price_bands(conn)
     listing_bars = _load_listing_bars(conn)

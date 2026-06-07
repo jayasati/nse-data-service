@@ -49,6 +49,18 @@ _VALUE_COLUMNS: tuple[str, ...] = (
     "atr_14_daily", "atr_14_5m",
     "rsi_5m",
     "trend_regime", "momentum_state",
+    # Full EOD set surfaced live (Week 12) — settled daily values from
+    # indicator_eod, compared against the live price each minute.
+    "ema9", "ema21", "bb_upper", "bb_lower", "bb_squeeze",
+    "adx", "supertrend_direction", "obv",
+    # Intraday 5-min set (Week 12, task 12.4) — live flip + pressure.
+    "supertrend_5m_dir", "vol_delta",
+)
+
+# Latest settled EOD columns pulled into the snapshot (subset of indicator_eod).
+_EOD_FIELDS: tuple[str, ...] = (
+    "ema9", "ema21", "bb_upper", "bb_lower", "bb_squeeze",
+    "adx", "supertrend_dir", "obv",
 )
 _ALL_COLUMNS: tuple[str, ...] = ("symbol", "updated_at", *_VALUE_COLUMNS)
 
@@ -95,6 +107,7 @@ def build_snapshot(
     vwaps = _session_vwaps(conn, symbol, now)
     vwap = vwaps[-1] if vwaps else None
     rsi = _latest_rsi_5m(conn, symbol)
+    eod = _latest_eod(conn, symbol)
 
     return {
         "symbol": symbol,
@@ -105,8 +118,22 @@ def build_snapshot(
         "atr_14_daily": atr_latest(daily),
         "atr_14_5m": atr_latest(intraday),
         "rsi_5m": rsi,
-        "trend_regime": classify_trend_regime(price, sma50, sma200),
+        "trend_regime": classify_trend_regime(
+            price, sma50, sma200, eod.get("ema9"), eod.get("ema21")
+        ),
         "momentum_state": classify_momentum_state(rsi),
+        "ema9": eod.get("ema9"),
+        "ema21": eod.get("ema21"),
+        "bb_upper": eod.get("bb_upper"),
+        "bb_lower": eod.get("bb_lower"),
+        "bb_squeeze": eod.get("bb_squeeze"),
+        "adx": eod.get("adx"),
+        "supertrend_direction": eod.get("supertrend_dir"),
+        "obv": eod.get("obv"),
+        "supertrend_5m_dir": _latest_intraday(
+            conn, "indicator_supertrend_5m", "supertrend_dir", symbol),
+        "vol_delta": _latest_intraday(
+            conn, "indicator_volume_delta_5m", "cum_vol_delta", symbol),
     }
 
 
@@ -215,6 +242,39 @@ def _latest_sma(conn: sqlite3.Connection, symbol: str) -> tuple[float | None, fl
     if row is None:
         return (None, None)
     return (row[0], row[1])
+
+
+def _latest_eod(conn: sqlite3.Connection, symbol: str) -> dict:
+    """Latest settled indicator_eod row for `symbol` as a dict (empty if none).
+
+    Daily-bar indicators don't change intraday, so reading the last settled row
+    and comparing it against the live price each minute is the correct hybrid —
+    same shape as `_latest_sma`. (Live intraday flips are the 5-min Supertrend's
+    job, not the daily one.)
+    """
+    if not _has_table(conn, "indicator_eod"):
+        return {}
+    row = conn.execute(
+        f"SELECT {','.join(_EOD_FIELDS)} FROM indicator_eod "
+        "WHERE symbol = ? ORDER BY date DESC LIMIT 1",
+        (symbol,),
+    ).fetchone()
+    if row is None:
+        return {}
+    return dict(zip(_EOD_FIELDS, row))
+
+
+def _latest_intraday(
+    conn: sqlite3.Connection, table: str, column: str, symbol: str,
+) -> float | None:
+    """Latest `column` from a 5-min intraday indicator table (ts-keyed)."""
+    if not _has_table(conn, table):
+        return None
+    row = conn.execute(
+        f"SELECT {column} FROM {table} WHERE symbol = ? ORDER BY ts DESC LIMIT 1",
+        (symbol,),
+    ).fetchone()
+    return row[0] if row and row[0] is not None else None
 
 
 def _latest_rsi_5m(conn: sqlite3.Connection, symbol: str) -> float | None:

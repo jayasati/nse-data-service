@@ -34,8 +34,10 @@ def classify_trend_regime(
     price: float | None,
     sma50: float | None,
     sma200: float | None,
+    ema9: float | None = None,
+    ema21: float | None = None,
 ) -> str | None:
-    """Classify trend from price vs the 50/200-day SMAs (task 3.4).
+    """Classify trend from price vs the 50/200-day SMAs (task 3.4 / 12.3).
 
     The two "strong" buckets require a fully-stacked alignment
     (price > sma50 > sma200, or the mirror image) — the textbook signature of
@@ -44,15 +46,27 @@ def classify_trend_regime(
     any order. Anything else — price wedged between the two averages — is
     sideways.
 
-    Returns None if any input is missing (e.g. <200 daily bars, so sma200 is
-    still NULL); the caller stores NULL and the signal engine skips the symbol.
+    Task 12.3: when EMA 9/21 are supplied, the "strong" bucket tightens to the
+    full fast→slow stack `ema9 > ema21 > sma50 > sma200` (mirror for down) — a
+    more precise momentum signature than price-vs-SMA alone. EMAs are optional,
+    so pre-12 callers keep the SMA-only behaviour.
+
+    Returns None if any SMA input is missing (e.g. <200 daily bars).
     """
     if price is None or sma50 is None or sma200 is None:
         return None
-    if price > sma50 > sma200:
-        return "strong_uptrend"
-    if price < sma50 < sma200:
-        return "strong_downtrend"
+
+    if ema9 is not None and ema21 is not None:
+        if ema9 > ema21 > sma50 > sma200:
+            return "strong_uptrend"
+        if ema9 < ema21 < sma50 < sma200:
+            return "strong_downtrend"
+    else:
+        if price > sma50 > sma200:
+            return "strong_uptrend"
+        if price < sma50 < sma200:
+            return "strong_downtrend"
+
     if price > sma50 and price > sma200:
         return "uptrend"
     if price < sma50 and price < sma200:
