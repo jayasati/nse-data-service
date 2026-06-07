@@ -19,6 +19,8 @@ from .indicators.delivery_tracker import register_delivery_job
 from .indicators.levels import register_levels_job
 from .indicators.live_job import register_live_job
 from .indicators.patterns import register_patterns_job
+from .parsers.classify import register_classify_job
+from .parsers.rating_extractor import register_rating_job
 from .profile.builder import register_profile_builder
 from .indicators.pre_market_loader import register_pre_market_loader
 from .bot.morning_brief import register_morning_brief
@@ -141,6 +143,10 @@ def main() -> int:
     registered.append(register_patterns_job(scheduler, db_path))
     # Nightly 19:30 stock-profile roll-up → stock_profile_daily (ML archive, Wk 15).
     registered.append(register_profile_builder(scheduler, db_path))
+    # Announcement priority classification (10 min) + credit-rating extractor →
+    # raw_rating_actions + credit_* alerts (20 min) — Phase 5, Week 16.
+    registered.append(register_classify_job(scheduler, db_path))
+    registered.append(register_rating_job(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:
