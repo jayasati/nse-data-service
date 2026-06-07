@@ -6,9 +6,14 @@
 >
 > **Connect (preferred — AWS SSM, immune to dynamic-IP changes):**
 > ```bash
-> nse-shell     # SSM shell  (then: sudo su - ubuntu && cd /opt/nse-data-service)
-> nse-tunnel    # dashboard → http://localhost:8000
+> nse-shell                       # 1. open the SSM session (lands as ssm-user, bare $ prompt)
+> sudo su - ubuntu                # 2. switch to the app user 'ubuntu'
+> cd /opt/nse-data-service        # 3. go to the project folder
+> source .venv/bin/activate       # 4. activate the server venv (only for python/migrate cmds)
 > ```
+> Confirm you're in the right place: `whoami` → `ubuntu`, `pwd` → `/opt/nse-data-service`.
+> Dashboard tunnel (separate terminal): `nse-tunnel` → http://localhost:8000
+>
 > (`nse-shell`/`nse-tunnel` are bash functions in `~/.bashrc`. SSH fallback:
 > `./scripts/allow_ssh.sh && ssh -i ~/nse-data-service/stock-key.pem ubuntu@13.200.215.86`.)
 >
@@ -18,6 +23,20 @@
 > # then on the server (data/.env are gitignored — DB & secrets untouched):
 > ./scripts/deploy.sh ubuntu     # pull + deps + migrations + restart services
 > ```
+>
+> **Applying DB migrations on the server** (run from `/opt/nse-data-service`):
+> `deploy.sh` already does this — these are for applying a migration *without* a
+> full redeploy, or to verify one landed. The runner is idempotent (applied files
+> are skipped) and never touches `data/`/`.env`:
+> ```bash
+> git pull --ff-only origin main                      # get the new migrations/0NN_*.sql
+> .venv/bin/python scripts/migrate.py --status        # list applied vs pending (applies nothing)
+> .venv/bin/python scripts/migrate.py                 # apply the pending files onto the live DB
+> sudo systemctl restart nse-collector@ubuntu         # pick up the new code
+> ```
+> `main.py` also applies pending migrations on every boot, so a plain
+> `systemctl restart` would suffice — running `migrate.py` first just lets you see
+> what changed before the service starts.
 >
 > **Check it's alive:**
 > ```bash

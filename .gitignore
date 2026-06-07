@@ -12,3 +12,4 @@ tests/financial_extraction
 .claude
 Research
 *.pem
+src/*.egg-info/
