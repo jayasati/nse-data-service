@@ -27,6 +27,7 @@ import os
 import sqlite3
 import time
 from datetime import datetime
+from datetime import time as dt_time
 
 import structlog
 
@@ -34,14 +35,21 @@ from ..market.regime_job import latest_market_state
 from ..market.sector_map import load_sector_map
 from ..market.sector_radar_job import latest_sector_ranks
 from ..market.time_rules import time_rule
-from ..scheduler.market_hours import is_market_open, now_ist
+from ..scheduler.market_hours import is_market_open, is_trading_day, now_ist
 from ..signals import enrich
 from ..signals.confidence import score_confidence
 from ..parsers.rating_extractor import latest_credit_by_symbol, is_junk_downgrade_kill
 
-# Signal types that are intraday (credit affects them only on the event day);
-# everything else is treated as swing (standing credit quality applies).
-INTRADAY_SIGNAL_TYPES = {"oi_spurt", "raw_oi_spurts"}
+
+def _topic_id(name: str) -> int | None:
+    """message_thread_id for a Telegram topic, from env (None = main channel)."""
+    val = os.environ.get(f"TELEGRAM_TOPIC_{name.upper()}")
+    return int(val) if val and val.lstrip("-").isdigit() else None
+
+
+def _topic_for(sig: dict) -> int | None:
+    """Route a signal to its Telegram topic by horizon (swing vs intraday)."""
+    return _topic_id("intraday" if sig.get("horizon") == "intraday" else "swing")
 from ..signals.detect import (
     _hard_gated, _load_blacklist, _load_listing_bars, _load_price_bands,
     _load_quality_scores,
@@ -66,6 +74,9 @@ _SIGNAL_EMOJI = "🟢"
 _SIGNAL_LABELS = {
     "long_buildup": "Long Buildup",
     "breakout_52wh": "52-Week High Breakout",
+    "orb_breakout": "Opening Range Breakout",
+    "vwap_reclaim": "VWAP Reclaim",
+    "oi_spurt": "OI Spurt",
 }
 
 
@@ -107,7 +118,7 @@ def dispatch_pass(
     rows = conn.execute(
         "SELECT s.id, s.symbol, s.signal_type, s.detected_at, s.price, "
         "s.oi_change_pct, s.price_change_pct, s.volume_ratio, sf.atr_14_daily, "
-        "s.fake_breakout_risk "
+        "s.fake_breakout_risk, s.horizon "
         "FROM signals s LEFT JOIN signal_features sf ON sf.signal_id = s.id "
         "WHERE s.dispatched = 0 ORDER BY s.detected_at ASC LIMIT ?",
         (_POLL_LIMIT,),
@@ -143,10 +154,18 @@ def dispatch_pass(
             counts["gated"] += 1
             continue
 
-        # Time-of-day suppression (09:15–09:30, 15:20+): hold, don't send. Left
-        # undispatched so a NO_TRADE signal can re-evaluate once the window opens;
-        # post-15:20 signals simply age out.
-        if rule.suppressed:
+        # Horizon decides timing. Intraday respects the time-of-day gate
+        # (09:15–09:30 NO_TRADE, lunch floor, 15:20+ NO_NEW_TRADES). Swing is
+        # timing-agnostic — it can fire late-day or in the EOD batch and isn't
+        # scaled by the intraday time multiplier.
+        is_intraday = sig.get("horizon") == "intraday"
+        if is_intraday:
+            eff_suppressed, eff_multiplier = rule.suppressed, rule.multiplier
+            eff_threshold = threshold
+        else:
+            eff_suppressed, eff_multiplier = False, 1.0
+            eff_threshold = CONFIDENCE_THRESHOLD
+        if eff_suppressed:
             counts["time_suppressed"] += 1
             continue
 
@@ -162,18 +181,19 @@ def dispatch_pass(
             bearish_divergence=_has_pattern(conn, sig["symbol"], "bearish_divergence", now),
             fake_breakout=bool(sig.get("fake_breakout_risk")),
             credit=credit,
-            is_intraday=sig["signal_type"] in INTRADAY_SIGNAL_TYPES,
-            time_multiplier=rule.multiplier, long_penalty=long_penalty,
+            is_intraday=is_intraday,
+            time_multiplier=eff_multiplier, long_penalty=long_penalty,
         )
 
-        if confidence > threshold:
+        if confidence > eff_threshold:
             text = format_message(
                 sig, context, confidence, market=market,
                 sector=sector, sector_info=sec, quality=quality,
                 levels=_load_levels(conn, sig["symbol"]),
                 delivery=_load_delivery(conn, sig["symbol"]),
+                credit=credit,
             )
-            if sender(token, chat_id, text):
+            if sender(token, chat_id, text, _topic_for(sig)):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
             else:
@@ -247,7 +267,7 @@ def _load_delivery(conn: sqlite3.Connection, symbol: str) -> dict | None:
 def _row_to_signal(row) -> dict:
     keys = ("id", "symbol", "signal_type", "detected_at", "price",
             "oi_change_pct", "price_change_pct", "volume_ratio", "atr_14_daily",
-            "fake_breakout_risk")
+            "fake_breakout_risk", "horizon")
     return dict(zip(keys, row))
 
 
@@ -276,28 +296,72 @@ def format_message(
     sector: str | None = None, sector_info: dict | None = None,
     quality: float | None = None,
     levels: dict | None = None, delivery: dict | None = None,
+    credit: dict | None = None,
 ) -> str:
-    """Alert text with market + sector + stock + quality/delivery/levels context."""
+    """Route to the intraday or swing template based on the signal's horizon."""
+    if sig.get("horizon") == "intraday":
+        return _format_intraday(sig, context, confidence, market, sector,
+                                sector_info, levels)
+    return _format_swing(sig, context, confidence, market, sector, sector_info,
+                         quality, levels, delivery, credit)
+
+
+def _format_intraday(sig, context, confidence, market, sector, sector_info, levels) -> str:
+    """Lean, time-critical alert: VWAP/momentum + today's levels, flat by 15:15."""
     label = _SIGNAL_LABELS.get(sig["signal_type"], sig["signal_type"])
     arrow = _slope_arrow(context.get("vwap_slope"))
     sl_t1 = _format_bracket(sig.get("price"), sig.get("atr_14_daily"))
-
     return (
-        f"{_SIGNAL_EMOJI} {sig['symbol']} — {label}\n"
+        f"⚡ {sig['symbol']} — {label} [INTRADAY]\n"
         f"OI: {_fmt(sig.get('oi_change_pct'))}% | "
         f"Price: {_fmt(sig.get('price_change_pct'))}% | "
         f"Vol: {_fmt(sig.get('volume_ratio'))}×\n\n"
         f"{_format_market(market)}"
         f"{_format_sector(sector, sector_info)}\n"
-        f"Stock: VWAP {context.get('price_vs_vwap') or 'n/a'} {arrow} | "
+        f"VWAP {context.get('price_vs_vwap') or 'n/a'} {arrow} | "
         f"RSI(5m): {_fmt(context.get('rsi_5m'))} | "
         f"Trend: {context.get('trend_regime') or 'n/a'}\n"
+        f"{_format_levels(levels)}\n"
+        f"Confidence: {_tier(confidence)} ({confidence:.2f})\n"
+        f"{sl_t1} | ⏰ Flat by 15:15"
+    )
+
+
+def _format_swing(sig, context, confidence, market, sector, sector_info,
+                  quality, levels, delivery, credit) -> str:
+    """Positional alert: daily trend + fundamentals/credit/delivery, hold days."""
+    label = _SIGNAL_LABELS.get(sig["signal_type"], sig["signal_type"])
+    sl_t1 = _format_bracket(sig.get("price"), sig.get("atr_14_daily"))
+    return (
+        f"📈 {sig['symbol']} — {label} [SWING]\n"
+        f"Price: {_fmt(sig.get('price_change_pct'))}% | "
+        f"Vol: {_fmt(sig.get('volume_ratio'))}×\n\n"
+        f"{_format_market(market)}"
+        f"{_format_sector(sector, sector_info)}\n"
+        f"Trend: {context.get('trend_regime') or 'n/a'}\n"
         f"{_format_quality(quality)}"
+        f"{_format_credit(credit)}"
         f"{_format_delivery(delivery)}"
         f"{_format_levels(levels)}\n"
         f"Confidence: {_tier(confidence)} ({confidence:.2f})\n"
-        f"{sl_t1} | Flat by: 15:20"
+        f"{sl_t1} | 📅 Hold days; trail 21-EMA"
     )
+
+
+def _format_credit(credit: dict | None) -> str:
+    """Credit context line for swing alerts (grade + quality + recent action)."""
+    if not credit:
+        return ""
+    parts = []
+    grade, q = credit.get("min_lt_grade"), credit.get("quality_score")
+    if grade:
+        parts.append(grade + (f" q{q:.0f}" if q is not None else ""))
+    action, days = credit.get("action"), credit.get("days_since")
+    if action and days is not None and days <= 5 and action != "reaffirm":
+        parts.append(f"recent {action}")
+    if credit.get("is_junk"):
+        parts.append("⚠JUNK")
+    return ("Credit: " + " | ".join(parts) + "\n") if parts else ""
 
 
 def _format_quality(quality: float | None) -> str:
@@ -382,16 +446,21 @@ def _fmt(value) -> str:
 # Telegram transport
 # ============================================================================
 
-def send_telegram(token: str | None, chat_id: str | None, text: str) -> bool:
-    """POST one message to Telegram. False (no raise) if unconfigured/failed."""
+def send_telegram(token: str | None, chat_id: str | None, text: str,
+                  thread_id: int | None = None) -> bool:
+    """POST one message to Telegram. False (no raise) if unconfigured/failed.
+    `thread_id` routes to a topic (message_thread_id) when the chat has topics."""
     if not token or not chat_id:
         log.warning("telegram_not_configured")
         return False
     try:
         import requests
+        payload: dict = {"chat_id": chat_id, "text": text}
+        if thread_id is not None:
+            payload["message_thread_id"] = thread_id
         resp = requests.post(
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
+            json=payload,
             timeout=10,
         )
         if resp.status_code != 200:
@@ -430,7 +499,10 @@ def main(db_path: str = "data/nse.db") -> int:
 
     while True:
         try:
-            if is_market_open():
+            # Run during market hours, AND through the EOD window so swing
+            # setups confirmed near/after the close still dispatch (the EOD
+            # batch). Intraday signals stay suppressed post-15:20 by the gate.
+            if is_market_open() or _in_eod_window():
                 conn = open_db(db_path)
                 try:
                     report = dispatch_pass(
@@ -443,6 +515,14 @@ def main(db_path: str = "data/nse.db") -> int:
         except Exception:
             log.exception("dispatcher_pass_failed")
         time.sleep(_POLL_INTERVAL_SECONDS)
+
+
+def _in_eod_window(now: datetime | None = None) -> bool:
+    """Trading day, 15:20–18:30 IST — the post-close window for swing EOD sends."""
+    now = now or now_ist()
+    if not is_trading_day(now.date()):
+        return False
+    return dt_time(15, 20) <= now.time() <= dt_time(18, 30)
 
 
 def _connect_redis():

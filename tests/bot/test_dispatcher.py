@@ -11,7 +11,7 @@ from .conftest import NOW, FakeRedis, seed_signal, set_high_confidence
 
 def _collecting_sender():
     sent = []
-    def sender(token, chat_id, text):
+    def sender(token, chat_id, text, thread_id=None):
         sent.append((token, chat_id, text))
         return True
     return sent, sender
@@ -82,7 +82,7 @@ def test_send_failure_not_marked(bot_db):
     r = FakeRedis()
     set_high_confidence(r)
 
-    def failing_sender(token, chat_id, text):
+    def failing_sender(token, chat_id, text, thread_id=None):
         return False
 
     report = d.dispatch_pass(bot_db, token=None, chat_id=None,

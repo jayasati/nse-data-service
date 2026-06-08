@@ -906,6 +906,20 @@ Rating extractor processing new announcements. `raw_rating_actions` populating. 
 _(✅ met in code: extractor + raw_rating_actions + credit_* signals + rating alert template, all tested. Alerts go out directly, recency-guarded so the backfill stays silent. ⏳ live: depends on the PDF text pipeline keeping rating PDFs fresh on the server + a real downgrade arriving.)_
 _(➕ Rework: a filing is multi-instrument/multi-agency. Migration 052 adds `raw_rating_lines` (per-instrument) + headline cols on `raw_rating_actions` (agencies, worst_action, min_lt_grade, credit_quality_score 0–100, junk/outlook/ST flags). Alerts on all-but-reaffirm/outstanding. Robust against scenario boilerplate, outlook-only changes, Moody's-scale, 'S&P BSE'/'Fitch Group' false agencies, stray single-letter grades. Verified on 39 real filings: 100% agency, 92% grade.)_
 
+### Extras done beyond the Week-16 tasks (➕)
+Work completed on top of 16.1–16.9, in this build:
+
+- [x] **Rating-parser robustness** — driven by real PDFs (INDUSINDBK, KRYSTAL, SBFC…): grade-anchored action detection (ignores "could be downgraded if…" scenario text + outlook-only changes), structured NSE-form reader (kills the `Rating Action (…/Downgrade/…)` label false-positive), word-boundaried agencies + global agencies (Moody's/Fitch/S&P by full name), context-aware grade tokens (no stray single letters). New-first phrasing `BBB+ (Downgraded from A-)` handled. 19 parser tests.
+- [x] **Multi-instrument storage + scoring** — migration 052 `raw_rating_lines` + headline; `credit_quality_score` 0–100 (AAA=100…BB+=45 junk…D=0).
+- [x] **Credit → signal scoring** — `_credit_adjustment` in `confidence.py` + `latest_credit_by_symbol`/`is_junk_downgrade_kill` in `rating_extractor.py`. LT grade = standing swing nudge (+0.05 AAA/AA, −0.10 junk); ST stress (A3/A4/D) −0.05; recent action event-bias (downgrade −0.15, upgrade +0.10, watch −0.05) — swing window 5d, intraday 1d; **recent junk downgrade hard-kills longs**. Wired into the dispatcher.
+- [x] **Swing vs intraday split** — migration 053 `signals.horizon` (set at emission via `detect.SIGNAL_HORIZON`). Drives: timing (intraday keeps the strict `time_rules`; **swing is relaxed + sends in an EOD batch 15:20–18:30**), horizon-aware scoring, two message templates (`⚡ [INTRADAY]` flat-by-15:15 vs `📈 [SWING]` hold-days + quality/credit/delivery), and **Telegram topic routing** (`TELEGRAM_TOPIC_INTRADAY/SWING/CREDIT`).
+- [x] **Tooling** — `scripts/rating_qa.py` (one-command extraction QA + coverage %), `scripts/rating_review.py` (step through PDFs one-by-one, opens each in the viewer), and `backfill_parser.py` fixes (`created_at` ordering not unsortable `broadcast_dt`, new `--subject` filter, 0-candidate guard).
+
+- [x] **Intraday rules** — `orb_breakout` (break of the 09:15–09:30 opening-range high, volume-confirmed) and `vwap_reclaim` (price reclaims session VWAP after trading below it) in `detect.py`, both `horizon='intraday'`, wired into the detection pass with labels + 7 tests. The ⚡ pipeline now has real setups.
+
+_Migrations added: 051 (rating_actions), 052 (rating_lines + headline), 053 (signal horizon). All green at 778 tests._
+_⏳ Optional next refinement: horizon-weighted scoring (intraday down-weights fundamentals/delivery; swing down-weights 5m-RSI/VWAP). Currently the split is the credit factor + time-multiplier._
+
 ---
 
 ## Week 17 — Financial Extractor (Main Investment)

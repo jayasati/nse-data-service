@@ -45,6 +45,27 @@ _INTERVAL_SECONDS = 60
 # Signal type names — the `signal_type` column values.
 LONG_BUILDUP = "long_buildup"
 BREAKOUT_52WH = "breakout_52wh"
+ORB_BREAKOUT = "orb_breakout"        # intraday: break of the opening range high
+VWAP_RECLAIM = "vwap_reclaim"        # intraday: price reclaims session VWAP
+
+# Trade horizon per signal type — the single source of truth (the dispatcher,
+# scorer, timing gate, message template and Telegram topic all key off this).
+# 'intraday' = flat by 15:15; 'swing' = hold days–weeks. Default swing.
+SIGNAL_HORIZON = {
+    "oi_spurt": "intraday",
+    "raw_oi_spurts": "intraday",
+    ORB_BREAKOUT: "intraday",
+    VWAP_RECLAIM: "intraday",
+    LONG_BUILDUP: "swing",
+    BREAKOUT_52WH: "swing",
+}
+
+# Opening-range window for the ORB rule (09:15–09:30).
+ORB_WINDOW_END = (9, 30)
+
+
+def horizon_for(signal_type: str) -> str:
+    return SIGNAL_HORIZON.get(signal_type, "swing")
 
 # --- rule thresholds (tasks 4.5 / 4.6) ---
 OI_CHANGE_MIN = 3.0       # %
@@ -109,7 +130,7 @@ def run_detection_pass(
     quality_scores = _load_quality_scores(conn)          # task 14.4
     fresh_52w_highs = _load_today_52w_highs(conn, now)
 
-    fired = {LONG_BUILDUP: 0, BREAKOUT_52WH: 0}
+    fired = {LONG_BUILDUP: 0, BREAKOUT_52WH: 0, ORB_BREAKOUT: 0, VWAP_RECLAIM: 0}
     gated = 0
 
     for symbol in symbols:
@@ -121,7 +142,7 @@ def run_detection_pass(
         # Both Phase-1 signals are longs, so the tight-band gate applies to both.
         band_too_tight = band is not None and band <= MAX_TIGHT_BAND_PCT
 
-        for signal_type in (LONG_BUILDUP, BREAKOUT_52WH):
+        for signal_type in (LONG_BUILDUP, BREAKOUT_52WH, ORB_BREAKOUT, VWAP_RECLAIM):
             if band_too_tight:
                 continue
             metrics = _evaluate(conn, symbol, signal_type, fresh_52w_highs, now)
@@ -141,7 +162,7 @@ def run_detection_pass(
         "symbols": len(symbols),
         "gated": gated,
         "fired": fired,
-        "signals": fired[LONG_BUILDUP] + fired[BREAKOUT_52WH],
+        "signals": sum(fired.values()),
     }
 
 
@@ -161,6 +182,10 @@ def _evaluate(
         return _rule_long_buildup(conn, symbol, now)
     if signal_type == BREAKOUT_52WH:
         return _rule_breakout_52wh(conn, symbol, fresh_52w_highs, now)
+    if signal_type == ORB_BREAKOUT:
+        return _rule_orb_breakout(conn, symbol, now)
+    if signal_type == VWAP_RECLAIM:
+        return _rule_vwap_reclaim(conn, symbol, now)
     return None
 
 
@@ -242,6 +267,89 @@ def _fake_breakout_risk(
 
 
 # ============================================================================
+# Intraday rules (ORB + VWAP reclaim) — horizon='intraday'
+# ============================================================================
+
+def _session_bars(conn, symbol, now):
+    """Today's 5-minute bars from the 09:15 open (ts-indexed, ascending)."""
+    session_open = int(now.replace(hour=9, minute=15, second=0, microsecond=0).timestamp())
+    return read_intraday_5m(conn, symbol, since_ts=session_open)
+
+
+def _session_vwap(bars):
+    """Cumulative session VWAP series aligned to `bars` (typical-price weighted)."""
+    typical = (bars["high"] + bars["low"] + bars["close"]) / 3
+    cum_vol = bars["volume"].cumsum()
+    return (typical * bars["volume"]).cumsum() / cum_vol.replace(0, float("nan"))
+
+
+def _rule_orb_breakout(
+    conn: sqlite3.Connection, symbol: str, now: datetime,
+) -> dict | None:
+    """Long when price breaks above the opening-range (09:15–09:30) high, with
+    volume confirmation. Intraday — exits same day."""
+    or_end = now.replace(hour=ORB_WINDOW_END[0], minute=ORB_WINDOW_END[1],
+                         second=0, microsecond=0)
+    if now < or_end:                      # opening range not complete yet
+        return None
+    bars = _session_bars(conn, symbol, now)
+    if bars.empty:
+        return None
+    or_end_ts = int(or_end.timestamp())
+    or_bars = bars[bars.index < or_end_ts]
+    post_bars = bars[bars.index >= or_end_ts]
+    if or_bars.empty or post_bars.empty:
+        return None
+
+    orh = float(or_bars["high"].max())
+    last_close = float(post_bars["close"].iloc[-1])
+    if last_close <= orh:                 # no breakout above the range high
+        return None
+
+    volume_ratio = compute.compute_volume_ratio(conn, symbol, now=now)
+    if volume_ratio is None or volume_ratio < VOLUME_RATIO_MIN:
+        return None
+    price_change, _ = compute.compute_price_change(conn, symbol)
+    return {
+        "price": last_close,
+        "oi_change_pct": None,
+        "price_change_pct": price_change,
+        "volume_ratio": volume_ratio,
+    }
+
+
+def _rule_vwap_reclaim(
+    conn: sqlite3.Connection, symbol: str, now: datetime,
+) -> dict | None:
+    """Long when price was below session VWAP earlier and reclaims it (crosses
+    back above on the latest bar), with volume confirmation. Intraday."""
+    bars = _session_bars(conn, symbol, now)
+    if len(bars) < 3:                     # need some session history
+        return None
+    vwap = _session_vwap(bars)
+    close = bars["close"]
+    if vwap.isna().iloc[-1] or vwap.isna().iloc[-2]:
+        return None
+
+    latest_above = close.iloc[-1] > vwap.iloc[-1]
+    prev_below = close.iloc[-2] <= vwap.iloc[-2]
+    spent_time_below = bool((close.iloc[:-1] < vwap.iloc[:-1]).any())
+    if not (latest_above and prev_below and spent_time_below):
+        return None
+
+    volume_ratio = compute.compute_volume_ratio(conn, symbol, now=now)
+    if volume_ratio is None or volume_ratio < VOLUME_RATIO_MIN:
+        return None
+    price_change, _ = compute.compute_price_change(conn, symbol)
+    return {
+        "price": float(close.iloc[-1]),
+        "oi_change_pct": None,
+        "price_change_pct": price_change,
+        "volume_ratio": volume_ratio,
+    }
+
+
+# ============================================================================
 # Hard gates (task 4.4)
 # ============================================================================
 
@@ -314,19 +422,22 @@ def write_signal(
     volume_ratio: float | None,
     confidence: float | None = None,
     fake_breakout_risk: int = 0,
+    horizon: str | None = None,
 ) -> int:
     """Insert one row into `signals`. Returns the new signal id.
 
     `confidence` is left NULL here — the Week-5 scorer fills it on dispatch.
     `fake_breakout_risk` (task 15.3) trims confidence on dispatch when set.
+    `horizon` (swing/intraday) defaults from the signal type when not given.
     """
+    horizon = horizon or horizon_for(signal_type)
     cur = conn.execute(
         "INSERT INTO signals "
         "(symbol, signal_type, detected_at, price, oi_change_pct, "
-        " price_change_pct, volume_ratio, confidence, fake_breakout_risk) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " price_change_pct, volume_ratio, confidence, fake_breakout_risk, horizon) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (symbol, signal_type, detected_at, price, oi_change_pct,
-         price_change_pct, volume_ratio, confidence, fake_breakout_risk),
+         price_change_pct, volume_ratio, confidence, fake_breakout_risk, horizon),
     )
     conn.commit()
     return int(cur.lastrowid or 0)
