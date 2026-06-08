@@ -39,6 +39,8 @@ def score_confidence(
     bb_squeeze: bool = False,
     bearish_divergence: bool = False,
     fake_breakout: bool = False,
+    credit: dict | None = None,
+    is_intraday: bool = False,
     time_multiplier: float = 1.0,
     long_penalty: float = 1.0,
 ) -> float:
@@ -65,8 +67,40 @@ def score_confidence(
     score += _sector_adjustment(sector_rank, sector_trend)
     score += _quality_adjustment(quality_score)
     score += _pattern_adjustment(bb_squeeze, bearish_divergence, fake_breakout)
+    score += _credit_adjustment(credit, is_intraday)
     score = _clamp01(score)
     return _clamp01(score * time_multiplier * long_penalty)
+
+
+def _credit_adjustment(credit: dict | None, is_intraday: bool) -> float:
+    """Credit-rating contribution for a LONG signal (Week-16 credit→signal).
+
+    Two parts:
+      • EVENT — a recent rating action biases the score, within a window that is
+        short for intraday (announcement day + next session ≈ 1 trading day) and
+        longer for swing (≈ 5 trading days).
+      • STANDING — the long-term grade quality + short-term liquidity stress,
+        applied to SWING only (a standing grade shouldn't move an intraday scalp).
+        Kept small because it overlaps with the fundamentals quality_score.
+
+    A recent JUNK downgrade is hard-killed upstream (signal not sent), so it isn't
+    re-handled here beyond the ordinary downgrade penalty.
+    """
+    if not credit:
+        return 0.0
+    adj = 0.0
+    action = credit.get("action")
+    days = credit.get("days_since")
+    window = 1 if is_intraday else 5
+    if action and days is not None and days <= window:
+        adj += {"downgrade": -0.15, "upgrade": 0.10, "watch_negative": -0.05}.get(action, 0.0)
+    if not is_intraday:                       # standing factors: swing only
+        q = credit.get("quality_score")
+        if q is not None:
+            adj += 0.05 if q >= 85 else (-0.10 if q < 55 else 0.0)
+        if credit.get("st_stressed"):
+            adj -= 0.05
+    return adj
 
 
 def _vwap_adjustment(price_vs_vwap: str | None, vwap_slope: float | None) -> float:

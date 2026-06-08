@@ -59,26 +59,35 @@ def select_candidates(
     priority_filter: str | None,
     symbol_filter: str | None,
     pdf_type_filter: str | None,
+    subject_filter: str | None = None,
 ) -> list[dict]:
     """Pick rows to process. Stratification only applies for default mode."""
     db.row_factory = sqlite3.Row
 
-    if priority_filter or symbol_filter or pdf_type_filter:
+    if priority_filter or symbol_filter or pdf_type_filter or subject_filter:
         # Filter mode — no stratification
         clauses = ["pdf_status = ?"]
-        params = [State.PENDING]
+        params: list = [State.PENDING]
         if symbol_filter:
             clauses.append("symbol = ?")
             params.append(symbol_filter)
+        if subject_filter:
+            clauses.append("LOWER(subject) LIKE ?")
+            params.append(f"%{subject_filter.lower()}%")
         if pdf_type_filter:
             clauses.append("pdf_type = ?")
             params.append(pdf_type_filter)
 
         where = " AND ".join(clauses)
-        params.append(total_count)
+        # Order by created_at (sortable epoch), NOT broadcast_dt — the latter is
+        # a 'DD-Mon-YYYY' string that sorts lexically (all '3X-' dates first).
+        # For the post-hoc priority filter, pull a large pool first so we don't
+        # LIMIT away the high-priority rows before classifying.
+        pool = total_count if not priority_filter else max(total_count * 50, 3000)
+        params.append(pool)
         rows = db.execute(
             f"SELECT * FROM raw_announcements WHERE {where} "
-            f"ORDER BY broadcast_dt DESC LIMIT ?",
+            f"ORDER BY created_at DESC LIMIT ?",
             params,
         ).fetchall()
 
@@ -88,8 +97,8 @@ def select_candidates(
             rows = [
                 r for r in rows
                 if classify_subject(r["subject"]) == priority_filter
-            ][:total_count]
-        return [dict(r) for r in rows]
+            ]
+        return [dict(r) for r in rows[:total_count]]
 
     # Stratified sampling
     scale = total_count / sum(DEFAULT_STRATIFICATION.values())
@@ -99,8 +108,8 @@ def select_candidates(
     # Pull a generous candidate pool, then classify and bucket
     candidates = db.execute(
         "SELECT * FROM raw_announcements WHERE pdf_status = ? "
-        "ORDER BY broadcast_dt DESC LIMIT ?",
-        (State.PENDING, total_count * 5),  # 5x oversampling for stratification
+        "ORDER BY created_at DESC LIMIT ?",   # created_at is sortable; broadcast_dt is not
+        (State.PENDING, max(total_count * 10, 3000)),  # oversample for stratification
     ).fetchall()
 
     buckets: dict[str, list[dict]] = {p: [] for p in strat}
@@ -125,7 +134,7 @@ def main(args: argparse.Namespace) -> int:
 
     db = sqlite3.connect(DB_PATH)
     candidates = select_candidates(
-        db, args.count, args.priority, args.symbol, args.pdf_type,
+        db, args.count, args.priority, args.symbol, args.pdf_type, args.subject,
     )
 
     # Summarize composition
@@ -138,6 +147,11 @@ def main(args: argparse.Namespace) -> int:
     for priority, n in sorted(composition.items()):
         print(f"  {priority:8s}: {n}")
     print()
+
+    if not candidates:
+        print("No matching pending rows — nothing to do.")
+        db.close()
+        return 0
 
     if args.dry_run:
         print("DRY RUN — no changes made.")
@@ -186,6 +200,8 @@ if __name__ == "__main__":
     parser.add_argument("--priority", choices=["high", "medium", "low", "skip"],
                         help="Filter to one priority bucket")
     parser.add_argument("--symbol", help="Filter to one symbol")
+    parser.add_argument("--subject", help="Filter to subjects containing this text "
+                        "(case-insensitive), e.g. --subject 'credit rating'")
     parser.add_argument("--pdf-type",
                         choices=["native_text", "presentation", "scanned", "hybrid"],
                         help="Filter to one pdf_type (requires prior classification)")

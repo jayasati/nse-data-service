@@ -37,6 +37,11 @@ from ..market.time_rules import time_rule
 from ..scheduler.market_hours import is_market_open, now_ist
 from ..signals import enrich
 from ..signals.confidence import score_confidence
+from ..parsers.rating_extractor import latest_credit_by_symbol, is_junk_downgrade_kill
+
+# Signal types that are intraday (credit affects them only on the event day);
+# everything else is treated as swing (standing credit quality applies).
+INTRADAY_SIGNAL_TYPES = {"oi_spurt", "raw_oi_spurts"}
 from ..signals.detect import (
     _hard_gated, _load_blacklist, _load_listing_bars, _load_price_bands,
     _load_quality_scores,
@@ -119,6 +124,7 @@ def dispatch_pass(
     sector_map = load_sector_map()                  # symbol -> sector (task 8.4)
     sector_ranks = latest_sector_ranks(conn)
     quality_scores = _load_quality_scores(conn)     # fundamentals (task 14.4/14.5)
+    credit_map = latest_credit_by_symbol(conn, now)  # credit ratings (Week 16)
     rule = time_rule(now)                            # time-of-day window (task 9.1)
     threshold = rule.min_confidence or CONFIDENCE_THRESHOLD
 
@@ -129,7 +135,10 @@ def dispatch_pass(
         sig = _row_to_signal(row)
         series = price_bands.get(sig["symbol"], (None, None))[0]
 
-        if _hard_gated(sig["symbol"], series, listing_bars, blacklist, quality_scores):
+        credit = credit_map.get(sig["symbol"])
+        # Hard-kill longs into a recent junk downgrade (don't buy into stress).
+        if _hard_gated(sig["symbol"], series, listing_bars, blacklist, quality_scores) \
+                or is_junk_downgrade_kill(credit):
             _mark_dispatched(conn, sig["id"], now)
             counts["gated"] += 1
             continue
@@ -152,6 +161,8 @@ def dispatch_pass(
             bb_squeeze=_load_bb_squeeze(conn, sig["symbol"]),
             bearish_divergence=_has_pattern(conn, sig["symbol"], "bearish_divergence", now),
             fake_breakout=bool(sig.get("fake_breakout_risk")),
+            credit=credit,
+            is_intraday=sig["signal_type"] in INTRADAY_SIGNAL_TYPES,
             time_multiplier=rule.multiplier, long_penalty=long_penalty,
         )
 

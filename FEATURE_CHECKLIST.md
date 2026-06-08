@@ -903,7 +903,8 @@ _(✅ met: nightly quality job over F&O+Nifty500 → stock_fundamentals; quality
 
 ### Week 16 gate
 Rating extractor processing new announcements. `raw_rating_actions` populating. Rating alert messages arriving on Telegram for genuine downgrades.
-_(✅ met in code: extractor + raw_rating_actions + credit_* signals + rating alert template, all tested (764 tests). Alerts go out directly, recency-guarded so the backfill stays silent. ⏳ live: depends on the PDF text pipeline keeping rating PDFs fresh on the server + a real downgrade arriving.)_
+_(✅ met in code: extractor + raw_rating_actions + credit_* signals + rating alert template, all tested. Alerts go out directly, recency-guarded so the backfill stays silent. ⏳ live: depends on the PDF text pipeline keeping rating PDFs fresh on the server + a real downgrade arriving.)_
+_(➕ Rework: a filing is multi-instrument/multi-agency. Migration 052 adds `raw_rating_lines` (per-instrument) + headline cols on `raw_rating_actions` (agencies, worst_action, min_lt_grade, credit_quality_score 0–100, junk/outlook/ST flags). Alerts on all-but-reaffirm/outstanding. Robust against scenario boilerplate, outlook-only changes, Moody's-scale, 'S&P BSE'/'Fitch Group' false agencies, stray single-letter grades. Verified on 39 real filings: 100% agency, 92% grade.)_
 
 ---
 

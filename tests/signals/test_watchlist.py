@@ -81,9 +81,10 @@ def test_live_universe_is_core_plus_watchlist():
         INSERT INTO raw_bhavcopy_cm VALUES ('2026-06-05','AAA','EQ',900),
             ('2026-06-05','BBB','EQ',500),('2026-06-05','CCC','EQ',100);
     """)
-    # watchlist adds a non-core name
+    # watchlist adds a non-core name. Far-future expiry so the test doesn't
+    # depend on wall-clock (live_universe → active_watchlist uses real now).
     watchlist.add_to_watchlist(conn, "WATCHED", "news", NOW.isoformat(),
-                               (NOW + timedelta(days=3)).isoformat())
+                               "2099-01-01T00:00:00+05:30")
     conn.commit()
     core = universe.top_fno_by_value(conn, limit=2)
     assert core == ["AAA", "BBB"]      # ranked by turnover, top 2
