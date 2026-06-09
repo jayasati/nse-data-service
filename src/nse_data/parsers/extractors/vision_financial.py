@@ -74,8 +74,21 @@ _SCHEMA_BLOCK = """{
 _COMMON_RULES = """Field definitions & rules:
 - "revenue" = Revenue from operations (the operating-revenue subtotal). If it is
   split (Sale of products / services / other operating revenue), SUM those lines.
-  Do NOT use "Total income" as revenue. For banks/NBFCs use "Interest Earned" /
-  "Net Interest Income" as revenue.
+  Do NOT use "Total income" as revenue.
+- BANKS / NBFCs (BFSI) have a DIFFERENT P&L layout — map it carefully, do NOT
+  treat it like a normal company:
+  * revenue = "Interest Earned" (item 1, the a+b+c+d subtotal). NEVER use Total
+    Income as revenue here.
+  * other_income = "Other Income" (item 2).
+  * total_income = "Total Income (1+2)".
+  * total_expenses = Total Income MINUS Profit-before-tax — i.e. EVERYTHING between
+    them: Interest Expended + Operating Expenses + Provisions & Contingencies. Do
+    NOT use "Total Expenditure (excluding provisions)" alone; it omits provisions,
+    so total_income − total_expenses would not equal PBT.
+  * pbt = "Profit/(Loss) before Tax" (the line AFTER provisions, not Operating
+    Profit).
+  * pat = "Net Profit for the period".
+  * eps_basic/eps_diluted = the "Basic/Diluted EPS" line in the ratios section.
 - COLUMN: read the MOST RECENT QUARTER. Identify it by the column whose header
   date is the latest QUARTER-end (e.g. 31-03-2026) — NOT a full-year/"year ended"
   column that may share that date, and NOT the year-ago quarter (31-03-2025).
@@ -240,6 +253,7 @@ def extract_via_vision(
             response_format={"type": "json_object"},
             max_tokens=2000,
             temperature=0.0,
+            timeout=120.0,        # multi-page image reads need more than the 60s default
         )
     except DailyCapExceeded as e:
         log.warning("vision_capped", error=str(e))

@@ -35,13 +35,20 @@ pnl_anchors:
   - "income from operations"
   - "total income"
   - "total expenses"
+  - "total expenditure"        # banks
   - "profit before tax"
+  - "before tax"               # banks ("...Ordinary Activities before Tax")
   - "profit after tax"
+  - "after tax"                # banks
   - "profit for the period"
+  - "net profit"               # banks
   - "tax expense"
   - "total comprehensive income"
   - "earnings per"
+  - "earning per"              # some banks print "Earning per Share"
   - "interest earned"          # banks/NBFCs
+  - "interest expended"        # banks
+  - "operating profit"         # banks
   - "net interest income"
 
 # Source-unit phrase -> factor to crore. Checked as substrings, most specific

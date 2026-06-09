@@ -112,14 +112,28 @@ def _locate_pnl_pages(pages: list[str]) -> list[int]:
     """
     cfg = _load_config()
     anchors = [a.lower() for a in cfg.get("pnl_anchors", [])]
-    selected: set[int] = set()
+    scored: list[tuple[int, int, int]] = []   # (page_index, anchor_hits, char_count)
     for i, page in enumerate(pages):
         low = (page or "").lower()
         hits = sum(1 for a in anchors if a in low)
-        if hits >= _PNL_ANCHOR_MIN:
-            selected.add(i)
-            if i + 1 < len(pages):
-                selected.add(i + 1)
+        if hits:
+            scored.append((i, hits, len(low)))
+    if not scored:
+        return []
+    # Normally a P&L page hits >= 2 anchors. But dense tables (banks/NBFCs) garble
+    # the anchor phrases in the text layer and may hit only 1 — so when nothing
+    # reaches the threshold, fall back to the best-scoring pages (by hits, then
+    # density) rather than giving up and rendering the whole document.
+    max_hits = max(h for _, h, _ in scored)
+    threshold = _PNL_ANCHOR_MIN if max_hits >= _PNL_ANCHOR_MIN else 1
+    best = sorted((s for s in scored if s[1] >= threshold), key=lambda s: (-s[1], -s[2]))
+    selected: set[int] = set()
+    for i, _, _ in best:
+        selected.add(i)
+        if i + 1 < len(pages):       # P&L often continues onto the next page
+            selected.add(i + 1)
+        if len(selected) >= _MAX_VISION_PAGES:
+            break
     return sorted(selected)[:_MAX_VISION_PAGES]
 
 
