@@ -14,3 +14,9 @@ Research
 *.pem
 src/*.egg-info/
 VERIFICATION_CHECKLIST.md
+
+# Local backup of deleted files during rewrite
+.trash/
+
+# Local extraction-accuracy verdicts (per-developer, not shared)
+scripts/extraction_verify_log.jsonl
