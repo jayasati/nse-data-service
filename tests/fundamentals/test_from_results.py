@@ -129,6 +129,13 @@ def test_register_extract_runner_schedules():
     assert "extract_financials" in sched.jobs
 
 
+def test_register_intraday_extract_runner_schedules():
+    sched = _StubScheduler()
+    job_id = fr.register_intraday_extract_runner(sched, ":memory:")
+    assert job_id == "extract_financials_intraday"
+    assert "extract_financials_intraday" in sched.jobs
+
+
 def test_run_extract_pass_filters_and_dedups(conn, monkeypatch):
     _insert_announcement(conn, "fpR", "ACME", "Financial Results")
     _insert_announcement(conn, "fpX", "NOPE", "Acquisition of stake")   # not a result

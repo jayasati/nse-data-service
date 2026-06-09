@@ -210,6 +210,13 @@ def run_extract_pass(
 # to the next night (the pass only picks text_extracted rows not yet stored).
 EXTRACT_BATCH_LIMIT = 40
 
+# Intraday cadence: results filed DURING market hours must have their financials
+# extracted promptly so the post-result reaction's confidence can fold in the
+# fundamental surprise within the dispatcher's ~15-min re-score window. Small
+# per-tick batch (most ticks are no-ops — only new text_extracted results match).
+INTRADAY_EXTRACT_INTERVAL_MIN = 5
+INTRADAY_EXTRACT_BATCH = 10
+
 
 def register_extract_runner(scheduler, db_path: str) -> str:
     """Nightly 21:00 IST: extract financials from the day's result PDFs.
@@ -238,6 +245,38 @@ def register_extract_runner(scheduler, db_path: str) -> str:
 
     scheduler.add_job(
         _tick, trigger=CronTrigger(hour=21, minute=0, timezone=market_hours.IST),
+        id=job_id, max_instances=1, coalesce=True, replace_existing=True,
+    )
+    return job_id
+
+
+def register_intraday_extract_runner(scheduler, db_path: str) -> str:
+    """Every few minutes DURING market hours: extract financials from results
+    that just filed, so a mid-session reaction can be scored with the actual
+    fundamental surprise. Internally gated on market hours (off-hours = no-op);
+    most ticks find nothing new and return immediately."""
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    from nse_data.scheduler.market_hours import is_market_open
+    from nse_data.storage.db import open_db
+
+    job_id = "extract_financials_intraday"
+
+    def _tick():
+        if not is_market_open():
+            return
+        conn = open_db(db_path)
+        try:
+            report = run_extract_pass(conn, limit=INTRADAY_EXTRACT_BATCH, use_llm=True)
+            if report["processed"]:
+                log.info("extract_financials_intraday", **report)
+        except Exception:
+            log.exception("extract_financials_intraday_failed")
+        finally:
+            conn.close()
+
+    scheduler.add_job(
+        _tick, trigger=IntervalTrigger(minutes=INTRADAY_EXTRACT_INTERVAL_MIN),
         id=job_id, max_instances=1, coalesce=True, replace_existing=True,
     )
     return job_id

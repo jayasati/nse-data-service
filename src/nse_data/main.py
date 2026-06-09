@@ -26,7 +26,10 @@ from .indicators.pre_market_loader import register_pre_market_loader
 from .bot.morning_brief import register_morning_brief
 from .events.calendar import register_calendar_job
 from .events.pre_screen import register_pre_screen_job
-from .fundamentals.from_results import register_extract_runner
+from .fundamentals.from_results import (
+    register_extract_runner,
+    register_intraday_extract_runner,
+)
 from .market.regime_job import register_regime_job
 from .market.sector_radar_job import register_sector_radar_job
 from .signals.detect import register_signal_job
@@ -155,8 +158,10 @@ def main() -> int:
     # Telegram flags for results due in the next few days — Phase 5, E2.
     registered.append(register_calendar_job(scheduler, db_path))
     registered.append(register_pre_screen_job(scheduler, db_path))
-    # Financial extract-runner (21:00) → pulls revenue/PAT/EPS from the day's
-    # result PDFs into extracted_financials (the engine's fundamental input).
+    # Financial extract-runner: every 5 min during market hours (so a mid-session
+    # result's financials are ready for the reaction's surprise score) + a 21:00
+    # sweep for after-close filings and backlog → extracted_financials.
+    registered.append(register_intraday_extract_runner(scheduler, db_path))
     registered.append(register_extract_runner(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
