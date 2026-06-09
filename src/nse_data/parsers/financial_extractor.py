@@ -189,6 +189,40 @@ def _text_llm(text: str, **ctx) -> dict | None:
     return extract_via_text(text, **ctx)
 
 
+# Batched-vision scan: pages per vision call, and how deep into the doc to scan.
+# Small batches keep each call fast (no timeout) and stop at the first P&L found.
+_SCAN_BATCH = 4
+_SCAN_MAX_PAGES = 16
+
+
+def _vision_scan(data: bytes, n_pages: int, ctx: dict) -> dict | None:
+    """Find the P&L *by sight*: render the document in small image batches over
+    the first pages and return the first batch vision reads a P&L from.
+
+    For filings whose dense table is garbled in the text layer (long *merged*
+    bank/NBFC PDFs), anchor-based location aims at the wrong pages — but vision
+    can still read the table from the rendered image. Returns the hit (with
+    accumulated cost), the last empty result (for cost accounting), else None.
+    """
+    total_cost = 0.0
+    last: dict | None = None
+    limit = min(n_pages, _SCAN_MAX_PAGES)
+    for start in range(0, limit, _SCAN_BATCH):
+        idx = list(range(start, min(start + _SCAN_BATCH, limit)))
+        out = _vision(pdf_render.render_pages(data, idx), **ctx)
+        if out is None:
+            continue
+        total_cost += out.get("cost_usd", 0.0)
+        if out.get("fields"):
+            out["cost_usd"] = total_cost
+            log.info("vision_scan_hit", pages=idx)
+            return out
+        last = out
+    if last is not None:
+        last["cost_usd"] = total_cost
+    return last
+
+
 def units_factor_from(phrase: str | None) -> float:
     from .extractors.vision_financial import units_factor
 
@@ -288,6 +322,18 @@ def extract(
         return _result_from_llm(vis, "vision", 0.0)
 
     prior_cost = vis.get("cost_usd", 0.0) if vis else 0.0
+
+    # --- batched vision scan: the located pages had no P&L (anchors aimed wrong
+    # because the table is garbled in the text layer, e.g. merged bank filings).
+    # Render the doc in small batches and let vision find the P&L by sight. ---
+    scan = _vision_scan(data, len(pages), ctx)
+    if scan is not None and scan.get("fields"):
+        if full_text and _is_incomplete(scan["fields"]):
+            txt = _text_llm(full_text, **ctx)
+            if txt is not None and txt.get("fields"):
+                return _result_from_llm(_gapfilled(scan, txt), "vision_scan+text", prior_cost)
+        return _result_from_llm(scan, "vision_scan", prior_cost)
+    prior_cost += scan.get("cost_usd", 0.0) if scan else 0.0
 
     # --- fallback: gpt-4o over the extracted text ---
     if full_text:

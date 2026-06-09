@@ -187,6 +187,31 @@ def test_complete_vision_skips_text(monkeypatch):
     assert r.llm_cost_usd == pytest.approx(0.016)
 
 
+def test_vision_scan_returns_first_batch_with_pnl(monkeypatch):
+    monkeypatch.setattr(fe.pdf_render, "render_pages", lambda data, idx, **k: [b"img"])
+    calls = {"n": 0}
+    def fake_vision(images, **ctx):
+        calls["n"] += 1
+        if calls["n"] < 4:                       # batches 0-3,4-7,8-11: no table
+            return {"fields": {}, "consolidated": {}, "cost_usd": 0.01, "table_found": False}
+        return {"fields": {"revenue_cr": 100.0}, "consolidated": {}, "cost_usd": 0.01,
+                "units_phrase": "INR crore", "period_ending": "2026-03-31", "table_found": True}
+    monkeypatch.setattr(fe, "_vision", fake_vision)
+    out = fe._vision_scan(b"x", 16, {"symbol": "X"})
+    assert out["fields"]["revenue_cr"] == 100.0
+    assert out["cost_usd"] == pytest.approx(0.04)   # 4 calls × 0.01, stopped at the hit
+    assert calls["n"] == 4
+
+
+def test_vision_scan_returns_empty_when_no_pnl(monkeypatch):
+    monkeypatch.setattr(fe.pdf_render, "render_pages", lambda data, idx, **k: [b"img"])
+    monkeypatch.setattr(fe, "_vision", lambda images, **ctx: {
+        "fields": {}, "consolidated": {}, "cost_usd": 0.01, "table_found": False})
+    out = fe._vision_scan(b"x", 16, {})
+    assert out is not None and not out["fields"]
+    assert out["cost_usd"] == pytest.approx(0.04)   # cost still accounted
+
+
 def test_extract_is_free_without_llm_flag(tmp_path):
     # A non-PDF file: page_texts fails gracefully; with the flag off we must not
     # touch the LLM and must return a no-cost llm_disabled result.
