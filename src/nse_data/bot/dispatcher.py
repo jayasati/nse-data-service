@@ -48,7 +48,10 @@ def _topic_id(name: str) -> int | None:
 
 
 def _topic_for(sig: dict) -> int | None:
-    """Route a signal to its Telegram topic by horizon (swing vs intraday)."""
+    """Route a signal to its Telegram topic: earnings reactions to their own
+    topic, otherwise by horizon (swing vs intraday)."""
+    if sig.get("signal_type") == "earnings_direction":
+        return _topic_id("earnings") or _topic_id("intraday")
     return _topic_id("intraday" if sig.get("horizon") == "intraday" else "swing")
 from ..signals.detect import (
     _hard_gated, _load_blacklist, _load_listing_bars, _load_price_bands,
@@ -77,6 +80,7 @@ _SIGNAL_LABELS = {
     "orb_breakout": "Opening Range Breakout",
     "vwap_reclaim": "VWAP Reclaim",
     "oi_spurt": "OI Spurt",
+    "earnings_direction": "Earnings Reaction",
 }
 
 
@@ -118,7 +122,7 @@ def dispatch_pass(
     rows = conn.execute(
         "SELECT s.id, s.symbol, s.signal_type, s.detected_at, s.price, "
         "s.oi_change_pct, s.price_change_pct, s.volume_ratio, sf.atr_14_daily, "
-        "s.fake_breakout_risk, s.horizon "
+        "s.fake_breakout_risk, s.horizon, COALESCE(s.direction, 'long') "
         "FROM signals s LEFT JOIN signal_features sf ON sf.signal_id = s.id "
         "WHERE s.dispatched = 0 ORDER BY s.detected_at ASC LIMIT ?",
         (_POLL_LIMIT,),
@@ -173,6 +177,8 @@ def dispatch_pass(
         sector = sector_map.get(sig["symbol"])
         sec = sector_ranks.get(sector or "", {})
         quality = quality_scores.get(sig["symbol"])
+        direction = sig.get("direction", "long")
+        earnings = _load_earnings_evidence(conn, sig)
         confidence = score_confidence(
             context, sig["volume_ratio"], regime,
             sector_rank=sec.get("rs_rank"), sector_trend=sec.get("rs_trend"),
@@ -183,6 +189,7 @@ def dispatch_pass(
             credit=credit,
             is_intraday=is_intraday,
             time_multiplier=eff_multiplier, long_penalty=long_penalty,
+            earnings=earnings, direction=direction,
         )
 
         if confidence > eff_threshold:
@@ -193,6 +200,10 @@ def dispatch_pass(
                 delivery=_load_delivery(conn, sig["symbol"]),
                 credit=credit,
             )
+            if sig.get("signal_type") == "earnings_direction":
+                odds_line = _earnings_odds_line(conn, direction)
+                if odds_line:
+                    text += "\n" + odds_line
             if sender(token, chat_id, text, _topic_for(sig)):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
@@ -264,10 +275,34 @@ def _load_delivery(conn: sqlite3.Connection, symbol: str) -> dict | None:
     return dict(zip(("delivery_ratio", "delivery_trend", "delivery_conviction_score"), row))
 
 
+def _earnings_odds_line(conn: sqlite3.Connection, direction: str) -> str | None:
+    """Historical-odds line for an earnings alert (None until enough samples)."""
+    try:
+        from ..signals.earnings_odds import compute_odds, format_odds
+        return format_odds(compute_odds(conn, direction=direction))
+    except Exception:  # noqa: BLE001 — odds are a bonus, never block a send
+        return None
+
+
+def _load_earnings_evidence(conn: sqlite3.Connection, sig: dict) -> dict | None:
+    """Earnings surprise evidence for an earnings_direction signal (else None)."""
+    if sig.get("signal_type") != "earnings_direction":
+        return None
+    try:
+        from ..events.matcher import build_earnings_evidence
+        ev = build_earnings_evidence(conn, sig["symbol"],
+                                     reaction_direction=sig.get("direction", "long"))
+    except Exception:  # noqa: BLE001 — evidence is a bonus, never block dispatch
+        return None
+    if ev is not None:
+        ev["realized_move_pct"] = sig.get("price_change_pct")
+    return ev
+
+
 def _row_to_signal(row) -> dict:
     keys = ("id", "symbol", "signal_type", "detected_at", "price",
             "oi_change_pct", "price_change_pct", "volume_ratio", "atr_14_daily",
-            "fake_breakout_risk", "horizon")
+            "fake_breakout_risk", "horizon", "direction")
     return dict(zip(keys, row))
 
 

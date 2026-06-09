@@ -19,6 +19,7 @@ _MIGRATIONS = (
     "036_signals.sql",        # signals, signal_features
     "049_signal_fake_breakout.sql",   # signals.fake_breakout_risk
     "053_signal_horizon.sql",         # signals.horizon
+    "057_signal_direction.sql",       # signals.direction, paper_trades.direction
 )
 
 NOW = datetime(2025, 6, 2, 10, 0, 0, tzinfo=IST)

@@ -47,6 +47,7 @@ LONG_BUILDUP = "long_buildup"
 BREAKOUT_52WH = "breakout_52wh"
 ORB_BREAKOUT = "orb_breakout"        # intraday: break of the opening range high
 VWAP_RECLAIM = "vwap_reclaim"        # intraday: price reclaims session VWAP
+EARNINGS_DIRECTION = "earnings_direction"  # intraday: directional reaction after a result
 
 # Trade horizon per signal type — the single source of truth (the dispatcher,
 # scorer, timing gate, message template and Telegram topic all key off this).
@@ -56,9 +57,20 @@ SIGNAL_HORIZON = {
     "raw_oi_spurts": "intraday",
     ORB_BREAKOUT: "intraday",
     VWAP_RECLAIM: "intraday",
+    EARNINGS_DIRECTION: "intraday",
     LONG_BUILDUP: "swing",
     BREAKOUT_52WH: "swing",
 }
+
+# --- earnings-reaction rule (E3) ---
+# Fire on the price move 5–10 min after a result lands (with a small buffer so a
+# once-a-minute sweep doesn't miss the window). Baseline = price just before the
+# result; a move beyond EARNINGS_MOVE_MIN in that window declares the direction.
+REACTION_MIN_MINUTES = 5
+REACTION_MAX_MINUTES = 15
+EARNINGS_MOVE_MIN = 1.5      # % move from the pre-result baseline to qualify
+# How far back to look for a just-filed result announcement.
+_REACTION_LOOKBACK_SECS = (REACTION_MAX_MINUTES + 5) * 60
 
 # Opening-range window for the ORB rule (09:15–09:30).
 ORB_WINDOW_END = (9, 30)
@@ -115,13 +127,20 @@ def run_detection_pass(
     if not is_market_open(now):
         return {"skipped": "market_closed"}
 
-    window = _time_window_skip(now)
-    if window is not None:
-        return {"skipped": window}
-
     dedup = dedup or SignalDedup(redis_client)
     detected_at = now.isoformat()
     market_regime = _market_regime(redis_client)
+
+    # Earnings reactions are event-driven, so they're evaluated every minute
+    # (including the opening/lunch windows the Phase-1 rules skip) — but only for
+    # the few symbols whose result just filed.
+    earnings_fired = _detect_earnings_reactions(
+        conn, redis_client, dedup, detected_at, market_regime, now,
+    )
+
+    window = _time_window_skip(now)
+    if window is not None:
+        return {"skipped": window, "earnings": earnings_fired}
 
     symbols = live_universe(conn)
     blacklist = _load_blacklist(redis_client)
@@ -162,7 +181,139 @@ def run_detection_pass(
         "symbols": len(symbols),
         "gated": gated,
         "fired": fired,
-        "signals": sum(fired.values()),
+        "earnings": earnings_fired,
+        "signals": sum(fired.values()) + earnings_fired,
+    }
+
+
+# ============================================================================
+# Earnings-reaction detection (E3)
+# ============================================================================
+
+def _detect_earnings_reactions(
+    conn: sqlite3.Connection,
+    redis_client,
+    dedup: SignalDedup,
+    detected_at: str,
+    market_regime: str | None,
+    now: datetime,
+) -> int:
+    """Fire earnings_direction for symbols whose result just filed and is moving.
+
+    One DB read finds the handful of symbols with a result announcement in the
+    last ~20 min; each is checked for a directional move 5–10 min after the
+    filing. Hard gates (blacklist/T2T/listing) still apply; the quality kill does
+    NOT (a low-quality name can be a valid short on a bad result)."""
+    contexts = _load_reaction_contexts(conn, now)
+    if not contexts:
+        return 0
+    blacklist = _load_blacklist(redis_client)
+    listing_bars = _load_listing_bars(conn)
+    fired = 0
+    for symbol, reaction in contexts.items():
+        if symbol in blacklist:
+            continue
+        if listing_bars.get(symbol, 0) < MIN_LISTING_BARS:
+            continue
+        metrics = _rule_earnings_direction(conn, symbol, now, reaction)
+        if metrics is None:
+            continue
+        if not dedup.claim(symbol, EARNINGS_DIRECTION):
+            continue
+        _emit(
+            conn, redis_client,
+            symbol=symbol, signal_type=EARNINGS_DIRECTION,
+            detected_at=detected_at, metrics=metrics, market_regime=market_regime,
+        )
+        fired += 1
+    return fired
+
+
+def _load_reaction_contexts(
+    conn: sqlite3.Connection, now: datetime,
+) -> dict[str, dict]:
+    """{symbol: {result_ts, baseline}} for results filed in the last ~20 min.
+
+    Source: result-subject announcements whose broadcast_dt is recent. The
+    baseline is the price just before the filing (last 5-min bar at/under
+    result_ts), so the reaction move is measured from the pre-result level.
+    """
+    from ..fundamentals.from_results import is_result_subject
+
+    if not _has_table(conn, "raw_announcements"):
+        return {}
+    cutoff = now.timestamp() - _REACTION_LOOKBACK_SECS
+    rows = conn.execute(
+        "SELECT symbol, subject, broadcast_dt FROM raw_announcements "
+        "WHERE broadcast_dt IS NOT NULL ORDER BY broadcast_dt DESC LIMIT 200"
+    ).fetchall()
+    out: dict[str, dict] = {}
+    for symbol, subject, broadcast_dt in rows:
+        if symbol in out or not is_result_subject(subject):
+            continue
+        result_ts = _broadcast_epoch(broadcast_dt, now)
+        if result_ts is None or result_ts < cutoff or result_ts > now.timestamp():
+            continue
+        baseline = _reaction_baseline(conn, symbol, result_ts)
+        if baseline is None:
+            continue
+        out[symbol] = {"result_ts": result_ts, "baseline": baseline}
+    return out
+
+
+def _broadcast_epoch(broadcast_dt: str, now: datetime) -> float | None:
+    """Parse an NSE broadcast timestamp ('30-Apr-2026 17:19:41') to epoch (IST)."""
+    from datetime import datetime as _dtc
+
+    for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            dt = _dtc.strptime(broadcast_dt.strip(), fmt)
+            return dt.replace(tzinfo=now.tzinfo).timestamp()
+        except (ValueError, AttributeError):
+            continue
+    return None
+
+
+def _reaction_baseline(
+    conn: sqlite3.Connection, symbol: str, result_ts: float,
+) -> float | None:
+    """Price just before the result: last 5-min bar close at/under result_ts."""
+    bars = read_intraday_5m(conn, symbol, since_ts=int(result_ts) - 3600)
+    if bars is None or bars.empty:
+        return None
+    pre = bars[bars.index <= int(result_ts)]
+    if not pre.empty:
+        return float(pre["close"].iloc[-1])
+    # No pre-result bar in the last hour (result near open): use the first bar.
+    return float(bars["close"].iloc[0])
+
+
+def _rule_earnings_direction(
+    conn: sqlite3.Connection, symbol: str, now: datetime, reaction: dict,
+) -> dict | None:
+    """Directional move 5–10 min after a result vs the pre-result baseline.
+
+    direction = sign of the move; magnitude must clear EARNINGS_MOVE_MIN. Returns
+    a metrics dict (with ``direction`` + ``realized_move_pct``) or None.
+    """
+    elapsed_min = (now.timestamp() - reaction["result_ts"]) / 60.0
+    if not (REACTION_MIN_MINUTES <= elapsed_min <= REACTION_MAX_MINUTES):
+        return None
+    baseline = reaction["baseline"]
+    _, price = compute.compute_price_change(conn, symbol)
+    if price is None or baseline in (None, 0):
+        return None
+    move_pct = (price - baseline) / baseline * 100.0
+    if abs(move_pct) < EARNINGS_MOVE_MIN:
+        return None
+    volume_ratio = compute.compute_volume_ratio(conn, symbol, now=now)
+    return {
+        "price": price,
+        "oi_change_pct": None,
+        "price_change_pct": round(move_pct, 2),
+        "realized_move_pct": round(move_pct, 2),
+        "volume_ratio": volume_ratio,
+        "direction": "long" if move_pct > 0 else "short",
     }
 
 
@@ -423,21 +574,24 @@ def write_signal(
     confidence: float | None = None,
     fake_breakout_risk: int = 0,
     horizon: str | None = None,
+    direction: str = "long",
 ) -> int:
     """Insert one row into `signals`. Returns the new signal id.
 
     `confidence` is left NULL here — the Week-5 scorer fills it on dispatch.
     `fake_breakout_risk` (task 15.3) trims confidence on dispatch when set.
     `horizon` (swing/intraday) defaults from the signal type when not given.
+    `direction` ('long'/'short') is 'long' for the Phase-1 rules; earnings
+    reactions can be short.
     """
     horizon = horizon or horizon_for(signal_type)
     cur = conn.execute(
         "INSERT INTO signals "
         "(symbol, signal_type, detected_at, price, oi_change_pct, "
-        " price_change_pct, volume_ratio, confidence, fake_breakout_risk, horizon) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " price_change_pct, volume_ratio, confidence, fake_breakout_risk, horizon, direction) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (symbol, signal_type, detected_at, price, oi_change_pct,
-         price_change_pct, volume_ratio, confidence, fake_breakout_risk, horizon),
+         price_change_pct, volume_ratio, confidence, fake_breakout_risk, horizon, direction),
     )
     conn.commit()
     return int(cur.lastrowid or 0)
@@ -462,6 +616,7 @@ def _emit(
         price_change_pct=metrics.get("price_change_pct"),
         volume_ratio=metrics.get("volume_ratio"),
         fake_breakout_risk=metrics.get("fake_breakout_risk", 0),
+        direction=metrics.get("direction", "long"),
     )
     context = enrich.read_live_context(redis_client, symbol, conn)
     feature_store.snapshot_features(

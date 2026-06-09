@@ -24,6 +24,8 @@ from .parsers.rating_extractor import register_rating_job
 from .profile.builder import register_profile_builder
 from .indicators.pre_market_loader import register_pre_market_loader
 from .bot.morning_brief import register_morning_brief
+from .events.calendar import register_calendar_job
+from .events.pre_screen import register_pre_screen_job
 from .market.regime_job import register_regime_job
 from .market.sector_radar_job import register_sector_radar_job
 from .signals.detect import register_signal_job
@@ -147,6 +149,11 @@ def main() -> int:
     # raw_rating_actions + credit_* alerts (20 min) — Phase 5, Week 16.
     registered.append(register_classify_job(scheduler, db_path))
     registered.append(register_rating_job(scheduler, db_path))
+    # Results calendar (20:00) → pending_events from board meetings + cadence, and
+    # pre-event screen (20:15) → earnings_setups snapshot + "buy-rumor priced in"
+    # Telegram flags for results due in the next few days — Phase 5, E2.
+    registered.append(register_calendar_job(scheduler, db_path))
+    registered.append(register_pre_screen_job(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)
 
     try:

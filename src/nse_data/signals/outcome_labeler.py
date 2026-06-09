@@ -67,7 +67,8 @@ def run_labeler_pass(
     since_day = (now.date() - timedelta(days=lookback_days)).isoformat()
 
     rows = conn.execute(
-        "SELECT s.id, s.symbol, s.detected_at, s.price, sf.atr_14_daily "
+        "SELECT s.id, s.symbol, s.detected_at, s.price, sf.atr_14_daily, "
+        "       COALESCE(s.direction, 'long') "
         "FROM signals s "
         "LEFT JOIN signal_features sf ON sf.signal_id = s.id "
         "LEFT JOIN signal_outcomes so ON so.signal_id = s.id "
@@ -77,9 +78,10 @@ def run_labeler_pass(
     ).fetchall()
 
     labeled = 0
-    for signal_id, symbol, detected_at, price, atr in rows:
+    for signal_id, symbol, detected_at, price, atr, direction in rows:
         outcome = label_signal(
             conn, signal_id, symbol, detected_at, price, atr, now=now,
+            direction=direction,
         )
         if outcome is None:
             continue
@@ -102,12 +104,14 @@ def label_signal(
     atr_14_daily: float | None,
     *,
     now: datetime,
+    direction: str = "long",
 ) -> dict | None:
     """Compute every available outcome column for one signal.
 
     Returns a dict keyed by `_OUTCOME_COLUMNS`, or None if there's no entry
     price to measure against. Columns whose forward data isn't available yet
-    are None and get filled on a later night.
+    are None and get filled on a later night. ``direction`` flips the bracket for
+    shorts so hit_t1/hit_sl (which drive win-rate) are direction-correct.
     """
     if entry_price is None or entry_price <= 0:
         return None
@@ -123,7 +127,7 @@ def label_signal(
     ret_2h = _forward_return(after, detected_ts, 2 * 3600, entry_price)
     ret_eod = _eod_return(after, entry_price)
     mae, mfe = _excursions(after, entry_price)
-    hit_t1, hit_sl = _bracket_hits(after, entry_price, atr_14_daily)
+    hit_t1, hit_sl = _bracket_hits(after, entry_price, atr_14_daily, direction)
 
     daily_closes = _future_daily_closes(conn, symbol, detected_at)
     ret_1d = _pct(daily_closes[0], entry_price) if len(daily_closes) >= 1 else None
@@ -183,18 +187,22 @@ def _excursions(after: pd.DataFrame, entry: float) -> tuple[float | None, float 
 
 def _bracket_hits(
     after: pd.DataFrame, entry: float, atr_14_daily: float | None,
+    direction: str = "long",
 ) -> tuple[int | None, int | None]:
     """(hit_t1, hit_sl) as 1/0 — did the ATR bracket get touched intraday?
 
+    Direction-aware: a long's target is above (touched when high ≥ t1) and stop
+    below; a short's target is below (touched when low ≤ t1) and stop above.
     Returns (None, None) when the bracket can't be formed (no ATR) or there are
     no post-entry bars to evaluate against.
     """
     if after.empty or atr_14_daily is None or atr_14_daily <= 0:
         return (None, None)
-    sl, t1 = compute_sl_t1(entry, atr_14_daily)
-    hit_t1 = 1 if float(after["high"].max()) >= t1 else 0
-    hit_sl = 1 if float(after["low"].min()) <= sl else 0
-    return (hit_t1, hit_sl)
+    sl, t1 = compute_sl_t1(entry, atr_14_daily, direction)
+    hi, lo = float(after["high"].max()), float(after["low"].min())
+    if direction == "short":
+        return (1 if lo <= t1 else 0, 1 if hi >= sl else 0)
+    return (1 if hi >= t1 else 0, 1 if lo <= sl else 0)
 
 
 # ----------------------------------------------------------- daily metrics

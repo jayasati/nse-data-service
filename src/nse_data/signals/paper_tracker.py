@@ -79,7 +79,8 @@ def open_new_paper_trades(conn: sqlite3.Connection, *, now: datetime) -> int:
     """
     day = now.date().isoformat()
     rows = conn.execute(
-        "SELECT s.id, s.symbol, s.signal_type, s.price, sf.atr_14_daily "
+        "SELECT s.id, s.symbol, s.signal_type, s.price, sf.atr_14_daily, "
+        "       COALESCE(s.direction, 'long') "
         "FROM signals s "
         "LEFT JOIN paper_trades pt ON pt.signal_id = s.id "
         "LEFT JOIN signal_features sf ON sf.signal_id = s.id "
@@ -88,24 +89,30 @@ def open_new_paper_trades(conn: sqlite3.Connection, *, now: datetime) -> int:
     ).fetchall()
 
     opened = 0
-    for signal_id, symbol, signal_type, entry_price, atr in rows:
+    for signal_id, symbol, signal_type, entry_price, atr, direction in rows:
         if entry_price is None or atr is None or atr <= 0:
             continue
-        sl, t1 = compute_sl_t1(entry_price, atr)
+        sl, t1 = compute_sl_t1(entry_price, atr, direction)
         conn.execute(
             "INSERT INTO paper_trades "
             "(signal_id, symbol, signal_type, entry_price, sl_price, t1_price, "
-            " entry_time, status) VALUES (?, ?, ?, ?, ?, ?, ?, 'open')",
-            (signal_id, symbol, signal_type, entry_price, sl, t1, now.isoformat()),
+            " entry_time, status, direction) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)",
+            (signal_id, symbol, signal_type, entry_price, sl, t1, now.isoformat(), direction),
         )
         opened += 1
     conn.commit()
     return opened
 
 
-def compute_sl_t1(entry_price: float, atr_14_daily: float) -> tuple[float, float]:
-    """ATR bracket for a long (task 5.4): (SL, T1) = entry ∓ 1.5×ATR."""
+def compute_sl_t1(
+    entry_price: float, atr_14_daily: float, direction: str = "long",
+) -> tuple[float, float]:
+    """ATR bracket (task 5.4): 1.5×ATR each side. For a long, (SL, T1) =
+    entry ∓ band; for a short the bracket flips, (SL, T1) = entry ± band (stop
+    above entry, target below)."""
     band = ATR_SL_MULT * atr_14_daily
+    if direction == "short":
+        return (entry_price + band, entry_price - band)
     return (entry_price - band, entry_price + band)
 
 
@@ -122,19 +129,19 @@ def manage_open_trades(conn: sqlite3.Connection, *, now: datetime) -> dict:
     """Close open trades that hit T1/SL; force-flat the rest at 15:20."""
     force_flat = now.timetz().replace(tzinfo=None) >= FORCE_FLAT_TIME
     open_trades = conn.execute(
-        "SELECT id, symbol, entry_price, sl_price, t1_price "
+        "SELECT id, symbol, entry_price, sl_price, t1_price, COALESCE(direction, 'long') "
         "FROM paper_trades WHERE status = 'open'"
     ).fetchall()
 
     counts = {"hit_t1": 0, "hit_sl": 0, "forced_flat": 0}
-    for trade_id, symbol, entry, sl, t1 in open_trades:
+    for trade_id, symbol, entry, sl, t1, direction in open_trades:
         last_price = _latest_price(conn, symbol)
 
-        reason, exit_price = _exit_decision(last_price, sl, t1, force_flat)
+        reason, exit_price = _exit_decision(last_price, sl, t1, force_flat, direction)
         if reason is None:
             continue
 
-        _close_trade(conn, trade_id, entry, exit_price, reason, now)
+        _close_trade(conn, trade_id, entry, exit_price, reason, now, direction)
         counts[reason] += 1
 
     conn.commit()
@@ -143,17 +150,25 @@ def manage_open_trades(conn: sqlite3.Connection, *, now: datetime) -> dict:
 
 def _exit_decision(
     last_price: float | None, sl: float, t1: float, force_flat: bool,
+    direction: str = "long",
 ) -> tuple[str | None, float]:
-    """Decide whether/why an open long closes this tick, and at what price.
+    """Decide whether/why an open trade closes this tick, and at what price.
 
-    Target/stop are evaluated on last price and filled at the level. Force-flat
-    fills at last price. Returns (reason, exit_price); reason None = stay open.
+    Long: T1 above, SL below (hit on last >= t1 / <= sl). Short: T1 below, SL
+    above (hit on last <= t1 / >= sl). Force-flat fills at last price.
+    Returns (reason, exit_price); reason None = stay open.
     """
     if last_price is not None:
-        if last_price >= t1:
-            return ("hit_t1", t1)
-        if last_price <= sl:
-            return ("hit_sl", sl)
+        if direction == "short":
+            if last_price <= t1:
+                return ("hit_t1", t1)
+            if last_price >= sl:
+                return ("hit_sl", sl)
+        else:
+            if last_price >= t1:
+                return ("hit_t1", t1)
+            if last_price <= sl:
+                return ("hit_sl", sl)
     if force_flat and last_price is not None:
         return ("forced_flat", last_price)
     return (None, 0.0)
@@ -166,10 +181,11 @@ def _close_trade(
     exit_price: float,
     reason: str,
     now: datetime,
+    direction: str = "long",
 ) -> None:
     """Write the close: gross/net P&L (full cost model), exit fields, status."""
     quantity = _position_size(entry_price)
-    costs = compute_costs(entry_price, exit_price, quantity, trade_type="long")
+    costs = compute_costs(entry_price, exit_price, quantity, trade_type=direction)
     conn.execute(
         "UPDATE paper_trades SET exit_price = ?, exit_time = ?, exit_reason = ?, "
         "gross_pnl = ?, net_pnl = ?, status = 'closed' WHERE id = ?",

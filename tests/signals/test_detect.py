@@ -151,10 +151,11 @@ def test_market_closed_is_noop(signals_db):
 def test_opening_window_skipped(signals_db):
     _seed_long_buildup(signals_db)
     opening = datetime(2025, 6, 2, 9, 20, 0, tzinfo=IST)
-    assert _run(signals_db, now=opening) == {"skipped": "opening_window"}
+    # earnings reactions are still evaluated in the skip windows (event-driven)
+    assert _run(signals_db, now=opening) == {"skipped": "opening_window", "earnings": 0}
 
 
 def test_lunch_window_skipped(signals_db):
     _seed_long_buildup(signals_db)
     lunch = datetime(2025, 6, 2, 12, 0, 0, tzinfo=IST)
-    assert _run(signals_db, now=lunch) == {"skipped": "lunch_window"}
+    assert _run(signals_db, now=lunch) == {"skipped": "lunch_window", "earnings": 0}

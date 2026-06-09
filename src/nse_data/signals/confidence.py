@@ -43,6 +43,8 @@ def score_confidence(
     is_intraday: bool = False,
     time_multiplier: float = 1.0,
     long_penalty: float = 1.0,
+    earnings: dict | None = None,
+    direction: str = "long",
 ) -> float:
     """Confidence in [0, 1] from live context + volume + market regime + sector RS.
 
@@ -59,17 +61,50 @@ def score_confidence(
     All inputs optional.
     """
     score = BASE_SCORE
-    score += _vwap_adjustment(context.get("price_vs_vwap"), context.get("vwap_slope"))
-    score += _rsi_adjustment(context.get("rsi_5m"))
-    score += _trend_adjustment(context.get("trend_regime"))
+    # Market-directional terms: their sign assumes a LONG. For a short reaction
+    # (earnings on a bad result) the same below-VWAP / downtrend / risk-off /
+    # lagging-sector reads are *favourable*, so flip them.
+    dir_sign = -1.0 if direction == "short" else 1.0
+    score += dir_sign * _vwap_adjustment(context.get("price_vs_vwap"), context.get("vwap_slope"))
+    score += dir_sign * _rsi_adjustment(context.get("rsi_5m"))
+    score += dir_sign * _trend_adjustment(context.get("trend_regime"))
+    score += dir_sign * _regime_adjustment(regime)
+    score += dir_sign * _sector_adjustment(sector_rank, sector_trend)
+    # Direction-agnostic terms (magnitude / standing quality / patterns / credit).
     score += _volume_adjustment(volume_ratio)
-    score += _regime_adjustment(regime)
-    score += _sector_adjustment(sector_rank, sector_trend)
     score += _quality_adjustment(quality_score)
     score += _pattern_adjustment(bb_squeeze, bearish_divergence, fake_breakout)
     score += _credit_adjustment(credit, is_intraday)
+    score += _earnings_adjustment(earnings, direction)
     score = _clamp01(score)
     return _clamp01(score * time_multiplier * long_penalty)
+
+
+def _earnings_adjustment(earnings: dict | None, direction: str) -> float:
+    """Earnings-reaction contribution (E3).
+
+    A reaction that CONFIRMS the fundamental surprise (good result + breaking up,
+    or bad result + breaking down) is trustworthy and lifts confidence; one that
+    contradicts it is a likely fade and is penalised. "Buy-rumor priced in" cuts
+    a long (much already in the price); "fear priced in" cuts a short. A realised
+    move beyond the options-implied move is a genuine surprise and adds a little.
+    """
+    if not earnings:
+        return 0.0
+    adj = 0.0
+    sign = earnings.get("surprise_sign", 0)
+    if sign != 0:
+        adj += 0.12 if earnings.get("confirms_direction") else -0.10
+    run_up = earnings.get("run_up_class")
+    if run_up == "BUY_RUMOR_IN_PLAY" and direction == "long":
+        adj -= 0.10
+    elif run_up == "FEAR_PRICED" and direction == "short":
+        adj -= 0.10
+    implied = earnings.get("implied_move_pct")
+    realized = earnings.get("realized_move_pct")
+    if implied and realized is not None and abs(realized) > implied:
+        adj += 0.05
+    return adj
 
 
 def _credit_adjustment(credit: dict | None, is_intraday: bool) -> float:
