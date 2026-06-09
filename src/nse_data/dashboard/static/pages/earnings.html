@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Earnings — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/backtest.css">
+<link rel="stylesheet" href="/static/css/trades.css">
+</head>
+<body>
+  <header>
+    <h1>Earnings Reactions</h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right">
+      <label class="seg">
+        <span class="seg-label">Side</span>
+        <button class="seg-btn on" id="fAll">All</button>
+        <button class="seg-btn"    id="fLong">Long</button>
+        <button class="seg-btn"    id="fShort">Short</button>
+      </label>
+      <a class="link" href="/trades">Trades →</a>
+      <a class="link" href="/market">Market →</a>
+      <a class="link" href="/stocks">Stocks →</a>
+      <button class="icon" id="themeBtn" title="Toggle light/dark">☀</button>
+    </div>
+  </header>
+
+  <!-- accuracy / probability of the engine -->
+  <section class="cards" id="cards">
+    <div class="card"><div class="card-label">Accuracy (win rate)</div><div class="card-val" id="cWin">—</div></div>
+    <div class="card"><div class="card-label">Avg return T+1</div><div class="card-val" id="cAvg">—</div></div>
+    <div class="card"><div class="card-label">Profit factor</div><div class="card-val" id="cPF">—</div></div>
+    <div class="card"><div class="card-label">Settled / total</div><div class="card-val" id="cN">—</div></div>
+    <div class="card"><div class="card-label">Long win%</div><div class="card-val" id="cLong">—</div></div>
+    <div class="card"><div class="card-label">Short win%</div><div class="card-val" id="cShort">—</div></div>
+  </section>
+
+  <section class="splits">
+    <div class="split">
+      <div class="section-head">
+        <span>Recent reactions</span>
+        <span class="dim" id="rxFilter"></span>
+      </div>
+      <div class="tablewrap">
+        <table id="rxTable">
+          <thead>
+            <tr>
+              <th>Symbol</th><th>When</th><th>Side</th>
+              <th class="num">Reaction%</th><th class="num">Conf</th>
+              <th class="num">Ret T+1</th><th class="num">Outcome</th><th>Result</th>
+            </tr>
+          </thead>
+          <tbody id="rxBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="section-head">
+        <span>Pre-event setups (what's priced in)</span>
+        <span class="dim" id="upCount"></span>
+      </div>
+      <div class="tablewrap">
+        <table id="upTable">
+          <thead>
+            <tr>
+              <th>Symbol</th><th>Result date</th><th>Run-up 5d</th>
+              <th class="num">Implied move</th><th class="num">PCR</th>
+              <th class="num">Lean</th><th>Trend</th>
+            </tr>
+          </thead>
+          <tbody id="upBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">
+    Odds are the direction-adjusted T+1 win rate of past <code>earnings_direction</code>
+    signals — the same metric shown in the Telegram alert. Bootstrap historical odds with
+    <code>events/backfill.py</code>; live signals add to it as results react.
+  </div>
+
+  <script type="module" src="/static/js/pages/earnings.js"></script>
+</body>
+</html>
