@@ -30,9 +30,10 @@ class Fixture:
     ground_truth: dict[str, Any] | None
 
 
-def _gt_path_for(symbol: str, fingerprint: str) -> Path:
-    fp_short = fingerprint[:8] if fingerprint else "nofp"
-    return GT_ROOT / f"{symbol}_{fp_short}.yaml"
+def _gt_path_for(fingerprint: str) -> Path:
+    # Promoted ground-truth files are keyed by full fingerprint (same key as
+    # drafts/), e.g. ground_truth/00aa0d3e4077df9e.yaml.
+    return GT_ROOT / f"{fingerprint}.yaml"
 
 
 def load_fixtures() -> list[Fixture]:
@@ -42,7 +43,7 @@ def load_fixtures() -> list[Fixture]:
         meta = json.load(f)
     out: list[Fixture] = []
     for e in meta.get("fixtures", []):
-        gt_path = _gt_path_for(e["symbol"], e["fingerprint"])
+        gt_path = _gt_path_for(e["fingerprint"])
         gt = None
         if gt_path.exists():
             with gt_path.open() as f:

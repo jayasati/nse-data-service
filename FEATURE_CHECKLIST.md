@@ -928,18 +928,36 @@ This is the hardest week in the entire roadmap. Budget 2–3 weeks if needed.
 
 ### Tasks
 
-- [ ] **17.1** Download 50+ result PDFs from NSE for 50+ different F&O companies across the last 4 quarters. Store in `tests/financial_extraction/fixtures/`
+> **Design + runbook:** see `tests/financial_extraction/README.md` for the full
+> download / storage / schema design. Corpus, labels, and the production archive
+> are all keyed by the announcement **fingerprint**.
 
-- [ ] **17.2** Hand-label ground truth for all 50 PDFs. Create `tests/financial_extraction/ground_truth.yaml`:
+- [ ] **17.1** Build a ≥50-PDF *result* corpus for ≥50 F&O companies across recent quarters in `tests/financial_extraction/fixtures/`.
+  - Miner: `scripts/mine_announcement_fixtures.py` (source = `raw_announcements`; `raw_financial_results` has no PDF URLs). PDFs stored as `fixtures/pdfs/<fingerprint>.pdf` + `fixtures/metadata.json` (`schema_version 2`).
+  - Prefer re-hydrating from `data/archive/` (keyed by fingerprint) over re-downloading from NSE — same key, no label drift.
+  - Corpus is subject-agnostic; filter to result subjects (e.g. "Outcome of Board Meeting", "Press Release", "Investor Presentation") for the eval set.
+
+- [ ] **17.2** Hand-label ground truth — **one YAML per fixture**, keyed by fingerprint, in `tests/financial_extraction/ground_truth/<fingerprint>.yaml`. Drafts (`drafts/<fingerprint>.yaml`, gpt-4o, raw source units) are reviewed/normalized-to-crore on promotion. Richer per-file schema (chosen over a single flat file):
   ```yaml
-  RELIANCE_Q4FY26:
+  standalone:                      # numbers in crore
     revenue_cr: 234567
+    other_income_cr: ...
+    total_income_cr: ...
+    total_expenses_cr: ...
+    pbt_cr: ...
+    tax_cr: ...
     pat_cr: 18900
-    eps: 28.4
-    yoy_revenue_growth: 12.3
-  HDFCBANK_Q4FY26:
-    net_interest_income_cr: 28900
-    ...
+    total_comprehensive_income_cr: ...
+    eps_basic: 28.4
+    eps_diluted: ...
+    net_interest_income_cr: 28900  # BFSI only (banks/NBFCs)
+  consolidated: null               # same shape, or null if absent
+  yoy_revenue_growth: 12.3         # company-stated %, null if not printed
+  period_label: Q4-FY26
+  period_ending: '2026-03-31'
+  units_in_source_pdf: INR crore   # provenance
+  notes: ...
+  _meta: { fingerprint, symbol, subject, broadcast_dt, reviewed, draft_cost_usd }
   ```
 
 - [ ] **17.3** Write `parsers/financial_extractor.py` — multi-strategy ensemble:
