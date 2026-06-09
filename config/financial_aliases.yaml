@@ -1,157 +1,74 @@
-# Canonical financial fields and their label variants.
+# Financial extractor config (Week 17 vision-first rewrite).
 #
-# Each canonical field name is what the extractor outputs in JSON.
-# The 'aliases' list contains every label variant we've seen in NSE result
-# PDFs that maps to this field. Matching is case-insensitive and fuzzy.
-#
-# Add new variants here when the eval harness shows extraction failures
-# clustering on companies that use non-standard labels.
+# The vision model reads the P&L straight from page images, so we no longer keep
+# per-field row-label alias lists here. What remains is the small amount of
+# deterministic knowledge the orchestrator still needs:
+#   * canonical_fields  — the 10 fields the model must return, per scope
+#   * pnl_anchors       — distinctive P&L row labels used to LOCATE the P&L page
+#                         in the cheap text pre-pass (so we render the right pages)
+#   * units_hints       — source-unit phrase -> multiplier to crore
+#   * validations       — accounting identities; failures downgrade confidence
 
+# The canonical schema (also the keys in tests/.../ground_truth/*.yaml).
+# eps_* are per-share rupees and are never unit-converted.
+canonical_fields:
+  - revenue_cr
+  - other_income_cr
+  - total_income_cr
+  - total_expenses_cr
+  - pbt_cr
+  - tax_cr
+  - pat_cr
+  - total_comprehensive_income_cr
+  - eps_basic
+  - eps_diluted
+
+rupee_fields:
+  - eps_basic
+  - eps_diluted
+
+# Used to find the page(s) holding the Statement of Profit & Loss. Matched as
+# lowercase substrings against each page's text. A page hitting >= 2 of these is
+# a P&L candidate.
+pnl_anchors:
+  - "revenue from operations"
+  - "income from operations"
+  - "total income"
+  - "total expenses"
+  - "profit before tax"
+  - "profit after tax"
+  - "profit for the period"
+  - "tax expense"
+  - "total comprehensive income"
+  - "earnings per"
+  - "interest earned"          # banks/NBFCs
+  - "net interest income"
+
+# Source-unit phrase -> factor to crore. Checked as substrings, most specific
+# first. EPS is never scaled.
 units_hints:
-  # If the PDF mentions any of these phrases near the table top, units are
-  # detected accordingly. Conversion to Crore happens at extraction time.
-  - phrase: "in million"
-    factor: 0.1          # 1 million = 0.1 Cr
-  - phrase: "in rupees million"
-    factor: 0.1
-  - phrase: "in ₹ million"
-    factor: 0.1
-  - phrase: "in lakh"
-    factor: 0.01         # 1 lakh = 0.01 Cr
-  - phrase: "in lakhs"
-    factor: 0.01
-  - phrase: "in crore"
-    factor: 1.0
-  - phrase: "in crores"
-    factor: 1.0
-  - phrase: "in ₹ crore"
-    factor: 1.0
+  - {phrase: "in crore",   factor: 1.0}
+  - {phrase: "in crores",  factor: 1.0}
+  - {phrase: "₹ in cr",    factor: 1.0}
+  - {phrase: "rs. in cr",  factor: 1.0}
+  - {phrase: "in million", factor: 0.1}
+  - {phrase: "in millions", factor: 0.1}
+  - {phrase: "in lakh",    factor: 0.01}
+  - {phrase: "in lakhs",   factor: 0.01}
+  - {phrase: "in lacs",    factor: 0.01}
+  - {phrase: "in thousand", factor: 0.0001}
+  - {phrase: "in thousands", factor: 0.0001}
 
-# Canonical field definitions. Each field's 'aliases' are tried in order;
-# first match wins.
-fields:
-  revenue_cr:
-    description: "Total revenue from operations (Standalone, most recent quarter)"
-    aliases:
-      - "Total revenue from operations"
-      - "Total Revenue from Operations"
-      - "Revenue from operations"
-      - "Revenue from Operations"
-      - "Net Sales / Income from Operations"
-      - "Net sales / Income from Operations"
-      - "Total Income from Operations"
-      - "Total income from operations"
-      - "Income from operations"
-    require_positive: true
-
-  other_income_cr:
-    description: "Total other income (non-operating)"
-    aliases:
-      - "Total other income"
-      - "Total Other Income"
-      - "Other income"
-      - "Other Income"
-
-  total_income_cr:
-    description: "Total income (revenue + other income)"
-    aliases:
-      - "Total income"
-      - "Total Income"
-      - "Total Income (I+II)"
-      - "Total income (I+II)"
-      - "Total income (1+2)"
-      - "Total Income (1+2)"
-
-  total_expenses_cr:
-    description: "Total expenses"
-    aliases:
-      - "Total expenses"
-      - "Total Expenses"
-      - "Total expenses (IV)"
-      - "Total Expenses (IV)"
-
-  pbt_cr:
-    description: "Profit before tax"
-    aliases:
-      - "Profit before tax"
-      - "Profit Before Tax"
-      - "Profit/(loss) before tax"
-      - "Profit / (loss) before tax"
-      - "Profit before tax (V-VI)"
-      - "Profit before tax (5-6)"
-      - "PBT"
-
-  tax_cr:
-    description: "Total tax expense"
-    aliases:
-      - "Total tax expense"
-      - "Total Tax Expense"
-      - "Tax expense"
-      - "Tax Expense"
-      - "Total tax expenses"
-
-  pat_cr:
-    description: "Profit after tax"
-    aliases:
-      - "Profit after tax"
-      - "Profit After Tax"
-      - "Profit/(loss) after tax"
-      - "Profit / (loss) after tax"
-      - "Profit after tax (7-8)"
-      - "Profit after tax (VII-VIII)"
-      - "Net profit"
-      - "Net Profit"
-      - "Net profit / (loss) for the period"
-    require_smaller_than: revenue_cr  # |PAT| should be < |revenue|
-
-  total_comprehensive_income_cr:
-    description: "Total comprehensive income for the period"
-    aliases:
-      - "Total comprehensive income"
-      - "Total Comprehensive Income"
-      - "Total comprehensive income (9+10)"
-      - "Total Comprehensive Income (9+10)"
-
-  eps_basic:
-    description: "Earnings per share, Basic"
-    aliases:
-      - "Earnings per share (Basic)"
-      - "Earnings per equity share (Basic)"
-      - "Earnings Per Share (Basic)"
-      - "EPS (Basic)"
-      - "Basic EPS"
-      - "(a) Basic"
-      - "Basic (in Rs)"
-      - "Basic (in ₹)"
-    unit: "rupees"   # NOT converted to Cr; EPS is per-share rupees
-
-  eps_diluted:
-    description: "Earnings per share, Diluted"
-    aliases:
-      - "Earnings per share (Diluted)"
-      - "Earnings per equity share (Diluted)"
-      - "Earnings Per Share (Diluted)"
-      - "EPS (Diluted)"
-      - "Diluted EPS"
-      - "(b) Diluted"
-      - "Diluted (in Rs)"
-      - "Diluted (in ₹)"
-    unit: "rupees"
-
-# Validation rules — failures DOWNGRADE confidence, don't reject the row.
+# Accounting identities. Failures DOWNGRADE confidence, they don't reject. Each
+# rule is eval'd with the standalone *_cr fields in scope (abs available).
 validations:
   - rule: "revenue_cr > 0"
-    severity: "warn"
     message: "Revenue should be positive"
-
   - rule: "abs(pat_cr) < abs(revenue_cr) * 1.5"
-    severity: "warn"
-    message: "PAT magnitude exceeds revenue — likely column misalignment"
-
-  - rule: "abs(total_income_cr - (revenue_cr + other_income_cr)) < total_income_cr * 0.05"
-    severity: "warn"
+    message: "PAT magnitude exceeds revenue — likely wrong row/column"
+  - rule: "abs(total_income_cr - (revenue_cr + other_income_cr)) < abs(total_income_cr) * 0.05"
     message: "Total income != revenue + other_income (within 5%)"
-
-  - rule: "abs(pbt_cr - (total_income_cr - total_expenses_cr)) < pbt_cr * 0.10"
-    severity: "warn"
+  - rule: "abs(pbt_cr - (total_income_cr - total_expenses_cr)) < abs(pbt_cr) * 0.10 + 0.25"
     message: "PBT != total_income - total_expenses (within 10%)"
+  - rule: "abs((pbt_cr - tax_cr) - pat_cr) < abs(pat_cr) * 0.10 + 0.25"
+    message: "PBT - tax != PAT (within 10%)"
