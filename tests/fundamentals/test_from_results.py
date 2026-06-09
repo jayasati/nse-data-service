@@ -136,6 +136,13 @@ def test_register_intraday_extract_runner_schedules():
     assert "extract_financials_intraday" in sched.jobs
 
 
+def test_register_fast_result_lane_schedules():
+    sched = _StubScheduler()
+    job_id = fr.register_fast_result_lane(sched, ":memory:", session=object())
+    assert job_id == "fast_result_lane"
+    assert "fast_result_lane" in sched.jobs
+
+
 def test_run_extract_pass_filters_and_dedups(conn, monkeypatch):
     _insert_announcement(conn, "fpR", "ACME", "Financial Results")
     _insert_announcement(conn, "fpX", "NOPE", "Acquisition of stake")   # not a result

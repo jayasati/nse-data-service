@@ -28,6 +28,7 @@ from .events.calendar import register_calendar_job
 from .events.pre_screen import register_pre_screen_job
 from .fundamentals.from_results import (
     register_extract_runner,
+    register_fast_result_lane,
     register_intraday_extract_runner,
 )
 from .market.regime_job import register_regime_job
@@ -158,9 +159,13 @@ def main() -> int:
     # Telegram flags for results due in the next few days — Phase 5, E2.
     registered.append(register_calendar_job(scheduler, db_path))
     registered.append(register_pre_screen_job(scheduler, db_path))
-    # Financial extract-runner: every 5 min during market hours (so a mid-session
-    # result's financials are ready for the reaction's surprise score) + a 21:00
-    # sweep for after-close filings and backlog → extracted_financials.
+    # Financial extraction, three latency tiers → extracted_financials:
+    #  - fast lane (every 1 min, market hours): full pipeline on just-filed result
+    #    PDFs so a mid-session reaction is scored with the real surprise
+    #  - intraday safety net (every 5 min, market hours): financial-extract any
+    #    result the general parser text-extracted that the fast lane missed
+    #  - nightly sweep (21:00): after-close filings + backlog
+    registered.append(register_fast_result_lane(scheduler, db_path, session))
     registered.append(register_intraday_extract_runner(scheduler, db_path))
     registered.append(register_extract_runner(scheduler, db_path))
     log.info("scheduler_starting", jobs=registered)

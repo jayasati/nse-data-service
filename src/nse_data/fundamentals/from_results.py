@@ -250,6 +250,79 @@ def register_extract_runner(scheduler, db_path: str) -> str:
     return job_id
 
 
+# Fast lane: process freshly-filed RESULT PDFs end-to-end within ~1 min of
+# arrival during market hours, so the surprise is ready when the 5-10 min
+# reaction fires. Same download/extraction logic as the general parser — only
+# the latency changes, never the accuracy.
+FAST_LANE_INTERVAL_SEC = 60
+FAST_LANE_BATCH = 5
+
+
+def register_fast_result_lane(scheduler, db_path: str, session) -> str:
+    """Every minute during market hours: run the WHOLE pipeline (download ->
+    text-extract -> financial-extract) on just-arrived result announcements,
+    newest first. Collapses the collector->parser->extract latency for results
+    to ~1 min so a mid-session reaction can be scored with the real surprise.
+
+    ``session`` is the shared SessionManager (for the PDF download). Idle ticks
+    (no fresh results) are cheap no-ops; per-row errors are isolated."""
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    from nse_data.parsers.job import process_one_row
+    from nse_data.scheduler.jobs import ARCHIVE_ROOT
+    from nse_data.scheduler.market_hours import is_market_open
+    from nse_data.storage.db import open_db
+
+    job_id = "fast_result_lane"
+
+    def _tick():
+        if not is_market_open():
+            return
+        conn = open_db(db_path)
+        try:
+            conn.row_factory = __import__("sqlite3").Row
+            rows = conn.execute(
+                "SELECT fingerprint, symbol, subject, attachment_url, broadcast_dt "
+                "FROM raw_announcements WHERE pdf_status IN ('pending', 'classified') "
+                "ORDER BY broadcast_dt DESC LIMIT 50"
+            ).fetchall()
+            results = [r for r in rows if is_result_subject(r["subject"])][:FAST_LANE_BATCH]
+            processed = stored = 0
+            for r in results:
+                try:
+                    state = process_one_row(conn, session, dict(r), ARCHIVE_ROOT)
+                except Exception:
+                    log.exception("fast_lane_download_failed", symbol=r["symbol"])
+                    continue
+                processed += 1
+                if state != State.TEXT_EXTRACTED:
+                    continue
+                path_row = conn.execute(
+                    "SELECT pdf_path FROM raw_announcements WHERE fingerprint = ?",
+                    (r["fingerprint"],),
+                ).fetchone()
+                if not path_row or not path_row[0]:
+                    continue
+                res = extract_and_store(
+                    conn, fingerprint=r["fingerprint"], symbol=r["symbol"],
+                    subject=r["subject"], broadcast_dt=r["broadcast_dt"],
+                    pdf_path=path_row[0], use_llm=True,
+                )
+                stored += res["stored"]
+            if processed:
+                log.info("fast_result_lane", processed=processed, stored=stored)
+        except Exception:
+            log.exception("fast_result_lane_failed")
+        finally:
+            conn.close()
+
+    scheduler.add_job(
+        _tick, trigger=IntervalTrigger(seconds=FAST_LANE_INTERVAL_SEC),
+        id=job_id, max_instances=1, coalesce=True, replace_existing=True,
+    )
+    return job_id
+
+
 def register_intraday_extract_runner(scheduler, db_path: str) -> str:
     """Every few minutes DURING market hours: extract financials from results
     that just filed, so a mid-session reaction can be scored with the actual
