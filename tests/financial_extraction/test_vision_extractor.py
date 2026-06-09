@@ -29,6 +29,14 @@ def test_map_block_applies_unit_factor_to_amounts_not_eps():
     assert out["eps_diluted"] == 41.43
 
 
+def test_map_block_includes_cfo_when_present():
+    out = vf._map_block({"revenue": 100, "cfo": 8000}, factor=0.01)   # lakh -> cr
+    assert out["revenue_cr"] == 1.0
+    assert out["cfo_cr"] == 80.0                 # scaled like other amounts
+    # absent cfo simply doesn't appear
+    assert "cfo_cr" not in vf._map_block({"revenue": 100}, factor=1.0)
+
+
 def test_coerce_number_formats():
     assert vf._coerce_number("1,234.5") == 1234.5
     assert vf._coerce_number("(166.79)") == -166.79

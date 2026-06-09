@@ -30,7 +30,7 @@ log = structlog.get_logger()
 AMOUNT_FIELDS = (
     "revenue_cr", "other_income_cr", "total_income_cr", "total_expenses_cr",
     "pbt_cr", "tax_cr", "pat_cr", "total_comprehensive_income_cr",
-    "eps_basic", "eps_diluted",
+    "eps_basic", "eps_diluted", "cfo_cr",
 )
 
 # A result filing's announcement subject. Board-meeting *outcomes* often carry

@@ -926,13 +926,36 @@ _⏳ Optional next refinement: horizon-weighted scoring (intraday down-weights f
 
 This is the hardest week in the entire roadmap. Budget 2–3 weeks if needed.
 
+> **STATUS / DESIGN PIVOT (vision-first).** The extractor was rebuilt around
+> **GPT-4o vision** reading the P&L from page images (text layer only locates the
+> page + units), replacing the camelot/pdfplumber ensemble that mis-selected
+> garbage tables and note/year-ago columns. When vision under-extracts, the text
+> path **gap-fills** missing fields. This supersedes the literal 17.3 (camelot
+> ensemble), 17.4 (per-field alias map), and 17.8 (per-company quirk files — the
+> vision model handles odd layouts). Built + tested: extractor, `eval.py`,
+> validation layer, CFO field.
+>
+> **Gate status — NOT YET PROVEN.** The committed `ground_truth/` labels are
+> ~55% LLM-generated/unreliable (see memory `week17-ground-truth-integrity`), so
+> any eval number against them is meaningless. Two trustworthy-label tracks now
+> exist: (a) **human verification** — `scripts/verify_extraction.py` →
+> `scripts/promote_verified_labels.py` (reliable, in progress); (b) **XBRL** —
+> `parsers/xbrl_financials.py` + `scripts/xbrl_ground_truth.py`/`xbrl_eval.py`
+> parse NSE's authoritative INDAS XBRL (built + validated). **XBRL is currently
+> data-blocked**: our result PDFs are 2026 (`raw_announcements`) while NSE's
+> financial-results/XBRL feed serves Dec-2024 (`raw_financial_results`), and the
+> feed carries no PDF link (`resultD` empty) — so no PDF+XBRL pair exists to
+> measure against. Path to the gate: human-verify the 2026 corpus → eval on the
+> verified subset; keep XBRL for a forward-looking continuous-accuracy monitor
+> once both feeds align on live server data.
+
 ### Tasks
 
 > **Design + runbook:** see `tests/financial_extraction/README.md` for the full
 > download / storage / schema design. Corpus, labels, and the production archive
 > are all keyed by the announcement **fingerprint**.
 
-- [ ] **17.1** Build a ≥50-PDF *result* corpus for ≥50 F&O companies across recent quarters in `tests/financial_extraction/fixtures/`.
+- [x] **17.1** Build a ≥50-PDF *result* corpus for ≥50 F&O companies across recent quarters in `tests/financial_extraction/fixtures/`. *(318 fixtures; ~37–48 are result statements)*
   - Miner: `scripts/mine_announcement_fixtures.py` (source = `raw_announcements`; `raw_financial_results` has no PDF URLs). PDFs stored as `fixtures/pdfs/<fingerprint>.pdf` + `fixtures/metadata.json` (`schema_version 2`).
   - Prefer re-hydrating from `data/archive/` (keyed by fingerprint) over re-downloading from NSE — same key, no label drift.
   - Corpus is subject-agnostic; filter to result subjects (e.g. "Outcome of Board Meeting", "Press Release", "Investor Presentation") for the eval set.
@@ -960,7 +983,7 @@ This is the hardest week in the entire roadmap. Budget 2–3 weeks if needed.
   _meta: { fingerprint, symbol, subject, broadcast_dt, reviewed, draft_cost_usd }
   ```
 
-- [ ] **17.3** Write `parsers/financial_extractor.py` — multi-strategy ensemble:
+- [x] **17.3** `parsers/financial_extractor.py` — **DONE as vision-first** (gpt-4o vision + text gap-fill), NOT the camelot ensemble below (superseded):
   - Strategy 1: `camelot.read_pdf(lattice=True)` — for bordered tables (most result PDFs)
   - Strategy 2: `camelot.read_pdf(stream=True)` — for whitespace-separated tables
   - Strategy 3: `pdfplumber` table extraction
@@ -968,7 +991,7 @@ This is the hardest week in the entire roadmap. Budget 2–3 weeks if needed.
   - For each strategy: returns `(numbers_dict, confidence_score)`
   - Ensemble: pick highest-confidence non-empty result
 
-- [ ] **17.4** Write `config/field_aliases.yaml` — maps every variant label to canonical names. Build this from looking at actual PDFs:
+- [~] **17.4** *(SUPERSEDED by vision — `config/financial_aliases.yaml` keeps anchors/units/validations, not per-field alias maps)* Write `config/field_aliases.yaml` — maps every variant label to canonical names. Build this from looking at actual PDFs:
   ```yaml
   revenue_cr:
     - "Total Income from Operations"
@@ -983,26 +1006,33 @@ This is the hardest week in the entire roadmap. Budget 2–3 weeks if needed.
     - "Profit for the period"
   ```
 
-- [ ] **17.5** Write eval script `tests/financial_extraction/eval.py` — runs all 50 fixtures through the extractor, compares against ground truth, reports:
+- [x] **17.5** Write eval script `tests/financial_extraction/eval.py` — runs all 50 fixtures through the extractor, compares against ground truth, reports: *(+ `scripts/xbrl_eval.py` for model-independent XBRL comparison)*
   - Accuracy per field (what % of PDFs got revenue correct within 2%)
   - Accuracy per strategy (which strategy works for which company types)
   - Failure cases list (which PDFs failed and why)
   - Target: 95% accuracy on F&O result PDFs
 
-- [ ] **17.6** Write validation layer in `financial_extractor.py`:
+- [x] **17.6** Write validation layer in `financial_extractor.py`: *(revenue>0, |PAT|<|revenue|, pbt−tax=pat + total-income identities)*
   - Revenue > 0 (warn if negative)
   - PAT magnitude < revenue magnitude (warn otherwise)
   - If extracted YoY growth differs from company-stated YoY by > 5% → flag low confidence
 
-- [ ] **17.7** Add earnings quality extraction alongside the main numbers:
+- [x] **17.7** *(CFO added to the vision schema + `extracted_financials.cfo_cr`; receivables deferred)* Add earnings quality extraction alongside the main numbers:
   - CFO (cash flow from operations) if present in the PDF
   - If CFO/PAT > 1.0 → real profits. If < 0.5 → accounting concern
   - Receivables change YoY (if balance sheet available)
 
-- [ ] **17.8** Write per-company quirk slot: `extractors/quirks/` — empty `__init__.py` plus one example quirk file for the most common failure case you find in the eval. This is the pattern for handling companies whose PDFs don't follow standard format
+- [~] **17.8** *(SUPERSEDED — the vision model handles odd layouts; no per-company quirk files needed)* Write per-company quirk slot: `extractors/quirks/` — empty `__init__.py` plus one example quirk file for the most common failure case you find in the eval. This is the pattern for handling companies whose PDFs don't follow standard format
 
 ### Week 17 gate
 Financial extractor achieving ≥ 90% accuracy on the 50-fixture eval set (targeting 95% — iterate until you get there).
+
+> **GATE STATUS: not yet proven.** Extractor + eval + validations are built and
+> spot-checks are correct (ACC, BEL [after gap-fill], RELIANCE via XBRL). The
+> number itself is pending **trustworthy labels** — blocked on the label tracks
+> noted in the status box above (human verification in progress; XBRL data-blocked
+> on the 2026↔Dec-2024 mismatch). Close it by promoting human-verified verdicts
+> and running `eval.py` on that subset.
 
 ---
 

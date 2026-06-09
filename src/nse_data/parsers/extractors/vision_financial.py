@@ -39,6 +39,7 @@ _FIELD_MAP = {
     "total_comprehensive_income": "total_comprehensive_income_cr",
     "eps_basic": "eps_basic",
     "eps_diluted": "eps_diluted",
+    "cfo": "cfo_cr",      # cash flow from operations (earnings-quality input, 17.7)
 }
 _RUPEE_FIELDS = {"eps_basic", "eps_diluted"}
 
@@ -60,9 +61,10 @@ _SCHEMA_BLOCK = """{
     "total_income": <number or null>, "total_expenses": <number or null>,
     "pbt": <number or null>, "tax": <number or null>, "pat": <number or null>,
     "total_comprehensive_income": <number or null>,
-    "eps_basic": <number or null>, "eps_diluted": <number or null>
+    "eps_basic": <number or null>, "eps_diluted": <number or null>,
+    "cfo": <number or null>
   },
-  "consolidated": { <same 10 fields, or null if absent> },
+  "consolidated": { <same 11 fields, or null if absent> },
   "units_in_source_pdf": "<'INR million' | 'INR lakh' | 'INR crore' | 'INR thousand' | 'INR'>",
   "period_ending": "<YYYY-MM-DD of the quarter you read, or null>",
   "table_found": <true if you found the P&L>,
@@ -89,6 +91,9 @@ _COMMON_RULES = """Field definitions & rules:
   ONLY for a genuine net tax credit. Check: PBT - tax = PAT.
 - MAGNITUDE: PAT magnitude < revenue; EPS is a small decimal. If violated you read
   the wrong row/column — re-read.
+- "cfo" = Net cash flow from OPERATING activities, ONLY if a Cash Flow Statement is
+  printed (usual in half-year/annual results, absent in most quarterly P&L-only
+  filings). If there is no cash-flow statement, set cfo to null — do NOT infer it.
 - Return raw values exactly as printed (keep the PDF's unit; identify the unit
   separately). NEVER guess — use null if unsure. Return ONLY the JSON object."""
 
