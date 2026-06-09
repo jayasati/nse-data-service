@@ -205,6 +205,44 @@ def run_extract_pass(
     return {"processed": processed, "stored": stored, "cost_usd": total_cost, "rows": report}
 
 
+# Per-night batch bound. Each PDF is one gpt-4o call; 40 keeps a heavy results
+# night well under the LLMClient daily cap ($10). Unprocessed results carry over
+# to the next night (the pass only picks text_extracted rows not yet stored).
+EXTRACT_BATCH_LIMIT = 40
+
+
+def register_extract_runner(scheduler, db_path: str) -> str:
+    """Nightly 21:00 IST: extract financials from the day's result PDFs.
+
+    Runs after the calendar (20:00) / pre-screen (20:15) and late enough that the
+    day's result PDFs have been downloaded + text-extracted. Trading-day gated;
+    catch-up safe (a missed night's results are picked up the next run)."""
+    from apscheduler.triggers.cron import CronTrigger
+
+    from nse_data.scheduler import market_hours
+    from nse_data.storage.db import open_db
+
+    job_id = "extract_financials"
+
+    def _tick():
+        if not market_hours.is_trading_day(market_hours.now_ist().date()):
+            return
+        conn = open_db(db_path)
+        try:
+            report = run_extract_pass(conn, limit=EXTRACT_BATCH_LIMIT, use_llm=True)
+            log.info("extract_financials_job", **report)
+        except Exception:
+            log.exception("extract_financials_job_failed")
+        finally:
+            conn.close()
+
+    scheduler.add_job(
+        _tick, trigger=CronTrigger(hour=21, minute=0, timezone=market_hours.IST),
+        id=job_id, max_instances=1, coalesce=True, replace_existing=True,
+    )
+    return job_id
+
+
 # --------------------------------------------------------------------------- #
 # growth (YoY / QoQ) over the stored history
 # --------------------------------------------------------------------------- #

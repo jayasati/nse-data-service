@@ -114,6 +114,21 @@ def test_extract_and_store_persists_both_scopes(conn, monkeypatch):
     assert st == State.EXTRACTED_VIA_VISION
 
 
+class _StubScheduler:
+    def __init__(self):
+        self.jobs = []
+
+    def add_job(self, fn, **kw):
+        self.jobs.append(kw.get("id"))
+
+
+def test_register_extract_runner_schedules():
+    sched = _StubScheduler()
+    job_id = fr.register_extract_runner(sched, ":memory:")
+    assert job_id == "extract_financials"
+    assert "extract_financials" in sched.jobs
+
+
 def test_run_extract_pass_filters_and_dedups(conn, monkeypatch):
     _insert_announcement(conn, "fpR", "ACME", "Financial Results")
     _insert_announcement(conn, "fpX", "NOPE", "Acquisition of stake")   # not a result
