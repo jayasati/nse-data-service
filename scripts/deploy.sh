@@ -35,6 +35,7 @@ echo "==> [4/5] applying pending migrations"
 
 echo "==> [5/5] restarting services (on-boot catch-up recovers the brief gap)"
 sudo systemctl restart "nse-collector@${UNIT}"
+sudo systemctl restart "nse-bot@${UNIT}" 2>/dev/null || true
 sudo systemctl restart "nse-dashboard@${UNIT}" 2>/dev/null || true
 
 echo "==> done · journalctl -u nse-collector@${UNIT} -f"
