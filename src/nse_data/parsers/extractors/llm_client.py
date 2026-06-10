@@ -34,7 +34,10 @@ GPT4O_PRICE_PER_OUTPUT_TOKEN = 10.00 / 1_000_000  # $10.00 per 1M output tokens
 
 # Daily spending cap. Hardcoded for safety; can be raised but the limit
 # stays in code, not config (intentional — prevents accidental cap bypass).
-DEFAULT_DAILY_CAP_USD = 10.0
+# Raised 10 → 25 (2026-06, user call: accuracy over cost) — a heavy results
+# day now spends three ways (P&L vision, narrative reads + siblings, deck
+# vision) and a cap-hit degrades narrative accuracy to regex-only.
+DEFAULT_DAILY_CAP_USD = 25.0
 
 # Where the cumulative spend tracker lives.
 SPEND_LOG_PATH = Path("data/llm_spend.json")

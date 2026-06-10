@@ -46,3 +46,8 @@ def market() -> FileResponse:
 @router.get("/earnings", include_in_schema=False)
 def earnings() -> FileResponse:
     return FileResponse(PAGES_DIR / "earnings.html")
+
+
+@router.get("/llm", include_in_schema=False)
+def llm() -> FileResponse:
+    return FileResponse(PAGES_DIR / "llm.html")

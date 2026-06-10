@@ -27,6 +27,7 @@ from ..dashboard.routes import STATIC_DIR
 from .routes import backtests as backtests_routes
 from .routes import earnings as earnings_routes
 from .routes import health as health_routes
+from .routes import llm as llm_routes
 from .routes import market as market_routes
 from .routes import stocks as stocks_routes
 from .routes import trades as trades_routes
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(trades_routes.router)       # /api/trades/* (live paper trades)
     app.include_router(market_routes.router)        # /api/market/* (regime + sector radar)
     app.include_router(earnings_routes.router)      # /api/earnings/* (reaction odds + setups)
+    app.include_router(llm_routes.router)            # /api/llm/* (spend tracking)
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     return app
 
