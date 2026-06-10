@@ -35,6 +35,7 @@ SECTORS: dict[str, list[str]] = {
     "pharma":   ["SUNPHARMA", "DRREDDY", "CIPLA", "DIVISLAB", "LUPIN", "AUROPHARMA"],
     "metals":   ["TATASTEEL", "JSWSTEEL", "HINDALCO", "VEDL", "JINDALSTEL", "NMDC"],
     "capgoods": ["LT", "BEL", "SIEMENS", "ABB", "BHEL", "CUMMINSIND"],
+    "realty":   ["DLF", "GODREJPROP", "OBEROIRLTY", "PRESTIGE", "PHOENIXLTD", "BRIGADE"],
 }
 
 OUT_ROOT = Path("tests/fundamentals/fixtures/result_pdfs")

@@ -41,10 +41,30 @@ def sector_for(symbol: str, path: str = DEFAULT_PATH) -> str | None:
     return load_sector_map(path).get(symbol)
 
 
+@lru_cache(maxsize=4)
+def load_metadata_class_map(path: str = DEFAULT_PATH) -> dict[str, str]:
+    """{symbol: sector-class value} — the long-tail routing derived from NSE's
+    own quote-metadata taxonomy (generated alongside sector_by_symbol by
+    scripts/build_sector_mapping.py). Empty dict if absent (older config)."""
+    p = Path(path)
+    if not p.exists():
+        return {}
+    data = yaml.safe_load(p.read_text()) or {}
+    return dict(data.get("metadata_class_by_symbol", {}))
+
+
+def metadata_class_for(symbol: str, path: str = DEFAULT_PATH) -> str | None:
+    return load_metadata_class_map(path).get(symbol)
+
+
 def is_bfsi(symbol: str, path: str = DEFAULT_PATH) -> bool:
-    """True if the symbol is a bank/NBFC that files a BFSI-shaped P&L.
+    """True if the symbol is a bank that files a BFSI-shaped P&L.
 
     Used by the financial extractor to request the BFSI line items (NII, PPOP,
     provisions, treasury, GNPA/NNPA) that a generic P&L read would discard.
+    Index membership first; banks outside the four indices are caught via the
+    quote-metadata routing (class_for_metadata maps only actual banks to bfsi).
     """
-    return sector_for(symbol, path) in BFSI_SECTORS
+    if sector_for(symbol, path) in BFSI_SECTORS:
+        return True
+    return metadata_class_for(symbol, path) == "bfsi"

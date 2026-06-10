@@ -48,6 +48,34 @@ def build_mapping(db_path: str) -> dict[str, str]:
     return {sym: sector for sym, (_, sector) in best.items()}
 
 
+def build_metadata_classes(db_path: str) -> dict[str, str]:
+    """symbol -> sector-class value, from NSE's own quote-metadata taxonomy.
+
+    The long-tail routing for the per-sector result engine: symbols outside
+    the sectoral indices get a class via ``sectors.base.class_for_metadata``
+    (banks → bfsi; non-bank financials deliberately unrouted — the lender
+    guard; recognised industries → their sector; other non-financials →
+    generic). Re-run when the quote-metadata universe grows."""
+    from nse_data.fundamentals.sectors.base import class_for_metadata
+
+    conn = open_db(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT symbol, sector, industry FROM raw_quote_metadata"
+        ).fetchall()
+    except Exception:  # noqa: BLE001 — table absent on a bare DB
+        rows = []
+    finally:
+        conn.close()
+
+    out: dict[str, str] = {}
+    for symbol, sector, industry in rows:
+        klass = class_for_metadata(sector, industry)
+        if klass is not None:
+            out[symbol] = klass.value
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Build config/sector_mapping.yaml (task 8.3)")
     p.add_argument("--db", default="data/nse.db")
@@ -56,6 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     mapping = build_mapping(args.db)
+    meta_classes = build_metadata_classes(args.db)
 
     # Per-sector counts for a quick sanity read.
     by_sector: dict[str, int] = {}
@@ -70,6 +99,12 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         print(f"no constituent data (unmapped sectors): {', '.join(missing)}")
 
+    by_class: dict[str, int] = {}
+    for klass in meta_classes.values():
+        by_class[klass] = by_class.get(klass, 0) + 1
+    print(f"metadata classes for {len(meta_classes)} symbols "
+          f"({', '.join(f'{k}:{v}' for k, v in sorted(by_class.items()))})")
+
     if args.dry_run:
         return 0
 
@@ -78,10 +113,14 @@ def main(argv: list[str] | None = None) -> int:
         "# Source: raw_index_members (index constituents). Re-run when membership changes.\n"
         "# Sectors without constituent data are absent here (stocks in them get no\n"
         "# sector contribution): " + (", ".join(missing) if missing else "none") + "\n"
+        "# metadata_class_by_symbol: long-tail sector-class routing from NSE's own\n"
+        "# quote-metadata taxonomy (raw_quote_metadata) via sectors.base.class_for_metadata.\n"
+        "# Non-bank financials are deliberately absent (the lender guard).\n"
     )
     with open(args.out, "w") as f:
         f.write(header)
-        yaml.safe_dump({"sector_by_symbol": dict(sorted(mapping.items()))},
+        yaml.safe_dump({"sector_by_symbol": dict(sorted(mapping.items())),
+                        "metadata_class_by_symbol": dict(sorted(meta_classes.items()))},
                        f, default_flow_style=False, sort_keys=False)
     print(f"wrote {args.out}")
     return 0

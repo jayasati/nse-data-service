@@ -192,6 +192,34 @@ signature** → **the prop to watch** → **system status**.
   under NIFTY ENERGY by the index data (`test_capgoods_lt.py`). ⏳ pending: order
   inflow/book wired into the verdict (P7 plumbing).
 
+### 2.9 Realty — ✅ BUILT (operating-line verdict; pre-sales KPI pending P7)
+- **Operating line:** **EBITDA** — with the standing caveat that realty revenue
+  recognises on project completion (Ind AS 115), so quarters are lumpy by nature.
+- **Read:** **pre-sales/bookings** (the number the market actually prices),
+  collections, net debt, launches — all narrative, not P&L (P7).
+- **Bullish:** pre-sales↑, collections↑, debt↓. **Bearish:** bookings slowdown,
+  leverage creep.
+- **Prop to watch:** PAT on other income while core EBITDA is completion-timing noise.
+- **System:** ✅ verdict BUILT (`sectors/realty.py`, `built=True`) on the shared
+  operating-quality rule, validated on a real filing (`test_realty.py`). Routed via
+  NIFTY REALTY membership + the "Residential Commercial Projects" industry.
+
+### 2.10 The long tail — ✅ GENERIC (everything non-financial without a sector rule)
+- Cement, chemicals, telecom, retail, ports, logistics, hospitals-adjacent, … —
+  routed via **NSE's own quote-metadata taxonomy** (`raw_quote_metadata` →
+  `base.class_for_metadata` → `metadata_class_by_symbol` in the generated config):
+  recognised industries map to their sector rule (banks→BFSI, vehicles→Auto,
+  metals industries→Metals, defence/electricals→CapGoods, power→Energy,
+  hospitals→Pharma, realty industry→Realty); other non-financials → **GENERIC**,
+  which runs the same shared operating-quality verdict and stamps every
+  non-neutral verdict with the **`sector_generic`** honesty flag.
+- **The lender guard (hard rule):** non-bank financials (NBFC/broker/AMC/insurer/
+  holding) are NEVER routed to GENERIC — a lender's finance cost is an *operating*
+  cost, so the EBITDA derivation (PBT + finance cost + depreciation − OI) would
+  fabricate a healthy operating line. They stay out-of-scope neutral until a
+  lender-specific rule exists.
+- Re-run `scripts/build_sector_mapping.py` when the quote-metadata universe grows.
+
 ---
 
 ## 3. The 2-minute live workflow (during market hours)
@@ -307,10 +335,13 @@ rule + one real-PDF regression (the SBI/Axis/HDFC method).
 
 ## 5. Honest limits (don't let the dashboard imply more)
 
-- **The engine reads operating-line *quality* for all 8 mapped sectors** (PPOP for
-  banks, EBITDA/core-ex-OI for non-banks) — BFSI (SBI/Axis/HDFC), Energy (ONGC), IT
-  (INFY/TCS), FMCG (ITC), Auto (Maruti), Pharma (Cipla), Metals (JSW), CapGoods (L&T),
-  each validated on a real filing. The narrative is read **LLM-first across the result
+- **The engine now reads essentially every non-financial stock**: a sector-tuned rule
+  for the 9 built sectors (BFSI SBI/Axis/HDFC · Energy ONGC · IT INFY/TCS · FMCG ITC ·
+  Auto Maruti · Pharma Cipla · Metals JSW · CapGoods L&T · Realty), each validated on a
+  real filing, and the **GENERIC** operating-quality read (flagged `sector_generic`)
+  for the long tail routed via NSE's quote-metadata taxonomy. The deliberate
+  exceptions: **non-bank financials** (the lender guard — generic EBITDA is wrong for
+  lenders) and symbols with no quote metadata, which stay out-of-scope neutral. The narrative is read **LLM-first across the result
   PDF + sibling press release / deck** (P7 accuracy pass) — guidance/FDA/volume move
   verdicts; the sector KPIs (cc-revenue, TCV, GRM, EBITDA/tonne, US sales, order book)
   are extracted but **card-context only** until their live accuracy is proven, so a

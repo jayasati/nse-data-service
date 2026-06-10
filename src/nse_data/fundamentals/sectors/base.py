@@ -41,13 +41,15 @@ class SectorClass(str, Enum):
     """
 
     BFSI = "bfsi"              # §2.1  ✅ built
-    ENERGY = "energy"         # §2.2  ⏳ P3 (ONGC gap)
-    IT = "it"                 # §2.3  ⏳ P4
-    FMCG = "fmcg"             # §2.4  ⏳ P5
-    AUTO = "auto"             # §2.5  ⏳ P5
-    PHARMA = "pharma"         # §2.6  ⏳ P5
-    METALS = "metals"         # §2.7  ⏳ P5
-    CAPGOODS = "capgoods"     # §2.8  ⏳ P5
+    ENERGY = "energy"         # §2.2  ✅ built
+    IT = "it"                 # §2.3  ✅ built
+    FMCG = "fmcg"             # §2.4  ✅ built
+    AUTO = "auto"             # §2.5  ✅ built
+    PHARMA = "pharma"         # §2.6  ✅ built
+    METALS = "metals"         # §2.7  ✅ built
+    CAPGOODS = "capgoods"     # §2.8  ✅ built
+    REALTY = "realty"         # ✅ built (lumpy quarters — pre-sales KPI is P7)
+    GENERIC = "generic"       # long-tail non-financials: the shared operating rule
     UNKNOWN = "unknown"       # out-of-scope → neutral, low confidence (P1)
 
 
@@ -67,7 +69,63 @@ INDEX_TO_CLASS: dict[str, SectorClass] = {
     "NIFTY PHARMA": SectorClass.PHARMA,
     "NIFTY HEALTHCARE INDEX": SectorClass.PHARMA,
     "NIFTY METAL": SectorClass.METALS,
+    "NIFTY REALTY": SectorClass.REALTY,
 }
+
+
+# --- long-tail routing: NSE's own quote-metadata taxonomy --------------------
+# raw_quote_metadata carries (sector, industry) for every symbol NSE quotes —
+# the routing source for stocks outside the sectoral indices. The mapping is
+# deliberately conservative:
+#   * Financial Services → BFSI only for actual banks. NBFCs/brokers/AMCs/
+#     insurers return None (→ UNKNOWN → neutral): for a lender, finance cost
+#     is an OPERATING cost, so the generic EBITDA derivation (which adds it
+#     back) would fabricate a healthy operating line — the one case where a
+#     generic read is actively wrong rather than merely coarse.
+#   * Recognised industries map to their specific sector rule.
+#   * Everything else non-financial → GENERIC (the shared operating-quality
+#     rule, flagged `sector_generic`).
+_BANK_INDUSTRY = ("private sector bank", "public sector bank", "other bank")
+_METAL_INDUSTRIES = ("aluminium", "zinc", "copper", "iron & steel",
+                     "industrial minerals", "diversified metals")
+_AUTO_INDUSTRIES = ("2/3 wheelers", "passenger cars & utility vehicles",
+                    "commercial vehicles", "auto components & equipments",
+                    "tractors", "tyres & rubber products")
+_CAPGOODS_INDUSTRIES = ("heavy electrical equipment", "aerospace & defense",
+                        "ship building & allied services", "civil construction",
+                        "industrial products", "railway wagons")
+_REALTY_INDUSTRIES = ("residential commercial projects", "real estate")
+
+_MACRO_TO_CLASS = {
+    "healthcare": SectorClass.PHARMA,
+    "information technology": SectorClass.IT,
+    "fast moving consumer goods": SectorClass.FMCG,
+    "energy": SectorClass.ENERGY,
+    "utilities": SectorClass.ENERGY,          # power = playbook §2.2's power block
+}
+
+
+def class_for_metadata(sector: str | None, industry: str | None) -> SectorClass | None:
+    """NSE (sector, industry) → SectorClass; None = leave unrouted (UNKNOWN)."""
+    macro = (sector or "").strip().lower()
+    ind = (industry or "").strip().lower()
+    if not macro:
+        return None
+    if macro == "financial services":
+        return SectorClass.BFSI if any(b in ind for b in _BANK_INDUSTRY) else None
+    if any(k in ind for k in _REALTY_INDUSTRIES):
+        return SectorClass.REALTY
+    if any(k in ind for k in _AUTO_INDUSTRIES):
+        return SectorClass.AUTO
+    if any(k in ind for k in _METAL_INDUSTRIES):
+        return SectorClass.METALS
+    if any(k in ind for k in _CAPGOODS_INDUSTRIES):
+        return SectorClass.CAPGOODS
+    if macro in _MACRO_TO_CLASS:
+        return _MACRO_TO_CLASS[macro]
+    # Industrials / Commodities / Services / Consumer / Telecom — non-financial
+    # long tail: the generic operating-quality read.
+    return SectorClass.GENERIC
 
 
 # Symbol-level routing overrides, consulted BEFORE the index mapping. Two jobs:
