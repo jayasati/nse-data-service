@@ -30,6 +30,9 @@ _FIELD_ALIASES = {
     "rev_est_cr": ("rev_est_cr", "revenue_estimate", "rev_est", "sales_est_cr"),
     "pat_est_cr": ("pat_est_cr", "pat_estimate", "pat_est", "net_profit_est_cr"),
     "eps_est": ("eps_est", "eps_estimate", "eps"),
+    # BFSI lines (manual/CSV only — no live source carries them):
+    "nii_est_cr": ("nii_est_cr", "nii_estimate", "nii_est"),
+    "nim_est_pct": ("nim_est_pct", "nim_estimate", "nim_est", "nim"),
 }
 
 

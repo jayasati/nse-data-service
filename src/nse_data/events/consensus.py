@@ -26,6 +26,17 @@ _MISS_PCT = -3.0
 # Estimate periods may be stated a few days off the actual quarter-end.
 _PERIOD_TOL_DAYS = 25
 
+# When several sources carry an estimate for the same quarter, accuracy order
+# wins before recency: a hand-entered broker number beats LLM-read news
+# previews beats Moneycontrol's aggregate beats Yahoo's (whose Indian coverage
+# is thinnest). Unknown sources rank last.
+SOURCE_RANK = {"manual": 0, "news": 1, "moneycontrol": 2, "yahoo": 3}
+_DEFAULT_RANK = 9
+
+
+def _rank(source: str | None) -> int:
+    return SOURCE_RANK.get(source or "", _DEFAULT_RANK)
+
 
 def upsert_estimate(
     conn: sqlite3.Connection,
@@ -35,15 +46,19 @@ def upsert_estimate(
     rev_est_cr: float | None = None,
     pat_est_cr: float | None = None,
     eps_est: float | None = None,
+    nii_est_cr: float | None = None,
+    nim_est_pct: float | None = None,
     source: str,
     as_of: int | None = None,
 ) -> None:
     """Insert/replace one estimate row."""
     conn.execute(
         "INSERT OR REPLACE INTO consensus_estimates "
-        "(symbol, period_ending, rev_est_cr, pat_est_cr, eps_est, source, as_of) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (symbol, period_ending, rev_est_cr, pat_est_cr, eps_est, source,
+        "(symbol, period_ending, rev_est_cr, pat_est_cr, eps_est, "
+        " nii_est_cr, nim_est_pct, source, as_of) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (symbol, period_ending, rev_est_cr, pat_est_cr, eps_est,
+         nii_est_cr, nim_est_pct, source,
          as_of if as_of is not None else int(time.time())),
     )
     conn.commit()
@@ -64,7 +79,8 @@ def ingest_estimates(
         upsert_estimate(
             conn, symbol=r["symbol"], period_ending=r["period_ending"],
             rev_est_cr=r.get("rev_est_cr"), pat_est_cr=r.get("pat_est_cr"),
-            eps_est=r.get("eps_est"), source=source, as_of=as_of,
+            eps_est=r.get("eps_est"), nii_est_cr=r.get("nii_est_cr"),
+            nim_est_pct=r.get("nim_est_pct"), source=source, as_of=as_of,
         )
         n += 1
     log.info("consensus_ingest", source=source, ingested=n)
@@ -78,11 +94,20 @@ def _parse_date(s: str) -> _dt.date | None:
         return None
 
 
+_EST_COLS = ("period_ending, rev_est_cr, pat_est_cr, eps_est, "
+             "nii_est_cr, nim_est_pct, source, as_of")
+
+
 def _row_to_dict(row) -> dict:
     return {
         "period_ending": row[0], "rev_est_cr": row[1], "pat_est_cr": row[2],
-        "eps_est": row[3], "source": row[4], "as_of": row[5],
+        "eps_est": row[3], "nii_est_cr": row[4], "nim_est_pct": row[5],
+        "source": row[6], "as_of": row[7],
     }
+
+
+# The value fields a lookup merges across sources.
+_VALUE_KEYS = ("rev_est_cr", "pat_est_cr", "eps_est", "nii_est_cr", "nim_est_pct")
 
 
 def nearest_estimate(
@@ -91,35 +116,62 @@ def nearest_estimate(
 ) -> dict | None:
     """The estimate for ``period_ending`` (exact, else within ±tol_days).
 
-    When several sources have an estimate, the most recently captured (max as_of)
-    wins. Returns a dict or None.
-    """
-    exact = conn.execute(
-        "SELECT period_ending, rev_est_cr, pat_est_cr, eps_est, source, as_of "
-        "FROM consensus_estimates WHERE symbol=? AND period_ending=? "
-        "ORDER BY as_of DESC LIMIT 1",
-        (symbol, period_ending),
-    ).fetchone()
-    if exact:
-        return _row_to_dict(exact)
-
+    Sources are merged **field-wise** in accuracy order (``SOURCE_RANK``:
+    manual → news → moneycontrol → yahoo, then recency): each field takes the
+    best-ranked source that carries it — so a news row holding only NII never
+    masks Moneycontrol's PAT, and a manual number always wins its field.
+    ``source`` lists the contributors ('manual+moneycontrol'). Returns a dict
+    or None."""
     target = _parse_date(period_ending)
-    if target is None:
-        return None
     rows = conn.execute(
-        "SELECT period_ending, rev_est_cr, pat_est_cr, eps_est, source, as_of "
-        "FROM consensus_estimates WHERE symbol=?",
+        f"SELECT {_EST_COLS} FROM consensus_estimates WHERE symbol=?",
         (symbol,),
     ).fetchall()
-    best, best_gap = None, tol_days + 1
-    for row in rows:
+
+    def gap_of(row) -> int | None:
+        if row[0] == period_ending:
+            return 0
         d = _parse_date(row[0])
-        if d is None:
-            continue
-        gap = abs((d - target).days)
-        if gap <= tol_days and gap < best_gap:
-            best, best_gap = row, gap
-    return _row_to_dict(best) if best else None
+        if d is None or target is None:
+            return None
+        g = abs((d - target).days)
+        return g if g <= tol_days else None
+
+    eligible = [(g, row) for row in rows if (g := gap_of(row)) is not None]
+    if not eligible:
+        return None
+    # One quarter only: the period closest to the target (ties → earlier date).
+    chosen = min((g, row[0]) for g, row in eligible)[1]
+    at = sorted((r for g, r in eligible if r[0] == chosen),
+                key=lambda r: (_rank(r[6]), -(r[7] or 0)))
+
+    merged: dict = {"period_ending": chosen, **{k: None for k in _VALUE_KEYS}}
+    field_src: dict[str, str] = {}
+    for row in at:                       # best-ranked first; first non-None wins
+        d = _row_to_dict(row)
+        for k in _VALUE_KEYS:
+            if merged[k] is None and d[k] is not None:
+                merged[k] = d[k]
+                field_src[k] = d["source"]
+    contributors = sorted(set(field_src.values()), key=_rank)
+    merged["source"] = "+".join(contributors) if contributors else at[0][6]
+    merged["as_of"] = max(r[7] or 0 for r in at)
+    return merged
+
+
+def estimates_by_source(
+    conn: sqlite3.Connection, symbol: str, period_ending: str,
+) -> list[dict]:
+    """All sources' estimates for one quarter (exact period match), in
+    SOURCE_RANK order — the cross-validation view: two independent sources
+    within a few percent make the consensus trustworthy."""
+    rows = conn.execute(
+        f"SELECT {_EST_COLS} FROM consensus_estimates "
+        "WHERE symbol=? AND period_ending=?",
+        (symbol, period_ending),
+    ).fetchall()
+    return sorted((_row_to_dict(r) for r in rows),
+                  key=lambda d: (_rank(d["source"]), -(d["as_of"] or 0)))
 
 
 def estimate_surprise(actual: float | None, estimate: float | None) -> float | None:

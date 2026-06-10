@@ -25,6 +25,7 @@ from .profile.builder import register_profile_builder
 from .indicators.pre_market_loader import register_pre_market_loader
 from .bot.morning_brief import register_morning_brief
 from .events.calendar import register_calendar_job
+from .events.consensus_job import register_consensus_job
 from .events.pre_screen import register_pre_screen_job
 from .fundamentals.from_results import (
     register_extract_runner,
@@ -158,6 +159,10 @@ def main() -> int:
     # pre-event screen (20:15) → earnings_setups snapshot + "buy-rumor priced in"
     # Telegram flags for results due in the next few days — Phase 5, E2.
     registered.append(register_calendar_job(scheduler, db_path))
+    # Consensus estimates (20:05) — between the calendar (which decides who is
+    # about to report) and the pre-screen (which stamps estimates onto setups):
+    # Moneycontrol + Yahoo for the upcoming reporters; manual CSV outranks both.
+    registered.append(register_consensus_job(scheduler, db_path))
     registered.append(register_pre_screen_job(scheduler, db_path))
     # Financial extraction, three latency tiers → extracted_financials:
     #  - fast lane (every 1 min, market hours): full pipeline on just-filed result
