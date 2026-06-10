@@ -50,7 +50,7 @@ function renderReactions(rows) {
     const result = x.win == null ? "—"
       : `<span class="status ${x.win ? "closed" : "open"}">${x.win ? "win" : "loss"}</span>`;
     return `<tr>
-      <td>${x.symbol}</td>
+      <td><a class="symlink" href="/stocks?symbol=${x.symbol}&tab=results">${x.symbol}</a></td>
       <td>${fmtTime(x.detected_at)}</td>
       <td><span class="reason">${x.direction}</span></td>
       <td class="num ${cls(x.reaction_move_pct)}">${signed(x.reaction_move_pct)}</td>
@@ -69,7 +69,7 @@ async function loadUpcoming() {
   const tb = $("upBody");
   if (!rows.length) { tb.innerHTML = `<tr><td colspan="7" class="none">No setups yet</td></tr>`; return; }
   tb.innerHTML = rows.map(s => `<tr>
-      <td>${s.symbol}</td>
+      <td><a class="symlink" href="/stocks?symbol=${s.symbol}&tab=results">${s.symbol}</a></td>
       <td>${s.event_date}</td>
       <td class="num ${cls(s.run_up_5d)}">${signed(s.run_up_5d)} <span class="dim">${s.run_up_class || ""}</span></td>
       <td class="num">${s.implied_move_pct == null ? "—" : "±" + (+s.implied_move_pct).toFixed(1) + "%"}</td>

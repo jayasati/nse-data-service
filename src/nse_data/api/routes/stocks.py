@@ -9,8 +9,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from ..deps import get_service
+from ..deps import get_page_service, get_service
 from ...webcore.errors import BadRequest, NotFound, Unavailable
+from ...webcore.services.stock_page import StockPageService
 from ...webcore.services.stocks import StockService
 
 router = APIRouter(prefix="/api/stocks")
@@ -61,3 +62,36 @@ def indicators(symbol: str,
 @router.get("/{symbol}/meta")
 def meta(symbol: str, svc: StockService = Depends(get_service)) -> JSONResponse:
     return _run(lambda: svc.meta(symbol))
+
+
+# ---- the stock-cockpit tabs (StockPageService; every section is read-only and
+# renders empty rather than erroring when its tables have no rows) ------------
+
+@router.get("/{symbol}/overview")
+def overview(symbol: str, svc: StockPageService = Depends(get_page_service)) -> JSONResponse:
+    return _run(lambda: svc.overview(symbol))
+
+
+@router.get("/{symbol}/results")
+def results(symbol: str, svc: StockPageService = Depends(get_page_service)) -> JSONResponse:
+    return _run(lambda: svc.results(symbol))
+
+
+@router.get("/{symbol}/events")
+def events(symbol: str, svc: StockPageService = Depends(get_page_service)) -> JSONResponse:
+    return _run(lambda: svc.events(symbol))
+
+
+@router.get("/{symbol}/filings")
+def filings(symbol: str, svc: StockPageService = Depends(get_page_service)) -> JSONResponse:
+    return _run(lambda: svc.filings(symbol))
+
+
+@router.get("/{symbol}/activity")
+def activity(symbol: str, svc: StockPageService = Depends(get_page_service)) -> JSONResponse:
+    return _run(lambda: svc.activity(symbol))
+
+
+@router.get("/{symbol}/flow")
+def flow(symbol: str, svc: StockPageService = Depends(get_page_service)) -> JSONResponse:
+    return _run(lambda: svc.flow(symbol))

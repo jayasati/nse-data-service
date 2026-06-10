@@ -12,7 +12,9 @@ from collections.abc import Iterator
 from fastapi import Depends, HTTPException
 
 from ..webcore.db import DatabaseUnavailable, open_ro
+from ..webcore.repositories.stock_page import StockPageRepository
 from ..webcore.repositories.stocks import StockRepository
+from ..webcore.services.stock_page import StockPageService
 from ..webcore.services.stocks import StockService
 
 
@@ -33,3 +35,7 @@ def get_repo(conn=Depends(get_conn)) -> StockRepository:
 
 def get_service(repo: StockRepository = Depends(get_repo)) -> StockService:
     return StockService(repo)
+
+
+def get_page_service(conn=Depends(get_conn)) -> StockPageService:
+    return StockPageService(StockPageRepository(conn))

@@ -17,3 +17,7 @@
 #byStratTable tr.row { cursor: pointer; }
 #byStratTable tr.row:hover { background: var(--hover, rgba(127,127,127,.08)); }
 #byStratTable tr.row.sel { background: rgba(91, 141, 239, .12); }
+
+/* symbol → stock-cockpit deep links (earnings/trades tables) */
+.symlink { color: var(--accent); text-decoration: none; }
+.symlink:hover { text-decoration: underline; }

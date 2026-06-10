@@ -96,6 +96,19 @@
         <div class="funda-head" id="fundaHead"><span class="chev">▾</span> Fundamentals</div>
         <div class="grid" id="fundaGrid"></div>
       </div>
+      <!-- The stock cockpit: everything the system knows about the symbol,
+           lazily loaded per tab from /api/stocks/{symbol}/* -->
+      <div id="cockpit" style="display:none">
+        <div class="ovw" id="ovwStrip"></div>
+        <div class="ctabs" id="ctabs">
+          <button data-tab="results" class="on">Results</button>
+          <button data-tab="events">Events</button>
+          <button data-tab="filings">Filings</button>
+          <button data-tab="activity">Signals &amp; Trades</button>
+          <button data-tab="flow">Flow</button>
+        </div>
+        <div class="cpanel" id="cpanel"></div>
+      </div>
       <div class="empty" id="empty">Search for a stock to open its chart.</div>
     </div>
   </div>

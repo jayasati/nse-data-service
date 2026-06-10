@@ -5,6 +5,7 @@ import { initThemeToggle } from "../core/theme.js";
 import { Api } from "../core/api.js";
 import { ChartController } from "../components/chart.js";
 import { SearchBox } from "../components/search.js";
+import { initCockpit, setCockpitSymbol } from "./stock_tabs.js";
 
 const chart = new ChartController("chart", "panes", "tip");
 
@@ -205,7 +206,7 @@ async function loadMeta() {
   updateStar();
 }
 
-function select(sym) { current = sym; $("empty").style.display = "none"; loadChart(); loadMeta(); loadSrvIndicators(); updateStar(); }
+function select(sym) { current = sym; $("empty").style.display = "none"; loadChart(); loadMeta(); loadSrvIndicators(); updateStar(); setCockpitSymbol(sym); }
 
 // ---- watchlist (per-stock star) ----
 const saveWl = () => localStorage.setItem("nse_watchlist", JSON.stringify([...wl]));
@@ -278,7 +279,12 @@ initThemeToggle("themeBtn", () => chart.themeAll());
 chart.themeAll();  // sync chart to the (possibly persisted) theme on load
 syncBarsUI();      // reflect the persisted bar size and 1D-only visibility
 
-// Open with the most-traded stock so the page isn't empty.
-(async () => { try { const r = await Api.search(""); if (r.results && r.results.length) select(r.results[0].symbol); } catch (e) {} })();
+initCockpit();
+// Deep link (?symbol=X) wins; otherwise open the most-traded stock.
+(async () => {
+  const want = new URLSearchParams(location.search).get("symbol");
+  if (want) { select(want.toUpperCase()); return; }
+  try { const r = await Api.search(""); if (r.results && r.results.length) select(r.results[0].symbol); } catch (e) {}
+})();
 // Live refresh of the open stock (price + chart) while the feed updates.
 setInterval(() => { if (current) { loadMeta(); loadChart(); } }, 60000);
