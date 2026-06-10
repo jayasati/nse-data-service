@@ -53,6 +53,12 @@ def compute_for_symbol(
     """Run one indicator for one symbol, incrementally."""
     source = _SOURCES[indicator.cadence]
 
+    # Indicators that need data beyond the symbol's own OHLCV (a benchmark
+    # series, an OI feed) load it here — compute() itself stays pure.
+    prepare = getattr(indicator, "prepare", None)
+    if prepare is not None:
+        prepare(conn, symbol)
+
     watermark = last_computed_key(conn, indicator, symbol)
     since = source.lookback_cutoff(conn, symbol, watermark, indicator.min_history, series)
     ohlcv = source.read(conn, symbol, since=since, series=series)
@@ -130,14 +136,28 @@ _INTRADAY_BAR_SECS = 300  # 5-min bars
 
 
 def _intraday_lookback(conn, symbol, watermark, min_history, series):
-    """Pull `min_history × 300s` before the watermark.
+    """Epoch of the `min_history`-th 5-min bar before the watermark — counted
+    in BARS through the backfill, exactly as the EOD path counts trading days.
 
-    Overnight gaps are over-pulled (calendar minutes ≠ trading minutes) but
-    that's harmless: empty buckets just don't appear after resample. The
-    extra reads are bounded — min_history is small (~42 bars for RSI 14).
-    """
+    Counting wall-clock seconds here was the intraday-accuracy bug: a
+    `min_history × 300s` window dies at the overnight gap, so every morning
+    the recursive indicators (RSI/MACD/Supertrend) re-seeded from nothing —
+    13 NaN bars at the open, then ~3 RSI points of seed error vs the
+    continuous series TradingView shows. Counting 1-minute rows bridges
+    sessions; wall-clock remains only as the fallback with no backfill."""
     if watermark is None:
         return None
+    try:
+        row = conn.execute(
+            "SELECT MIN(ts) FROM (SELECT ts FROM raw_intraday_candles "
+            "WHERE symbol = ? AND interval = 'minute' AND ts < ? "
+            "ORDER BY ts DESC LIMIT ?)",
+            (symbol, int(watermark), min_history * 5),  # 5 one-min rows per 5-min bar
+        ).fetchone()
+    except Exception:  # noqa: BLE001 — table absent on a bare DB
+        row = None
+    if row and row[0] is not None:
+        return int(row[0])
     return int(watermark) - min_history * _INTRADAY_BAR_SECS
 
 

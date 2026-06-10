@@ -27,10 +27,10 @@ class MacdIntraday(Indicator):
     table = "indicator_macd_5m"
     pk_cols = ("symbol", "ts")
     output_columns = ("macd", "macd_signal", "macd_hist")
-    # 3× the slow window is plenty of EMA settling time. At 5-min bars that's
-    # ~6.5 hours — comfortably bridges a single overnight gap (NSE session is
-    # 6h 15m), so morning prints have warm-up from yesterday's tail.
-    min_history = _SLOW * 3
+    # EMAs are recursive — 3× the slow span still carried visible seed error
+    # vs a continuous series. 10× (counted in BARS across sessions by the
+    # orchestrator) converges the 26-EMA to TradingView's continuous values.
+    min_history = _SLOW * 10
     pane = "oscillator"
     cadence = "intraday"
 

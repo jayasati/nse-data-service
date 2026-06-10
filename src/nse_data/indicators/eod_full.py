@@ -17,7 +17,7 @@ from .base import Indicator
 
 _BB_LEN, _BB_STD = 20, 2.0
 _ADX_LEN = 14
-_ST_LEN, _ST_MULT = 10, 2.0
+_ST_LEN, _ST_MULT = 10, 3.0   # TradingView default (was 2.0 until 2026-06)
 _VOL_LEN = 20
 _SQUEEZE_WINDOW = 252       # 1y of width history for the squeeze percentile
 _SQUEEZE_PCT = 0.20

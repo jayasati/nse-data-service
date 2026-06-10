@@ -32,6 +32,7 @@ _INDICATOR_MIGRATIONS = (
     MIGRATIONS_DIR / "044_intraday_supertrend_voldelta.sql",
     MIGRATIONS_DIR / "045_indicator_levels.sql",
     MIGRATIONS_DIR / "046_delivery_conviction.sql",
+    MIGRATIONS_DIR / "066_indicator_expansion.sql",  # ema/atr/bb/rvol/cpr/structure/rs/oi
 )
 
 

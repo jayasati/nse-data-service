@@ -25,10 +25,12 @@ class RsiIntraday(Indicator):
     table = "indicator_rsi_5m"
     pk_cols = ("symbol", "ts")            # epoch-second key, not date string
     output_columns = (f"rsi_{_LENGTH}",)
-    # Wilder smoothing settles over ~3× the period. At 5-min bars that's
-    # ~3.5 hours — bridges yesterday's tail through today's open so the first
-    # printed value of the session isn't NaN.
-    min_history = _LENGTH * 3
+    # Wilder smoothing has infinite memory: a fresh seed differs from the
+    # continuous series by ~(1−1/14)^n, so 3× the period still carried ~3 RSI
+    # points of seed error. 20× (≈3.7 sessions of 5-min bars, counted in BARS
+    # by the orchestrator so overnight gaps don't shrink it) keeps the printed
+    # value within ~0.1 of an infinitely-long computation — TradingView parity.
+    min_history = _LENGTH * 20
     pane = "oscillator"
     cadence = "intraday"
 

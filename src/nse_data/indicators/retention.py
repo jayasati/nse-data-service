@@ -36,9 +36,12 @@ def sweep_intraday(conn: sqlite3.Connection, *, retention_days: int = RETENTION_
         if ind.cadence != "intraday":
             continue
         time_col = ind.pk_cols[1]
-        cur = conn.execute(
-            f"DELETE FROM {ind.table} WHERE {time_col} < ?", (cutoff_ts,),
-        )
+        try:
+            cur = conn.execute(
+                f"DELETE FROM {ind.table} WHERE {time_col} < ?", (cutoff_ts,),
+            )
+        except sqlite3.OperationalError:
+            continue   # table's migration not applied on this DB yet — skip
         deleted[ind.table] = cur.rowcount
     conn.commit()
     return deleted
