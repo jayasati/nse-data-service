@@ -1,3 +1,4 @@
+import "../components/llm_badge.js";
 // Market-context page. Shows the latest regime snapshot (cards) and the sector
 // RS leaderboard (table). Auto-refreshes every 30s; both jobs write every 5 min
 // during market hours, so off-hours this just shows the last session's values.

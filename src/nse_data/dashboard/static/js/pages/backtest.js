@@ -1,3 +1,4 @@
+import "../components/llm_badge.js";
 // Backtest results page. Loads list of runs, then on selection populates
 // aggregate cards, equity curve, by-symbol table, and trades table.
 

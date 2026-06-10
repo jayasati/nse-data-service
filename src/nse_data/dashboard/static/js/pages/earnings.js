@@ -1,3 +1,4 @@
+import "../components/llm_badge.js";
 // Earnings-reaction page. Shows the engine's accuracy/probability (direction-
 // adjusted T+1 win rate) + long/short split, recent reactions, and the pre-event
 // "what's priced in" setups. Side filter (All/Long/Short) re-filters reactions.

@@ -19,3 +19,13 @@
   --ok:#00a578; --stale:#c79a00; --no_table:#d2761a; --empty:#8b54cf;
   --disabled:#9aa3b0; --unknown:#7f8c8d;
 }
+
+/* LLM-spend header badge (mounted by js/components/llm_badge.js on every page) */
+.llmbadge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+            font-weight: 600; color: var(--accent); text-decoration: none;
+            border: 1px solid var(--line); border-radius: 14px; padding: 3px 10px;
+            background: var(--panel2); white-space: nowrap; }
+.llmbadge .v { font-variant-numeric: tabular-nums; color: var(--txt); font-weight: 500; }
+.llmbadge:hover { border-color: var(--accent); }
+.llmbadge.warn { border-color: var(--stale); color: var(--stale); }
+.llmbadge.hot { border-color: var(--down); color: var(--down); }

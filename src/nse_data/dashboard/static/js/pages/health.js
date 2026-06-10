@@ -3,6 +3,7 @@
 // One /api/health poll every 15s drives a grouped, filterable, sortable table.
 // All view state (status filter, search, sort, collapsed groups, expanded
 // drill-downs) lives here so a refresh re-renders without losing the user's place.
+import "../components/llm_badge.js";
 import { $, ago } from "../core/util.js";
 import { initThemeToggle } from "../core/theme.js";
 

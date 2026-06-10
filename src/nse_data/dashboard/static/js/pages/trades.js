@@ -1,3 +1,4 @@
+import "../components/llm_badge.js";
 // Live paper-trades page. Loads portfolio overview, per-strategy success rate,
 // and the trades table. Status filter (All/Open/Closed) + click a strategy row
 // to filter the trades table to that strategy.

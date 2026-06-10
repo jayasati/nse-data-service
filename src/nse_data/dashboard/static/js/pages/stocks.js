@@ -1,5 +1,6 @@
 // Per-stock page controller. Owns app state (symbol/timeframe/mode/overlays)
 // and wires the DOM to ChartController, SearchBox and the API.
+import "../components/llm_badge.js";
 import { $, fmt, fmt2 } from "../core/util.js";
 import { initThemeToggle } from "../core/theme.js";
 import { Api } from "../core/api.js";
