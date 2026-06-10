@@ -38,6 +38,7 @@ from ..market.time_rules import time_rule
 from ..scheduler.market_hours import is_market_open, is_trading_day, now_ist
 from ..signals import enrich
 from ..signals.confidence import score_confidence
+from .result_quality_message import format_result_quality
 from ..parsers.rating_extractor import latest_credit_by_symbol, is_junk_downgrade_kill
 
 
@@ -50,7 +51,7 @@ def _topic_id(name: str) -> int | None:
 def _topic_for(sig: dict) -> int | None:
     """Route a signal to its Telegram topic: earnings reactions to their own
     topic, otherwise by horizon (swing vs intraday)."""
-    if sig.get("signal_type") == "earnings_direction":
+    if sig.get("signal_type") in ("earnings_direction", *_RESULT_QUALITY_TYPES):
         return _topic_id("earnings") or _topic_id("intraday")
     return _topic_id("intraday" if sig.get("horizon") == "intraday" else "swing")
 from ..signals.detect import (
@@ -81,7 +82,13 @@ _SIGNAL_LABELS = {
     "vwap_reclaim": "VWAP Reclaim",
     "oi_spurt": "OI Spurt",
     "earnings_direction": "Earnings Reaction",
+    "result_quality_low": "Low-Quality Result",
+    "result_quality_high": "Clean Result",
 }
+
+# Signal types that carry a fundamental verdict rather than price/volume metrics,
+# so they bypass the live confidence scorer and use their own card + confidence.
+_RESULT_QUALITY_TYPES = ("result_quality_low", "result_quality_high")
 
 
 # ============================================================================
@@ -150,6 +157,33 @@ def dispatch_pass(
         sig = _row_to_signal(row)
         series = price_bands.get(sig["symbol"], (None, None))[0]
 
+        # Result-quality signals carry a fundamental verdict (no price/volume),
+        # so they bypass the live scorer: own card, own confidence, earnings
+        # topic. Gated on blacklist/T2T/listing only (NOT the fundamental
+        # quality_score kill — a weak-score name can be a valid short on a bad
+        # print, and a clean beat shouldn't be killed by a stale score).
+        if sig.get("signal_type") in _RESULT_QUALITY_TYPES:
+            if _hard_gated(sig["symbol"], series, listing_bars, blacklist, None):
+                _mark_dispatched(conn, sig["id"], now)
+                counts["gated"] += 1
+                continue
+            text, q_conf = format_result_quality(
+                conn, symbol=sig["symbol"], direction=sig.get("direction", "short"),
+            )
+            if not text or q_conf <= CONFIDENCE_THRESHOLD:
+                if _age_minutes(sig["detected_at"], now) > MAX_SIGNAL_AGE_MIN:
+                    _mark_dispatched(conn, sig["id"], now)
+                    counts["aged_out"] += 1
+                else:
+                    counts["low_confidence"] += 1
+                continue
+            if sender(token, chat_id, text, _topic_for(sig)):
+                _mark_dispatched(conn, sig["id"], now)
+                counts["sent"] += 1
+            else:
+                counts["held"] += 1
+            continue
+
         credit = credit_map.get(sig["symbol"])
         # Hard-kill longs into a recent junk downgrade (don't buy into stress).
         if _hard_gated(sig["symbol"], series, listing_bars, blacklist, quality_scores) \
@@ -204,6 +238,11 @@ def dispatch_pass(
                 odds_line = _earnings_odds_line(conn, direction)
                 if odds_line:
                     text += "\n" + odds_line
+                surprise = _implied_vs_realized_line(
+                    conn, sig["symbol"], sig.get("price_change_pct"), sig.get("volume_ratio"),
+                )
+                if surprise:
+                    text += "\n" + surprise
             if sender(token, chat_id, text, _topic_for(sig)):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
@@ -273,6 +312,17 @@ def _load_delivery(conn: sqlite3.Connection, symbol: str) -> dict | None:
     if not row:
         return None
     return dict(zip(("delivery_ratio", "delivery_trend", "delivery_conviction_score"), row))
+
+
+def _implied_vs_realized_line(
+    conn: sqlite3.Connection, symbol: str, realized_move_pct, volume_ratio,
+) -> str | None:
+    """Implied-vs-realized surprise note for an earnings alert (S9); None on error."""
+    try:
+        from ..events.pre_screen import implied_vs_realized
+        return implied_vs_realized(conn, symbol, realized_move_pct, volume_ratio)
+    except Exception:  # noqa: BLE001 — a bonus line, never block dispatch
+        return None
 
 
 def _earnings_odds_line(conn: sqlite3.Connection, direction: str) -> str | None:

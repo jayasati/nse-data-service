@@ -20,3 +20,4 @@ VERIFICATION_CHECKLIST.md
 
 # Local extraction-accuracy verdicts (per-developer, not shared)
 scripts/extraction_verify_log.jsonl
+tests/fundamentals/fixtures

@@ -48,6 +48,8 @@ BREAKOUT_52WH = "breakout_52wh"
 ORB_BREAKOUT = "orb_breakout"        # intraday: break of the opening range high
 VWAP_RECLAIM = "vwap_reclaim"        # intraday: price reclaims session VWAP
 EARNINGS_DIRECTION = "earnings_direction"  # intraday: directional reaction after a result
+RESULT_QUALITY_LOW = "result_quality_low"   # fundamental: low-quality beat (S3/S4)
+RESULT_QUALITY_HIGH = "result_quality_high"  # fundamental: clean two-sided beat
 
 # Trade horizon per signal type — the single source of truth (the dispatcher,
 # scorer, timing gate, message template and Telegram topic all key off this).
@@ -71,6 +73,15 @@ REACTION_MAX_MINUTES = 15
 EARNINGS_MOVE_MIN = 1.5      # % move from the pre-result baseline to qualify
 # How far back to look for a just-filed result announcement.
 _REACTION_LOOKBACK_SECS = (REACTION_MAX_MINUTES + 5) * 60
+
+# --- result-quality rule (S4) ---
+# Fundamental divergence read, fired off the freshly-extracted financials (the
+# fast lane extracts within ~1 min of filing). Independent of the price move, so
+# the alert can lead the repricing — SBI bled to its low ~40 min after the 2:01
+# filing. Consider financials extracted in the last 30 min, but only for results
+# that actually filed recently (so a nightly backfill of old PDFs can't fire it).
+_QUALITY_EXTRACT_LOOKBACK_SECS = 30 * 60
+_QUALITY_FILING_MAX_AGE_SECS = 2 * 86400
 
 # Opening-range window for the ORB rule (09:15–09:30).
 ORB_WINDOW_END = (9, 30)
@@ -137,10 +148,17 @@ def run_detection_pass(
     earnings_fired = _detect_earnings_reactions(
         conn, redis_client, dedup, detected_at, market_regime, now,
     )
+    # Fundamental quality read off the freshly-extracted financials — also
+    # event-driven, so evaluated every minute (incl. opening/lunch windows).
+    quality_fired = _detect_result_quality(
+        conn, redis_client, dedup, detected_at, market_regime, now,
+    )
 
     window = _time_window_skip(now)
     if window is not None:
-        return {"skipped": window, "earnings": earnings_fired}
+        return {
+            "skipped": window, "earnings": earnings_fired, "quality": quality_fired,
+        }
 
     symbols = live_universe(conn)
     blacklist = _load_blacklist(redis_client)
@@ -182,7 +200,8 @@ def run_detection_pass(
         "gated": gated,
         "fired": fired,
         "earnings": earnings_fired,
-        "signals": sum(fired.values()) + earnings_fired,
+        "quality": quality_fired,
+        "signals": sum(fired.values()) + earnings_fired + quality_fired,
     }
 
 
@@ -315,6 +334,117 @@ def _rule_earnings_direction(
         "volume_ratio": volume_ratio,
         "direction": "long" if move_pct > 0 else "short",
     }
+
+
+# ============================================================================
+# Result-quality detection (S4) — fundamental divergence, not price
+# ============================================================================
+
+def _detect_result_quality(
+    conn: sqlite3.Connection,
+    redis_client,
+    dedup: SignalDedup,
+    detected_at: str,
+    market_regime: str | None,
+    now: datetime,
+) -> int:
+    """Fire result_quality_low/high off financials extracted in the last ~30 min.
+
+    Reads the PDF-derived growth (``growth_json``) + the treasury level field and
+    classifies earnings quality (no price, no history). A low-quality beat
+    (headline PAT up while the operating line falls) leans short; a clean
+    two-sided beat leans long. Hard gates (blacklist/listing) apply; the
+    fundamental quality_score kill does NOT (a weak-quality name can be a valid
+    short on a bad print, and a strong print shouldn't be killed by a stale score)."""
+    if not _has_table(conn, "extracted_financials"):
+        return 0
+    from ..fundamentals.from_results import quarter_growth
+    from ..fundamentals.sectors import classify_result
+
+    extract_cutoff = int(now.timestamp()) - _QUALITY_EXTRACT_LOOKBACK_SECS
+    rows = conn.execute(
+        "SELECT symbol, period_ending, growth_json, broadcast_dt, "
+        "profit_on_sale_of_investments_cr, narrative_json "
+        "FROM extracted_financials "
+        "WHERE scope = 'standalone' AND extracted_at >= ? "
+        "ORDER BY extracted_at DESC LIMIT 50",
+        (extract_cutoff,),
+    ).fetchall()
+    if not rows:
+        return 0
+
+    import json as _json
+    blacklist = _load_blacklist(redis_client)
+    listing_bars = _load_listing_bars(conn)
+    fired = 0
+    seen: set[str] = set()
+    for symbol, period_ending, growth_json, broadcast_dt, treasury, narrative_json in rows:
+        if symbol in seen:           # newest row per symbol only
+            continue
+        seen.add(symbol)
+        if symbol in blacklist or listing_bars.get(symbol, 0) < MIN_LISTING_BARS:
+            continue
+        # Only fire for a result that actually filed recently — guards against a
+        # nightly backfill of old PDFs (which stamps a fresh extracted_at).
+        filed_ts = _broadcast_epoch(broadcast_dt, now) if broadcast_dt else None
+        if filed_ts is None or (now.timestamp() - filed_ts) > _QUALITY_FILING_MAX_AGE_SECS:
+            continue
+        # Growth comes from the PDF's OWN comparative columns (the filing prints
+        # current / preceding-quarter / year-ago) — text-anchored at extraction so
+        # it's reliable even where the vision model's column read isn't. Stored
+        # history is only a last resort when the filing carried no comparatives.
+        growth = {}
+        if growth_json:
+            try:
+                growth = _json.loads(growth_json)
+            except (ValueError, TypeError):
+                growth = {}
+        if not growth:
+            growth = quarter_growth(conn, symbol, period_ending, "standalone")
+        if not growth:
+            continue
+        # Route through the sector registry: BFSI uses its validated rule; any
+        # non-BFSI (out-of-scope) sector is guarded to a neutral verdict, so the
+        # detector never fires a result_quality signal on a sector it can't yet
+        # read (the P1 guard — fixes the ONGC false LONG). See sectors/README.md.
+        # The press-release narrative (guidance/volumes/FDA — P7, lifted at
+        # extraction) is folded into the verdict when the filing carried one.
+        narrative = None
+        if narrative_json:
+            try:
+                narrative = _json.loads(narrative_json)
+            except (ValueError, TypeError):
+                narrative = None
+        verdict = classify_result(
+            symbol, growth, {"profit_on_sale_of_investments_cr": treasury},
+            narrative=narrative,
+        )
+        if verdict.label == "neutral":
+            continue
+        signal_type = RESULT_QUALITY_LOW if verdict.label == "low" else RESULT_QUALITY_HIGH
+        if not dedup.claim(symbol, signal_type):
+            continue
+        _, price = compute.compute_price_change(conn, symbol)
+        _emit(
+            conn, redis_client,
+            symbol=symbol, signal_type=signal_type, detected_at=detected_at,
+            metrics={
+                "price": price,
+                "oi_change_pct": None,
+                "price_change_pct": None,
+                "volume_ratio": None,
+                "direction": verdict.direction or "long",
+                "quality_flags": verdict.flags,
+                "quality_summary": verdict.summary,
+            },
+            market_regime=market_regime,
+        )
+        log.info(
+            "result_quality_signal", symbol=symbol, label=verdict.label,
+            direction=verdict.direction, flags=verdict.flags, summary=verdict.summary,
+        )
+        fired += 1
+    return fired
 
 
 def _evaluate(
