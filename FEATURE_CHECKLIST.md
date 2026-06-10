@@ -1036,6 +1036,204 @@ Financial extractor achieving ≥ 90% accuracy on the 50-fixture eval set (targe
 
 ---
 
+## Week 17.5 — SBI 8-May-2026 Case Study: Catch-the-Signal Checklist
+
+**What this is:** a retrospective post-mortem turned into a work order. On
+8 May 2026 SBIN fell ~6.6% (close ₹1,019.55 vs prior ₹1,092; intraday low
+₹1,011.3) on Q4 FY26 results. External forensic research (see chat / docs) put
+**information leakage at ~2%** and the cause at a **low-quality beat**: headline
+PAT ₹19,684 cr (+5.6% YoY) *beat*, but operating profit (PPOP) ₹27,704 cr
+(−11.45% YoY, ~−15.7% QoQ), NII ₹44,380 cr (6% below Street), domestic NIM 2.93%
+(−18 bps QoQ), provisions −36.6% YoY (which *propped* PAT), and an ~₹4,520 cr
+treasury MTM swing. **Our system would have read `pat_cr` and seen a healthy
+print** — it never captures the operating line the market actually sold.
+
+> **HONEST SCOPE — what was catchable, and what was not.**
+> - **NOT catchable:** the exact print, or a leak. "Catch beforehand" here means
+>   two real things only — (a) *flag the stock as carrying NIM/treasury risk into
+>   the result* (macro overlay, pre-print), and (b) *react within minutes of the
+>   2:01 PM filing, faster than full repricing* (the stock bled to its low by
+>   ~2:43 PM; first wire Bloomberg 2:07 PM).
+> - **NOT backtestable on THIS event:** 8 May predates our collection start
+>   (~2026-05-31). Options/OI/flow snapshots for that date do not exist and NSE
+>   serves them live-only. This pays off forward, on the next result season. The
+>   one exception is the result PDF itself (re-hydratable as a fixture) — which is
+>   enough to prove the extraction + quality-divergence path (S1–S3).
+> - **Supersedes Week 18:** tasks 18.4/18.5 trigger on *revenue* YoY (>+15% /
+>   <−10%). That is wrong for a bank — SBI's revenue/PAT both *grew*. S3/S4 below
+>   replace those thresholds with sector-aware operating-line + quality logic.
+
+> **IMPLEMENTATION STATUS (built + tested offline against the SBI numbers).**
+> Done: S1 (sector-aware BFSI schema, `vision_financial.py`/`sector_map.is_bfsi`),
+> S2 (migration 060 + `growth_json`, `from_results.py`), S3
+> (`fundamentals/earnings_quality.py`), S4 (`detect._detect_result_quality` →
+> `result_quality_low/high`), S5 (`bot/result_quality_message.py` + dispatcher
+> branch), S6 (migration 061 + `market/macro_rates.py`: manual + FBIL/DBIE CSV
+> import, no live scraper), S7 (migration 062 + `pre_screen` BFSI risk flag), S9
+> (`pre_screen.implied_vs_realized`), S10 (`tests/fundamentals/
+> test_sbi_case_study.py`, 8 tests green; ground truth in
+> `ground_truth_bfsi/SBIN_Q4FY26.yaml`). Regression: 294 tests pass.
+> S6 done too: repo rate = manual entry (MPC cadence, scraper is negative ROI),
+> 10Y yield = manual point or FBIL/DBIE CSV import (`import_rates_csv`,
+> `scripts/load_macro_rates.py`) — no live scraper needed at this cadence.
+>
+> **S10 vision leg VALIDATED on the real filing.** The actual SBI Q4 PDF
+> (`fixtures/pdfs/sbin_q4fy26_*.pdf`) now passes a live gpt-4o extraction-accuracy
+> gate (`test_sbi_vision_live.py`, creds-gated). Getting there exposed that vision
+> misreads a dense 10-column bank P&L; the **dense-bank hardening** fixed it: 300
+> DPI / P&L page only; identity corrections; a **TOTAL-INCOME text anchor** (vision
+> summed the interest sub-components low → dragged interest-earned/NII down, so we
+> re-derive interest-earned = total income − other income and NII = interest
+> earned − interest expended); GNPA/NNPA text override; and **growth from STORED
+> HISTORY** (not the model's unreliable in-filing comparative columns). End-to-end
+> on the real PDF the alert fires `result_quality_low`/short, conf 0.82, all three
+> flags, every line correct (`test_bfsi_hardening.py`, 5 tests).
+> **Remaining external dependency:**
+> - **S8 consensus** — needs a live estimate source + ToS decision. Not started.
+
+### Tasks
+
+> Build order: **S1 → S2 → S3 → S4** need NO external data and capture the bulk of
+> this event. S6–S8 add the pre-print risk flag and true beat/miss. S9–S11 are
+> corroboration + repro.
+
+**Group A — Extraction: capture the lines that actually moved the stock**
+
+- [x] **S1** Sector-aware financial schema. Today `config/financial_aliases.yaml`
+  `canonical_fields` is a fixed 10-field generic P&L; for a bank, `pat_cr` is the
+  wrong headline. Make `canonical_fields` a per-`sector_class` map (key off
+  `market/sector_map.py`) and add the BFSI block the `pnl_anchors` already locate
+  but extraction discards:
+  - `interest_earned_cr`, `interest_expended_cr`, `net_interest_income_cr`,
+    `operating_profit_cr` (PPOP), `provisions_cr`,
+    `profit_on_sale_of_investments_cr` (the treasury line),
+    `gross_npa_pct`, `net_npa_pct`, `slippages_cr`
+  - Pass `sector` into the vision prompt (`ctx` in `financial_extractor.extract`
+    already carries `symbol`); prompt asks only for that sector's fields.
+  - Other sectors (stretch, same mechanism): IT → cc-revenue, EBIT margin, deal
+    TCV; FMCG/manufacturing → EBITDA, EBITDA margin, volume growth; insurers →
+    APE, VNB margin, persistency.
+  - **Acceptance (SBI fixture):** extracts PPOP ≈ ₹27,704 cr, NII ≈ ₹44,380 cr,
+    provisions (down YoY), GNPA 1.49% / NNPA 0.39%, treasury loss ~₹1,471 cr.
+
+- [x] **S2** Persist the new fields: extend `extracted_financials` (migration) +
+  the BFSI keys in the `17.2` ground-truth YAML schema (it already reserves
+  `net_interest_income_cr`). Wire YoY/QoQ for the BFSI lines through the existing
+  `growth`/`growth_consolidated` path (the extractor already computes growth from
+  the PDF's own comparative columns — no stored history needed).
+
+**Group B — Quality-divergence signal (zero external data — highest ROI)**
+
+- [x] **S3** `result_quality_low` / `result_quality_high` in `signals/detect.py`
+  (there is **no** result-quality logic wired today). Pure arithmetic on S1/S2
+  growth fields — *this is the rule that flags SBI for free*:
+  - **Low-quality beat** = PAT growth ≥ 0 **AND** operating-profit (PPOP) growth
+    < 0 → "headline beat, operating miss".
+  - **Provision-propped** = PAT growth ≥ 0 **AND** provisions down YoY by a
+    material margin → "profit supported by provision release, not core".
+  - **Treasury-driven** = `profit_on_sale_of_investments_cr` swung negative QoQ /
+    `other_income` down sharply → "non-core hit".
+  - Generalizes per sector: IT → revenue up but margin down; FMCG → revenue up on
+    price, volume down.
+  - **Acceptance (SBI):** all three fire — PAT +5.6% vs PPOP −11.45%, provisions
+    −36.6% YoY, treasury swing → emits `result_quality_low`.
+
+**Group C — Real-time result-day trigger (react within minutes)**
+
+- [x] **S4** Post-event trigger (the E3 half `pre_screen.py` notes as not-built).
+  On a "Outcome of Board Meeting"/result announcement landing, *immediately*:
+  parse PDF → S1 extract → S3 quality score → compare vs the frozen
+  `earnings_setups` baseline → emit a directional alert. Don't wait for the
+  overnight batch (18.4 assumes overnight — too slow; SBI repriced inside ~40
+  min). **Supersedes 18.4/18.5.**
+  - **Acceptance:** on the SBI fixture, produces a `result_quality_low` alert from
+    PDF bytes in < 5 min of ingestion (filing 2:01 → low 2:43 leaves the margin).
+
+- [x] **S5** BFSI-aware alert format (extend 18.6): show NII (±YoY), **NIM (±QoQ
+  bps)**, PPOP (±YoY/QoQ), provisions, GNPA/NNPA, treasury line — not just
+  revenue/PAT/EPS. The headline-PAT-only card is exactly what hid this event.
+
+**Group D — Macro / sector risk overlay (the only true pre-print flag)**
+
+- [x] **S6** Macro feed: **repo rate** + **10Y G-sec yield** (level + QoQ change).
+  Both were public and both predicted the *direction* of SBI's risk: Dec-2025
+  repo cut repricing EBLR/T-bill books over Jan–Mar (NIM compression), G-sec
+  hardening toward ~7% in Q4 (AFS MTM loss). **Resolved without a live scraper**
+  (none required at this cadence): `migration 061` + `market/macro_rates.py`.
+  - **Repo rate = manual** (`record_rates()`): changes only ~6×/year at RBI MPC
+    meetings, so a scraper is negative ROI — calendar the MPC dates and enter it.
+  - **10Y yield = manual point or CSV import** (`import_rates_csv()`): download
+    the free authoritative series from **FBIL** (fbil.org.in) or **RBI DBIE**
+    (dbie.rbi.org.in) and import (columns auto-detected). Yahoo doesn't carry the
+    India 10Y; investpy/Investing.com is unreliable (Cloudflare) — neither built on.
+  - Driver: `scripts/load_macro_rates.py {set|csv|state}`. `macro_state()` derives
+    `rising_yields` / `repo_cut_recent`, consumed by S7. Tested: `tests/market/
+    test_macro_rates.py` (6) + the SBI case study.
+
+- [x] **S7** Sector risk rule stamped onto `earnings_setups` pre-print (extend
+  `events/pre_screen.py` / `pre_event_risk.py`): *bank/NBFC/insurer + recent rate
+  cut + rising 10Y → flag "NIM/treasury risk into result".* Can't predict the
+  number; tells you where to be nervous, across the whole BFSI universe
+  automatically. **Acceptance:** SBI carries the flag going into 8 May given the
+  Q4 macro state.
+
+**Group E — Consensus beat/miss (the genuine miss — hard dependency)**
+
+- [x] **S8** ✅ UNBLOCKED (2026-06 — user decision: implement all the sources,
+  accuracy first). Four adapters feed `consensus_estimates`; lookup **merges
+  field-wise** in accuracy order (`consensus.SOURCE_RANK`: **manual → news →
+  moneycontrol → yahoo**), so a news NII never masks MC's PAT:
+  - **manual / CSV** (`scripts/load_consensus.py set|csv`) — broker previews; the
+    most accurate **NII/NIM** path (migration 065 added `nii_est_cr`/`nim_est_pct` —
+    for a bank those, not PAT, are the estimates that matter).
+  - **news** (`events/consensus_sources/news.py`) — broker previews read out of
+    articles: Bing News RSS (publisher URLs verbatim in the link, unlike Google's
+    opaque/ToS-bound feed) → publisher page → LLM extraction (JSON, preview-framed
+    numbers only, post-result articles rejected) → year-ago sanity band (0.4–2.5×
+    vs extracted_financials) → mean across articles/brokers. The *automated*
+    NII/NIM path. Misses accepted: paywalls + TLS-blocking hosts (business-standard,
+    zeebiz) are skipped, never circumvented.
+  - **moneycontrol** (`events/consensus_sources/moneycontrol.py`) — quarterly
+    earning-forecast API (rev+PAT+EPS ₹ cr); scId via autosuggest; the fragile leg,
+    degrades per-symbol.
+  - **yahoo** (`events/consensus_sources/yahoo.py`) — earningsTrend (EPS+revenue,
+    INR-guarded so a USD misread can never land).
+  Nightly `register_consensus_job` at 20:05 IST (after the calendar fills
+  `pending_events`, before the pre-screen stamps setups) fetches for the next-10-day
+  reporters only. Verified live: INFY/TCS — MC and Yahoo agree to the crore on
+  revenue (₹47,785 / ₹70,991 cr). `matcher.py` flips `surprise_basis` to
+  'consensus' automatically. Tests: `tests/events/test_consensus_sources.py`.
+  *Caveat:* mid/small-cap coverage thins on both live sources — the manual path is
+  the accuracy backstop for names that matter.
+
+**Group F — Positioning corroboration (context, not trigger)**
+
+- [x] **S9** Implied-move vs realized check. `pre_screen.py` already computes
+  `implied_move_pct` from the ATM straddle. Add a post-event note when the
+  realized move exceeds the implied band → "larger-than-priced surprise". SBI:
+  implied ±5.7% (26-May ATM, 1040 strike) vs realized ~7%.
+  - Volume confirmation: 8+11 May ≈ 95 m shares vs 30-day avg 18.7 m (~5×) — broad
+    post-disclosure exit, *not* a stealth raid (consistent with the ~2% leak read).
+
+**Group G — Reproduce + bound honestly**
+
+- [x] **S10** Add the SBI Q4 FY26 result PDF as a labelled fixture (re-hydrate from
+  `data/archive/` by fingerprint if present) with a hand-verified BFSI
+  ground-truth YAML, and an end-to-end test: PDF bytes → S1 extract → S3 signal →
+  assert `result_quality_low`. This is the one piece of 8 May we *can* prove.
+
+- [x] **S11** Document the limits in-repo (don't let the dashboard imply foresight):
+  no leak prediction; no pre-collection backtest; "beforehand" = risk-flag (S7) +
+  fast reaction (S4), nothing more.
+
+### Week 17.5 gate
+On the SBI Q4 FY26 fixture, the pipeline (a) extracts the BFSI operating lines
+(S1), and (b) emits `result_quality_low` end-to-end (S3/S10). Forward-looking:
+S4 fires the alert in < 5 min of ingestion and S7 carries the pre-print risk flag
+for BFSI names in a rising-yield / post-rate-cut regime.
+
+---
+
 ## Week 18 — Event Signals + Pre-Event Gating
 
 ### Tasks
