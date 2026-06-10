@@ -33,6 +33,7 @@ Public API:
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -61,6 +62,13 @@ _REQUIRED_FOR_COMPLETE = (
 _PNL_ANCHOR_MIN = 2
 # Cap on how many pages we send to vision (cost/latency bound).
 _MAX_VISION_PAGES = 6
+# Banks pack a dense multi-column P&L; render sharper than the 144 default so the
+# model can resolve the columns/rows it confuses at low DPI. 300 materially
+# improved current-quarter level reads (other_income, interest_expended) in
+# testing; in-filing COMPARATIVE columns stay unreliable regardless, so growth is
+# computed from stored history (fundamentals/from_results.quarter_growth), not
+# from the model's comparative read.
+_BFSI_RENDER_DPI = 300
 
 
 @dataclass
@@ -74,6 +82,10 @@ class ExtractionResult:
     period_ending: str | None = None
     warnings: list[str] = field(default_factory=list)
     llm_cost_usd: float = 0.0
+    # YoY/QoQ revenue & PAT growth, computed from the PDF's own comparative
+    # columns (preceding quarter + year-ago quarter) — no stored history needed.
+    growth: dict = field(default_factory=dict)
+    growth_consolidated: dict = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
@@ -84,6 +96,215 @@ class ExtractionResult:
 def _load_config() -> dict:
     with _CONFIG_PATH.open() as f:
         return yaml.safe_load(f)
+
+
+def _symbol_is_bfsi(symbol: str | None) -> bool:
+    """True if the symbol is a bank/NBFC, so the BFSI line items are requested.
+
+    Best-effort: a missing sector map simply yields False (generic P&L read)."""
+    if not symbol:
+        return False
+    try:
+        from nse_data.market.sector_map import is_bfsi
+        return is_bfsi(symbol)
+    except Exception:  # noqa: BLE001 — never let sector lookup break extraction
+        return False
+
+
+def _pct_after(text: str, *label_variants: str) -> float | None:
+    """First NPA-style percentage after a label, tolerant of OCR noise.
+
+    The asset-quality rows survive in the text layer but garbled — e.g.
+    ``"% of gross NPAS 1 49o/o"`` (space for the decimal point, ``o/o`` for %).
+    We find the label then read the first ``D[.| ]DD`` token as ``D.DD`` and
+    accept it only as a sane NPA ratio (0–30%)."""
+    low = text.lower()
+    for lab in label_variants:
+        i = low.find(lab.lower())
+        if i == -1:
+            continue
+        seg = text[i + len(lab): i + len(lab) + 30]
+        m = re.search(r"(\d{1,2})\s*[.\s]\s*(\d{2})", seg)
+        if m:
+            val = float(f"{m.group(1)}.{m.group(2)}")
+            if 0.0 <= val <= 30.0:
+                return val
+    return None
+
+
+_AMOUNT_RE = re.compile(r"\d[\d,]*\.\d{2}")
+
+
+def _amount_after(text: str, *label_variants: str, window: int = 60) -> float | None:
+    """First Indian-format decimal amount after a label (e.g. '1,40,411.77').
+
+    Used to anchor a subtotal the vision model misreads on dense bank tables but
+    that survives cleanly (with its label) in the text layer."""
+    low = text.lower()
+    for lab in label_variants:
+        i = low.find(lab.lower())
+        if i == -1:
+            continue
+        seg = text[i + len(lab): i + len(lab) + window]
+        m = _AMOUNT_RE.search(seg)
+        if m:
+            try:
+                return float(m.group(0).replace(",", ""))
+            except ValueError:
+                continue
+    return None
+
+
+_ROW_NUM_RE = re.compile(r"-?\d[\d,]*\.\d{2}")
+
+# current-quarter field -> growth-key base (matches earnings_quality / vision growth)
+_GROWTH_TARGETS = (
+    ("operating_profit_cr", "ppop"),
+    ("pat_cr", "pat"),
+    ("other_income_cr", "other_income"),
+    ("revenue_cr", "revenue"),
+    ("provisions_cr", "provisions"),
+    ("net_interest_income_cr", "nii"),
+    ("pbt_cr", "pbt"),               # non-bank core line: PBT − other income
+    ("tax_cr", "tax"),               # tax-write-back prop guard
+    ("depreciation_cr", "depreciation"),   # + finance below → operating EBITDA
+    ("finance_cost_cr", "finance_cost"),
+)
+
+# Row-label fallback for fields whose CURRENT cell is OCR-garbled (so the value
+# anchor can't find the row) but whose label + comparative columns survive — we
+# then pair the model's reliable current value with the text row's comparatives.
+_GROWTH_LABELS = {
+    "other_income": ("other income",),
+    "pat": ("net profit for the period", "profit for the period"),
+    "pbt": ("profit before tax", "profit before exceptional"),
+    "tax": ("total tax expense",),
+}
+
+
+def _pdf_text_growth(full_text: str, fields: dict) -> dict:
+    """YoY/QoQ from the PDF's OWN comparative columns — no stored history.
+
+    The filing prints current / preceding-quarter / year-ago columns on each row.
+    Vision reads the *current* value reliably, so we locate that value in the text
+    layer and read the SAME ROW's next two numbers as the comparatives. Each
+    comparative is sanity-checked against the current value (a bank's quarter
+    column is ~1/4 of its full-year column), so an OCR-garbled or wrong-scale cell
+    is dropped rather than producing a bogus growth — which is exactly why this is
+    robust where the vision model's own column assignment is not.
+    """
+    from .extractors.vision_financial import _pct, _plausible_comparative
+
+    if not full_text:
+        return {}
+    lines = full_text.splitlines()
+    low_lines = [ln.lower() for ln in lines]
+    out: dict[str, float] = {}
+    for field, base in _GROWTH_TARGETS:
+        cur = fields.get(field)
+        if cur is None:
+            continue
+        prev_q = year_ago = None
+        # (1) value anchor: find the current value in a row, take its next columns.
+        for line in lines:
+            nums = [float(m.replace(",", "")) for m in _ROW_NUM_RE.findall(line)]
+            idx = next((i for i, x in enumerate(nums[:3])
+                        if abs(x - cur) <= max(0.02, 0.001 * abs(cur))), None)
+            if idx is None:
+                continue
+            prev_q = _plausible_comparative(cur, nums[idx + 1] if idx + 1 < len(nums) else None)
+            year_ago = _plausible_comparative(cur, nums[idx + 2] if idx + 2 < len(nums) else None)
+            break
+        # (2) label anchor (current cell garbled): pair the model's current value
+        # with the row's plausible comparatives, in column order [prev_q, year_ago].
+        if prev_q is None and year_ago is None:
+            for lab in _GROWTH_LABELS.get(base, ()):
+                hit = next((lines[i] for i, ll in enumerate(low_lines) if lab in ll), None)
+                if hit is None:
+                    continue
+                nums = [float(m.replace(",", "")) for m in _ROW_NUM_RE.findall(hit)]
+                plausible = [n for n in nums if _plausible_comparative(cur, n) is not None]
+                if len(plausible) >= 2:
+                    prev_q, year_ago = plausible[0], plausible[1]
+                elif len(plausible) == 1:
+                    year_ago = plausible[0]   # only the year-ago survived
+                break
+        qoq, yoy = _pct(cur, prev_q), _pct(cur, year_ago)
+        if qoq is not None:
+            out[f"qoq_{base}_pct"] = qoq
+        if yoy is not None:
+            out[f"yoy_{base}_pct"] = yoy
+    return out
+
+
+def _apply_bfsi_text_overrides(vis: dict, full_text: str) -> None:
+    """Correct BFSI fields the vision model misreads, using the text layer (which
+    keeps the labelled subtotal rows even when vision confuses dense columns).
+
+    Two corrections, both seen on the real SBI filing:
+      * GNPA/NNPA % — off the main P&L grid; vision read 2.78/0.67 vs filed 1.49/0.39.
+      * TOTAL INCOME — vision summed the interest sub-components low (123,097 →
+        103,411), dragging interest-earned and NII down. TOTAL INCOME survives
+        cleanly in the text, so anchor it and re-derive interest-earned
+        (= total income − other income) and NII (= interest earned − interest
+        expended). other_income/interest_expended are read reliably by vision.
+    """
+    if not full_text:
+        return
+    fields = vis.get("fields") or {}
+    gnpa = _pct_after(full_text, "% of gross npa", "of gross npa")
+    nnpa = _pct_after(full_text, "% of net npa", "of net npa")
+    if gnpa is not None:
+        fields["gross_npa_pct"] = gnpa
+    if nnpa is not None:
+        fields["net_npa_pct"] = nnpa
+
+    factor = units_factor_from(vis.get("units_phrase"))
+    ti_text = _amount_after(full_text, "total income")
+    if ti_text is not None:
+        ti_cr = ti_text * factor
+        oi = fields.get("other_income_cr")
+        # Accept only a sane total: above other income, and not absurdly large vs
+        # the model's read (guards against grabbing a wrong number/column).
+        if oi is not None and ti_cr > oi > 0 and 0.5 <= ti_cr / max(fields.get("total_income_cr") or ti_cr, 1.0) <= 2.0:
+            fields["total_income_cr"] = round(ti_cr, 2)
+            ie = round(ti_cr - oi, 2)                 # interest earned = total income − other income
+            fields["revenue_cr"] = ie
+            fields["interest_earned_cr"] = ie
+            iex = fields.get("interest_expended_cr")
+            if iex is not None:
+                fields["net_interest_income_cr"] = round(ie - iex, 2)
+    vis["fields"] = fields
+
+    # Recompute growth from the PDF's OWN comparative columns (text-anchored on
+    # the corrected current values) — this is the reliable comparative source, so
+    # it overrides the vision model's own (often wrong-column) comparative read;
+    # any key it can't recover falls back to the vision growth.
+    text_growth = _pdf_text_growth(full_text, fields)
+    if text_growth:
+        merged = dict(vis.get("growth") or {})
+        merged.update(text_growth)
+        vis["growth"] = merged
+
+
+def _apply_generic_growth(vis: dict, full_text: str) -> None:
+    """Non-BFSI: recompute growth from the PDF's OWN comparative columns
+    (text-anchored, reliable) and derive the core operating line ex-other-income
+    (PBT − other income). Puts ``operating_ex_oi`` into growth_json so the
+    energy/generic sector rules can read the operating line at detection time —
+    the fix for the revenue-proxy weakness that mislabelled ONGC."""
+    if not full_text:
+        return
+    fields = vis.get("fields") or {}
+    text_growth = _pdf_text_growth(full_text, fields)
+    merged = dict(vis.get("growth") or {})
+    if text_growth:
+        merged.update(text_growth)
+    from ..fundamentals.from_results import derive_core_operating, derive_ebitda
+    merged.update(derive_core_operating(merged, fields))
+    merged.update(derive_ebitda(merged, fields))
+    if merged:
+        vis["growth"] = merged
 
 
 # --------------------------------------------------------------------------- #
@@ -195,7 +416,7 @@ _SCAN_BATCH = 4
 _SCAN_MAX_PAGES = 16
 
 
-def _vision_scan(data: bytes, n_pages: int, ctx: dict) -> dict | None:
+def _vision_scan(data: bytes, n_pages: int, ctx: dict, *, dpi: int | None = None) -> dict | None:
     """Find the P&L *by sight*: render the document in small image batches over
     the first pages and return the first batch vision reads a P&L from.
 
@@ -207,9 +428,10 @@ def _vision_scan(data: bytes, n_pages: int, ctx: dict) -> dict | None:
     total_cost = 0.0
     last: dict | None = None
     limit = min(n_pages, _SCAN_MAX_PAGES)
+    render_kw = {"dpi": dpi} if dpi else {}
     for start in range(0, limit, _SCAN_BATCH):
         idx = list(range(start, min(start + _SCAN_BATCH, limit)))
-        out = _vision(pdf_render.render_pages(data, idx), **ctx)
+        out = _vision(pdf_render.render_pages(data, idx, **render_kw), **ctx)
         if out is None:
             continue
         total_cost += out.get("cost_usd", 0.0)
@@ -250,6 +472,9 @@ def _gapfilled(vis: dict, txt: dict) -> dict:
         "units_phrase": vis.get("units_phrase") or txt.get("units_phrase"),
         "period_ending": vis.get("period_ending") or txt.get("period_ending"),
         "cost_usd": vis.get("cost_usd", 0.0) + txt.get("cost_usd", 0.0),
+        "growth": _merge_fill(vis.get("growth", {}), txt.get("growth", {})),
+        "growth_consolidated": _merge_fill(
+            vis.get("growth_consolidated", {}), txt.get("growth_consolidated", {})),
     }
 
 
@@ -265,6 +490,8 @@ def _result_from_llm(out: dict, strategy: str, prior_cost: float) -> ExtractionR
         period_ending=out.get("period_ending"),
         warnings=warnings,
         llm_cost_usd=prior_cost + out.get("cost_usd", 0.0),
+        growth=out.get("growth", {}),
+        growth_consolidated=out.get("growth_consolidated", {}),
     )
 
 
@@ -305,12 +532,27 @@ def extract(
         # No free deterministic path exists; don't spend without opt-in.
         return ExtractionResult(strategy="llm_disabled", units_factor=uf, units_phrase=up)
 
-    ctx = {"symbol": symbol, "subject": subject, "broadcast_dt": broadcast_dt}
+    is_bfsi = _symbol_is_bfsi(symbol)
+    ctx = {
+        "symbol": symbol, "subject": subject, "broadcast_dt": broadcast_dt,
+        "is_bfsi": is_bfsi,
+    }
+    # Banks pack a dense 10-column P&L; render sharper so the model can resolve
+    # the columns it was confusing at the default DPI.
+    render_dpi = _BFSI_RENDER_DPI if is_bfsi else pdf_render.RENDER_DPI
 
     # --- primary: vision over the located P&L page(s) ---
+    # For a bank, render ONLY the first located P&L page: the successor page
+    # (notes / asset-quality) measurably degraded column reads in testing.
     pnl_idx = _locate_pnl_pages(pages)
-    images = pdf_render.render_pages(data, pnl_idx or None)
+    render_idx = (pnl_idx[:1] if (is_bfsi and pnl_idx) else (pnl_idx or None))
+    images = pdf_render.render_pages(data, render_idx, dpi=render_dpi)
     vis = _vision(images, **ctx)
+    if vis is not None and vis.get("fields"):
+        if is_bfsi:
+            _apply_bfsi_text_overrides(vis, full_text)
+        else:
+            _apply_generic_growth(vis, full_text)
     if vis is not None and vis["fields"]:
         # Gap-fill: vision sometimes under-extracts (reads only the headline rows
         # and nulls the rest). If a required line is missing, run the text path
@@ -326,7 +568,12 @@ def extract(
     # --- batched vision scan: the located pages had no P&L (anchors aimed wrong
     # because the table is garbled in the text layer, e.g. merged bank filings).
     # Render the doc in small batches and let vision find the P&L by sight. ---
-    scan = _vision_scan(data, len(pages), ctx)
+    scan = _vision_scan(data, len(pages), ctx, dpi=render_dpi)
+    if scan is not None and scan.get("fields"):
+        if is_bfsi:
+            _apply_bfsi_text_overrides(scan, full_text)
+        else:
+            _apply_generic_growth(scan, full_text)
     if scan is not None and scan.get("fields"):
         if full_text and _is_incomplete(scan["fields"]):
             txt = _text_llm(full_text, **ctx)

@@ -23,6 +23,29 @@ canonical_fields:
   - eps_basic
   - eps_diluted
 
+# BFSI (banks/NBFCs) operating lines — requested only when sector_map.is_bfsi()
+# is true (S1). For a bank, pat_cr alone hides the operating story; these are the
+# lines the market actually prices (NII, pre-provision profit, provisions,
+# treasury, asset quality). gross/net_npa_pct are ratios (never unit-scaled).
+bfsi_fields:
+  - interest_earned_cr
+  - interest_expended_cr
+  - net_interest_income_cr
+  - operating_profit_cr            # pre-provision operating profit (PPOP)
+  - provisions_cr
+  - profit_on_sale_of_investments_cr   # treasury / MTM line
+  - gross_npa_pct
+  - net_npa_pct
+  - slippages_cr
+
+# Non-bank operating-EBITDA inputs (P3). Requested for normal companies; NULL for
+# banks. EBITDA = pbt + finance_cost + depreciation − other_income — the operating
+# line for energy/IT/FMCG/auto/metals. Not in _REQUIRED_FOR_COMPLETE: a filing may
+# omit them (then the engine falls back to core profit ex-other-income).
+non_bfsi_fields:
+  - depreciation_cr
+  - finance_cost_cr
+
 rupee_fields:
   - eps_basic
   - eps_diluted

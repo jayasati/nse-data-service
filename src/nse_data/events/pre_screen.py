@@ -176,6 +176,7 @@ def build_setup(
     fundamental_class = expectation.classify_fundamental_trend(growth)
     proxy = expectation.expectation_proxy_score(run_up_class, fundamental_class, opts["pcr"])
     est = _consensus_for_event(conn, symbol, event_date)
+    bfsi_risk, bfsi_risk_note = _bfsi_macro_risk(conn, symbol)
 
     return {
         "symbol": symbol, "event_date": event_date,
@@ -189,7 +190,50 @@ def build_setup(
         "expectation_proxy_score": proxy,
         "consensus_rev_est": est.get("rev_est_cr") if est else None,
         "consensus_eps_est": est.get("eps_est") if est else None,
+        "bfsi_macro_risk": bfsi_risk,
+        "bfsi_macro_risk_note": bfsi_risk_note,   # message-only, not persisted
     }
+
+
+def implied_vs_realized(
+    conn: sqlite3.Connection, symbol: str, realized_move_pct: float | None,
+    volume_ratio: float | None = None,
+) -> str | None:
+    """Post-event note when the realized move exceeds the option-implied band (S9).
+
+    Reads the frozen pre-event ``implied_move_pct`` from the latest earnings_setups
+    row. Returns a one-line string ("larger-than-priced surprise …") when the
+    realized move breaks the band, else None. SBI: implied ±5.7% vs realized ~7%."""
+    if realized_move_pct is None:
+        return None
+    row = conn.execute(
+        "SELECT implied_move_pct FROM earnings_setups WHERE symbol=? "
+        "ORDER BY event_date DESC LIMIT 1",
+        (symbol,),
+    ).fetchone()
+    if not row or row[0] is None:
+        return None
+    implied = float(row[0])
+    realized = abs(float(realized_move_pct))
+    vol = f", volume {volume_ratio:.1f}× avg" if volume_ratio else ""
+    if realized > implied:
+        return (
+            f"⚡ Larger-than-priced surprise: realized {realized:.1f}% vs "
+            f"implied ±{implied:.1f}%{vol}"
+        )
+    return f"Move within priced band (realized {realized:.1f}% vs ±{implied:.1f}%){vol}"
+
+
+def _bfsi_macro_risk(conn: sqlite3.Connection, symbol: str) -> tuple[str | None, str]:
+    """Pre-print NIM/treasury risk class for a BFSI name given the macro backdrop.
+
+    (None, "") for non-BFSI symbols or a benign rate environment (S7)."""
+    from nse_data.market import macro_rates
+    from nse_data.market.sector_map import is_bfsi
+
+    if not is_bfsi(symbol):
+        return None, ""
+    return macro_rates.bfsi_earnings_risk(macro_rates.macro_state(conn))
 
 
 def _upsert_setup(conn: sqlite3.Connection, setup: dict, now: int, flagged_at: int | None) -> None:
@@ -198,7 +242,8 @@ def _upsert_setup(conn: sqlite3.Connection, setup: dict, now: int, flagged_at: i
         "iv_atm", "implied_move_pct", "pcr", "oi_buildup_class",
         "sector_rank", "sector_trend", "growth_yoy_rev", "growth_yoy_pat",
         "fundamental_class", "expectation_proxy_score",
-        "consensus_rev_est", "consensus_eps_est", "flagged_at", "created_at",
+        "consensus_rev_est", "consensus_eps_est", "bfsi_macro_risk",
+        "flagged_at", "created_at",
     )
     vals = [setup.get(c) for c in cols[:-2]] + [flagged_at, now]
     conn.execute(
@@ -257,10 +302,17 @@ def run_pre_screen_pass(
         ).fetchone()
         prev_flag = already[0] if already else None
 
-        send_now = prev_flag is None and expectation.is_notable(setup)
+        # A BFSI macro-risk read is independently notable — flag an at-risk bank
+        # into its print even when run-up/positioning alone wouldn't trip (S7).
+        bfsi_note = setup.get("bfsi_macro_risk_note")
+        send_now = prev_flag is None and (
+            expectation.is_notable(setup) or bool(setup.get("bfsi_macro_risk"))
+        )
         flagged_at = prev_flag
         if send_now:
             text = expectation.build_flag_message(symbol, event_date, setup)
+            if bfsi_note:
+                text += f"\n⚠️ BFSI macro risk into result: {bfsi_note}"
             if sender(token, chat_id, text, thread_id):
                 flagged_at = ts
                 flagged += 1

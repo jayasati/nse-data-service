@@ -37,6 +37,32 @@ def test_map_block_includes_cfo_when_present():
     assert "cfo_cr" not in vf._map_block({"revenue": 100}, factor=1.0)
 
 
+def test_growth_from_comparative_columns():
+    # one PDF's standalone block with prev-quarter + year-ago columns
+    block = {
+        "revenue": 2549.72, "pat": 273.67,
+        "prev_quarter": {"revenue": 2400.0, "pat": 250.0},      # QoQ base
+        "year_ago_quarter": {"revenue": 2100.0, "pat": 180.0},  # YoY base
+    }
+    g = vf._growth_from_block(block)
+    assert g["qoq_revenue_pct"] == pytest.approx(6.24, abs=0.01)
+    assert g["yoy_revenue_pct"] == pytest.approx(21.42, abs=0.01)
+    assert g["yoy_pat_pct"] == pytest.approx(52.04, abs=0.01)   # 180 -> 273.67
+
+
+def test_growth_in_to_result_and_loss_turnaround():
+    data = {
+        "standalone": {"revenue": 100, "pat": 5,
+                       "year_ago_quarter": {"revenue": 80, "pat": -10}},
+        "units_in_source_pdf": "INR crore",
+    }
+    r = vf._to_result(data, 0.0)
+    assert r["growth"]["yoy_revenue_pct"] == 25.0
+    assert r["growth"]["yoy_pat_pct"] == 150.0   # loss -10 -> profit 5, sign-aware
+    # no comparative columns -> empty growth, not an error
+    assert vf._to_result({"standalone": {"revenue": 100}}, 0.0)["growth"] == {}
+
+
 def test_coerce_number_formats():
     assert vf._coerce_number("1,234.5") == 1234.5
     assert vf._coerce_number("(166.79)") == -166.79

@@ -183,6 +183,15 @@ def print_result(item: dict, res, idx: int, total: int):
             line += f"{_fmt(res.consolidated.get(k)):>15}"
         print(line)
 
+    # growth from the PDF's own comparative columns (YoY / QoQ)
+    g = getattr(res, "growth", {}) or {}
+    if g:
+        def _g(k):
+            return "—" if g.get(k) is None else f"{g[k]:+.1f}%"
+        print(cyan("  growth (from this PDF's prior-period columns):"))
+        print(f"    revenue  YoY {_g('yoy_revenue_pct')}   QoQ {_g('qoq_revenue_pct')}")
+        print(f"    PAT      YoY {_g('yoy_pat_pct')}   QoQ {_g('qoq_pat_pct')}")
+
     # quick internal-consistency hints (not authoritative — just flags)
     _consistency(res.fields)
 

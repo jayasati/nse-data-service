@@ -15,6 +15,17 @@ import yaml
 
 DEFAULT_PATH = "config/sector_mapping.yaml"
 
+# Sectoral indices whose constituents file a BANK/NBFC-style P&L (Interest
+# Earned / Interest Expended / Provisions / Operating Profit), so the financial
+# extractor must read the BFSI lines, not a generic revenue/PAT P&L. PSU & private
+# bank indices are listed even when sparsely populated in sector_mapping.yaml.
+BFSI_SECTORS = frozenset({
+    "NIFTY BANK",
+    "NIFTY PSU BANK",
+    "NIFTY PRIVATE BANK",
+    "NIFTY FINANCIAL SERVICES",
+})
+
 
 @lru_cache(maxsize=4)
 def load_sector_map(path: str = DEFAULT_PATH) -> dict[str, str]:
@@ -28,3 +39,12 @@ def load_sector_map(path: str = DEFAULT_PATH) -> dict[str, str]:
 
 def sector_for(symbol: str, path: str = DEFAULT_PATH) -> str | None:
     return load_sector_map(path).get(symbol)
+
+
+def is_bfsi(symbol: str, path: str = DEFAULT_PATH) -> bool:
+    """True if the symbol is a bank/NBFC that files a BFSI-shaped P&L.
+
+    Used by the financial extractor to request the BFSI line items (NII, PPOP,
+    provisions, treasury, GNPA/NNPA) that a generic P&L read would discard.
+    """
+    return sector_for(symbol, path) in BFSI_SECTORS
