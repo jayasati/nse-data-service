@@ -1,0 +1,50 @@
+# SBI Q4 FY26 (quarter ended 2026-03-31) — BFSI ground truth for Week 17.5 (S10).
+#
+# PENDING THE FILING: 8-May-2026 predates this system's collection start, so no
+# SBIN result PDF is archived. Supply the PDF as
+# tests/financial_extraction/fixtures/pdfs/<fingerprint>.pdf and point this
+# label at it to close the vision-accuracy leg of the Week 17.5 gate. Until then
+# the downstream pipeline is proven offline in tests/fundamentals/
+# test_sbi_case_study.py using these same numbers.
+#
+# Values are crore (ratios are %), sourced from the forensic research summary.
+# Treat as approximate where the research gave rounded figures.
+standalone:
+  revenue_cr: 117996          # Interest Earned
+  other_income_cr: 17314
+  total_income_cr: 135310
+  pat_cr: 19684               # +5.6% YoY — the headline beat
+  net_interest_income_cr: 44380
+  operating_profit_cr: 27704  # PPOP — −11.45% YoY / −15.7% QoQ (the operating miss)
+  provisions_cr: 2700         # ~−36.6% YoY (propped PAT)
+  profit_on_sale_of_investments_cr: -1471   # treasury loss on sale of investments
+  gross_npa_pct: 1.49
+  net_npa_pct: 0.39
+  slippages_cr: 5521
+consolidated: null
+growth:
+  yoy_pat_pct: 5.58
+  yoy_ppop_pct: -11.45
+  qoq_ppop_pct: -15.7
+  yoy_provisions_pct: -36.62
+  yoy_other_income_pct: -28.94
+period_label: Q4-FY26
+period_ending: '2026-03-31'
+units_in_source_pdf: INR crore
+expected_quality:
+  label: low
+  direction: short
+  flags: [low_quality_beat, provision_propped, treasury_hit]
+_meta:
+  symbol: SBIN
+  subject: Outcome of Board Meeting
+  broadcast_dt: 08-May-2026 14:01:38
+  reviewed: true
+  pdf_pending: false
+  pdf_fixture: tests/financial_extraction/fixtures/pdfs/sbin_q4fy26_5808055808055808.pdf
+  note: >
+    Verified against the actual filing. Live gpt-4o vision extraction passes the
+    creds-gated accuracy gate in test_sbi_vision_live.py after the dense-bank
+    hardening (300 DPI / P&L page only, identity corrections, TOTAL-INCOME text
+    anchor, GNPA/NNPA text override). Growth (YoY/QoQ) is computed from stored
+    history, not the model's in-filing comparative columns.
