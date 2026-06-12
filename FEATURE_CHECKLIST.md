@@ -1238,20 +1238,25 @@ for BFSI names in a rising-yield / post-rate-cut regime.
 
 ### Tasks
 
-- [ ] **18.1** Write `events/calendar.py` — reads `raw_board_meetings`, populates `pending_events` table with: symbol, event_type ('result'/'dividend'/'agm'), expected_date, confidence ('confirmed'/'inferred')
+- [x] **18.1** Write `events/calendar.py` — reads `raw_board_meetings`, populates `pending_events` table with: symbol, event_type ('result'/'dividend'/'agm'), expected_date, confidence ('confirmed'/'inferred')
+  - ✅ built in E2 (nightly 20:00); event_type='result' only (dividend/agm deferred — nothing consumes them yet); confidence is numeric (0.9 board_meeting ≈ confirmed, 0.4 cadence ≈ inferred); status reconciled to filed/expired each run. 2026-06-12: filing-date parser fixed to accept the minute-precision strings raw_financial_results actually carries (cadence fallback was silently dead)
 
-- [ ] **18.2** Write `events/pre_event_risk.py` — runs nightly. For each stock with a pending event in next 10 days:
+- [x] **18.2** Write `events/pre_event_risk.py` — runs nightly. For each stock with a pending event in next 10 days:
   - Compute `pre_event_run_5d` = (today_close − close_5d_ago) / close_5d_ago × 100
   - Compute `pre_event_run_10d` = (today_close − close_10d_ago) / close_10d_ago × 100
   - Classify: BUY_RUMOR_IN_PLAY (run > +8%), MILD_ANTICIPATION (+3–8%), NORMAL (±3%), FEAR_PRICED (−8% to −15%), SELL_RUMOR_IN_PLAY (< −15%)
+  - ✅ 2026-06-12: nightly 20:20 job; classifies on run_10d (run_5d fallback); MILD_FEAR added for the −3..−8% gap; writes indicator_live + ind:{symbol} Redis hash, clears stale states. Backtest over 2,045 historical filings: BUY_RUMOR_IN_PLAY → fwd3 mean −7.1% / median −8.6% / 25.8% win vs NORMAL −3.3% / 29.4% — gate premise CONFIRMED (scripts/validate_pre_event_gate.py)
 
-- [ ] **18.3** Add to hard gates: if `BUY_RUMOR_IN_PLAY` AND `days_to_event <= 3` AND signal is `long` → suppress long signal, generate `BUY_RUMOR_WARNING` message instead
+- [x] **18.3** Add to hard gates: if `BUY_RUMOR_IN_PLAY` AND `days_to_event <= 3` AND signal is `long` → suppress long signal, generate `BUY_RUMOR_WARNING` message instead
+  - ✅ 2026-06-12: dispatcher gate (bot/dispatcher.py); post-event types (earnings_direction/result_*) exempt; warning sent once per symbol per day with a `buy_rumor_warning` audit row
 
-- [ ] **18.4** Write `result_beat` signal: reads newly parsed financial results from previous session (when `financial_extractor` runs overnight). If YoY revenue growth > +15% AND sentiment positive → signal. Include earnings quality flag
+- [x] **18.4** Write `result_beat` signal: reads newly parsed financial results from previous session (when `financial_extractor` runs overnight). If YoY revenue growth > +15% AND sentiment positive → signal. Include earnings quality flag
+  - ✅ 2026-06-12: rides the fast-lane extraction window (fires within ~30 min of extraction, recent-filing guard blocks backfills); sentiment = press-release narrative mgmt_tone positive or guidance raised; quality flag HIGH/LOW from the sector-routed verdict
 
-- [ ] **18.5** Write `result_miss` signal: YoY revenue growth < −10% OR strong negative sentiment → signal
+- [x] **18.5** Write `result_miss` signal: YoY revenue growth < −10% OR strong negative sentiment → signal
+  - ✅ 2026-06-12: strong negative = negative mgmt tone corroborated by a guidance cut or falling PAT (tone alone is too weak to short on); direction=short
 
-- [ ] **18.6** Write result alert message format:
+- [x] **18.6** Write result alert message format (bot/result_alert_message.py, exact card below; quality flag = sector-routed verdict):
   ```
   🟢 {SYMBOL} — Result Beat
   Revenue: ₹{revenue}Cr (+{yoy}% YoY)
@@ -1262,15 +1267,16 @@ for BFSI names in a rising-yield / post-rate-cut regime.
   Confidence: {tier} ({score})
   ```
 
-- [ ] **18.7** Write `parsers/analyst_ratings.py` — new scraper. Scrapes Moneycontrol analyst ratings page, 30-min cadence during market hours. Extracts: brokerage, symbol, old call, new call, old target, new target. Matches brokerage against `config/brokerage_tiers.yaml`. Writes to `raw_analyst_ratings`
+- [x] **18.7** Write `parsers/analyst_ratings.py` — new scraper. Scrapes Moneycontrol analyst ratings page, 30-min cadence during market hours. Extracts: brokerage, symbol, old call, new call, old target, new target. Matches brokerage against `config/brokerage_tiers.yaml`. Writes to `raw_analyst_ratings`
 
-- [ ] **18.8** Add `analyst_upgrade_tier1` and `analyst_downgrade_tier1` signals reading from `raw_analyst_ratings`
+- [x] **18.8** Add `analyst_upgrade_tier1` and `analyst_downgrade_tier1` signals reading from `raw_analyst_ratings`
+  - ✅ 2026-06-12: source = Moneycontrol broker-recos RSS (stable public feed); old call/target come from our own previous row per (symbol, brokerage) — first sighting can't signal; tier-1 call-rank change → signal row (dispatched=1) + direct Telegram alert; 30-min cadence 08:30–15:35 IST (catches the pre-open reco dump)
 
 ### Phase 5 exit criteria (ALL must be met)
 - [ ] Credit rating alerts firing with correct agency/action/rating details
-- [ ] Analyst Tier-1 upgrade/downgrade alerts firing
-- [ ] `result_beat` and `result_miss` alerts firing from extracted PDF data
-- [ ] BUY_RUMOR_WARNING suppressing long signals before exhausted pre-result stocks
+- [x] Analyst Tier-1 upgrade/downgrade alerts firing (wired + tested with fake feed; live firing pending first tier-1 call change)
+- [x] `result_beat` and `result_miss` alerts firing from extracted PDF data (detector + card + dispatch tested end-to-end)
+- [x] BUY_RUMOR_WARNING suppressing long signals before exhausted pre-result stocks (gate + once-a-day warning tested; backtest-confirmed)
 - [ ] Announcements collector running until 21:30 IST
 - [ ] Financial extractor eval harness showing ≥ 90% accuracy
 - [ ] All prior stability criteria still met
@@ -1289,9 +1295,9 @@ for BFSI names in a rising-yield / post-rate-cut regime.
 
 ### Tasks
 
-- [ ] **19.1** Add measurements to `indicator_live` (new columns via migration): `consecutive_up_days`, `consecutive_down_days`, `pre_event_run_5d`, `pre_event_run_10d`
+- [x] **19.1** Add measurements to `indicator_live` (new columns via migration): `consecutive_up_days`, `consecutive_down_days`, `pre_event_run_5d`, `pre_event_run_10d`
 
-- [ ] **19.2** Write `psychology/state_classifier.py` — runs every 5 minutes, `market_hours_only`. For each symbol, reads live data and classifies into one of 8 states:
+- [x] **19.2** Write `psychology/state_classifier.py` — runs every 5 minutes, `market_hours_only`. For each symbol, reads live data and classifies into one of 8 states:
   - `FOMO_EUPHORIA`: consecutive_up_days > 5 AND volume rising each day AND rsi_5m > 78 AND price > 3% above VWAP
   - `BUY_RUMOR`: pre_event_run_10d > +8% AND days_to_event ≤ 5 AND iv_vs_avg > 1.3
   - `NEUTRAL_TRENDING`: none of the extreme conditions
@@ -1301,9 +1307,10 @@ for BFSI names in a rising-yield / post-rate-cut regime.
   - `RELIEF_BOUNCE`: pre_event_run_10d < −10% AND event just resolved (today) AND price rising
   - `DEAD_CAT_BOUNCE`: 5d return < −8% AND today up AND current volume < prior down-day avg volume
 
-- [ ] **19.3** Write psychological state to Redis `ind:{symbol}` hash as `psych_state` field and to `indicator_live`
+- [x] **19.3** Write psychological state to Redis `ind:{symbol}` hash as `psych_state` field and to `indicator_live`
+  - ✅ 2026-06-12: migration 070; every-minute snapshot write switched INSERT OR REPLACE → UPSERT so psych/pre-event columns survive; missing IV data doesn't veto BUY_RUMOR; event-anchored states outrank momentum extremes. Base rates over 48.8k F&O symbol-days: FOMO streak leg 0.94%, capitulation leg 2.41%, dead-cat leg 2.43% — extremes are genuine tails
 
-- [ ] **19.4** Add psychological alignment score to confidence scorer (Layer 7):
+- [x] **19.4** Add psychological alignment score to confidence scorer (Layer 7):
   ```
   NEUTRAL_TRENDING + long  → +0.05
   FOMO_EUPHORIA + long     → −0.20
@@ -1315,10 +1322,19 @@ for BFSI names in a rising-yield / post-rate-cut regime.
   FEAR_BUILDING + long     → −0.08
   ```
 
-- [ ] **19.5** Add psychological state to alert message: `Psychology: {psych_state}`
+- [x] **19.5** Add psychological state to alert message: `Psychology: {psych_state}`
+  - ✅ 2026-06-12: intraday + swing templates; morning brief carries a "Psychology watch" line for FOMO_EUPHORIA / CAPITULATION names (Week-19 gate)
 
 ### Week 19 gate
 Psychological states classifying correctly. FOMO_EUPHORIA visibly reducing long confidence. Morning brief mentions any FOMO or CAPITULATION stocks.
+
+- ✅ 2026-06-12 (build): all three legs unit-tested — 8 states + precedence, FOMO −0.20 on a strong long, brief lists FOMO/CAPITULATION names.
+- 📊 2026-06-12 (backtest, daily legs only — RSI(5m)/VWAP legs need the 1-min history that lives on the server): scripts/backtest_psych_states.py, 209 F&O symbols × ~500 sessions vs a ~0.0% baseline:
+  - FOMO proxy (up-streak>5 + vol rising): fwd3 **−1.04%**, 31.1% win → the −0.20 long penalty is CONFIRMED in sign and meaningful in size.
+  - CAPITULATION proxy (down>4 + 5d<−8%): fwd3 **+0.79%**, 57.2% win → the +0.15 long boost is CONFIRMED.
+  - DEAD_CAT (exact daily legs incl. low-volume bounce): fwd3 **+0.84%**, 56.1% win → the −0.15 long penalty is NOT supported at 1–5 day horizons (post-crash mean reversion dominates; the low-volume filter doesn't flip the sign). Keep per spec for now, re-judge with the intraday legs on the server before trusting it.
+  - FEAR proxy (down≥3 + vol rising, no RSI leg): fwd3 +0.33%, 54.2% win → mildly contradicts −0.08, but the proxy is missing its RSI<40 leg — inconclusive.
+  - Verdict: ship FOMO/CAPITULATION adjustments with confidence; treat DEAD_CAT/FEAR adjustments as unvalidated spec defaults pending the full-leg backtest on the server's candle history.
 
 ---
 

@@ -26,7 +26,10 @@ from .indicators.pre_market_loader import register_pre_market_loader
 from .bot.morning_brief import register_morning_brief
 from .events.calendar import register_calendar_job
 from .events.consensus_job import register_consensus_job
+from .events.pre_event_risk import register_pre_event_risk_job
 from .events.pre_screen import register_pre_screen_job
+from .parsers.analyst_ratings import register_analyst_ratings_job
+from .psychology.state_classifier import register_state_classifier_job
 from .fundamentals.from_results import (
     register_extract_runner,
     register_fast_result_lane,
@@ -164,6 +167,18 @@ def main() -> int:
     # Moneycontrol + Yahoo for the upcoming reporters; manual CSV outranks both.
     registered.append(register_consensus_job(scheduler, db_path))
     registered.append(register_pre_screen_job(scheduler, db_path))
+    # Pre-event run-up risk (20:20) → pre_event_run_5d/10d + days_to_event +
+    # the BUY_RUMOR_IN_PLAY/.../SELL_RUMOR_IN_PLAY class on indicator_live,
+    # feeding the dispatcher's buy-rumor long gate — Week 18.2/18.3.
+    registered.append(register_pre_event_risk_job(scheduler, db_path))
+    # Psychological state classifier: every 5 min during market hours, tags each
+    # symbol FOMO_EUPHORIA/BUY_RUMOR/CAPITULATION/... on indicator_live + Redis;
+    # the confidence scorer (Layer 7) and alert line read it — Week 19.
+    registered.append(register_state_classifier_job(scheduler, db_path))
+    # Analyst broker recommendations: every 30 min (trading days, 08:30–15:35),
+    # Moneycontrol broker-recos feed → raw_analyst_ratings + tier-1
+    # upgrade/downgrade alerts — Week 18.7/18.8.
+    registered.append(register_analyst_ratings_job(scheduler, db_path))
     # Financial extraction, three latency tiers → extracted_financials:
     #  - fast lane (every 1 min, market hours): full pipeline on just-filed result
     #    PDFs so a mid-session reaction is scored with the real surprise

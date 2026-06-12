@@ -38,6 +38,7 @@ from ..market.time_rules import time_rule
 from ..scheduler.market_hours import is_market_open, is_trading_day, now_ist
 from ..signals import enrich
 from ..signals.confidence import score_confidence
+from .result_alert_message import format_result_alert
 from .result_quality_message import format_result_quality
 from ..parsers.rating_extractor import latest_credit_by_symbol, is_junk_downgrade_kill
 
@@ -51,7 +52,8 @@ def _topic_id(name: str) -> int | None:
 def _topic_for(sig: dict) -> int | None:
     """Route a signal to its Telegram topic: earnings reactions to their own
     topic, otherwise by horizon (swing vs intraday)."""
-    if sig.get("signal_type") in ("earnings_direction", *_RESULT_QUALITY_TYPES):
+    if sig.get("signal_type") in ("earnings_direction", *_RESULT_QUALITY_TYPES,
+                                  *_RESULT_ALERT_TYPES):
         return _topic_id("earnings") or _topic_id("intraday")
     return _topic_id("intraday" if sig.get("horizon") == "intraday" else "swing")
 from ..signals.detect import (
@@ -84,11 +86,25 @@ _SIGNAL_LABELS = {
     "earnings_direction": "Earnings Reaction",
     "result_quality_low": "Low-Quality Result",
     "result_quality_high": "Clean Result",
+    "result_beat": "Result Beat",
+    "result_miss": "Result Miss",
 }
 
 # Signal types that carry a fundamental verdict rather than price/volume metrics,
 # so they bypass the live confidence scorer and use their own card + confidence.
 _RESULT_QUALITY_TYPES = ("result_quality_low", "result_quality_high")
+
+# Result beat/miss (18.4/18.5): own card (18.6), but scored by the live scorer
+# (the card prints RSI/regime/confidence, so the live context applies).
+_RESULT_ALERT_TYPES = ("result_beat", "result_miss")
+
+# Post-event types are exempt from the 18.3 buy-rumor gate: the gate protects
+# against buying INTO an exhausted pre-result run, and these only exist once
+# the result is already out.
+_POST_EVENT_TYPES = ("earnings_direction", *_RESULT_QUALITY_TYPES, *_RESULT_ALERT_TYPES)
+
+# 18.3: suppress longs into a bought rumor this close to the event.
+_BUY_RUMOR_MAX_DAYS = 3
 
 
 # ============================================================================
@@ -147,11 +163,13 @@ def dispatch_pass(
     sector_ranks = latest_sector_ranks(conn)
     quality_scores = _load_quality_scores(conn)     # fundamentals (task 14.4/14.5)
     credit_map = latest_credit_by_symbol(conn, now)  # credit ratings (Week 16)
+    pre_event_map = _load_pre_event_states(conn)     # buy-rumor gate (task 18.3)
     rule = time_rule(now)                            # time-of-day window (task 9.1)
     threshold = rule.min_confidence or CONFIDENCE_THRESHOLD
 
     counts = {"sent": 0, "gated": 0, "low_confidence": 0,
-              "aged_out": 0, "held": 0, "time_suppressed": 0}
+              "aged_out": 0, "held": 0, "time_suppressed": 0,
+              "buy_rumor_suppressed": 0}
 
     for row in rows:
         sig = _row_to_signal(row)
@@ -184,12 +202,66 @@ def dispatch_pass(
                 counts["held"] += 1
             continue
 
+        # Result beat/miss (18.4–18.6): own card, live-context confidence.
+        # Gated on blacklist/T2T/listing only (same reasoning as the quality
+        # types: a miss is a short, so the fundamental score kill doesn't apply).
+        if sig.get("signal_type") in _RESULT_ALERT_TYPES:
+            if _hard_gated(sig["symbol"], series, listing_bars, blacklist, None):
+                _mark_dispatched(conn, sig["id"], now)
+                counts["gated"] += 1
+                continue
+            context = enrich.read_live_context(redis_client, sig["symbol"], conn)
+            sector = sector_map.get(sig["symbol"])
+            sec = sector_ranks.get(sector or "", {})
+            direction = sig.get("direction", "long")
+            confidence = score_confidence(
+                context, None, regime,
+                sector_rank=sec.get("rs_rank"), sector_trend=sec.get("rs_trend"),
+                long_penalty=long_penalty, direction=direction,
+                psych_state=context.get("psych_state"),
+            )
+            text = format_result_alert(
+                conn, symbol=sig["symbol"], signal_type=sig["signal_type"],
+                context=context, confidence=confidence,
+            )
+            if not text or confidence <= CONFIDENCE_THRESHOLD:
+                if _age_minutes(sig["detected_at"], now) > MAX_SIGNAL_AGE_MIN:
+                    _mark_dispatched(conn, sig["id"], now)
+                    counts["aged_out"] += 1
+                else:
+                    counts["low_confidence"] += 1
+                continue
+            if sender(token, chat_id, text, _topic_for(sig)):
+                _mark_dispatched(conn, sig["id"], now)
+                counts["sent"] += 1
+            else:
+                counts["held"] += 1
+            continue
+
         credit = credit_map.get(sig["symbol"])
         # Hard-kill longs into a recent junk downgrade (don't buy into stress).
         if _hard_gated(sig["symbol"], series, listing_bars, blacklist, quality_scores) \
                 or is_junk_downgrade_kill(credit):
             _mark_dispatched(conn, sig["id"], now)
             counts["gated"] += 1
+            continue
+
+        # 18.3 hard gate: a LONG into a stock that already ran >8% with the
+        # result ≤3 days away is buying an exhausted rumor — suppress it and
+        # (once per symbol per day) send a BUY_RUMOR_WARNING instead.
+        direction = sig.get("direction", "long")
+        pre_state, pre_days, pre_run10 = pre_event_map.get(
+            sig["symbol"], (None, None, None))
+        if (direction == "long"
+                and sig.get("signal_type") not in _POST_EVENT_TYPES
+                and pre_state == "BUY_RUMOR_IN_PLAY"
+                and pre_days is not None and pre_days <= _BUY_RUMOR_MAX_DAYS):
+            _mark_dispatched(conn, sig["id"], now)
+            counts["buy_rumor_suppressed"] += 1
+            if _claim_buy_rumor_warning(conn, sig["symbol"], now):
+                sender(token, chat_id,
+                       build_buy_rumor_warning(sig, pre_days, pre_run10),
+                       _topic_for(sig))
             continue
 
         # Horizon decides timing. Intraday respects the time-of-day gate
@@ -211,7 +283,6 @@ def dispatch_pass(
         sector = sector_map.get(sig["symbol"])
         sec = sector_ranks.get(sector or "", {})
         quality = quality_scores.get(sig["symbol"])
-        direction = sig.get("direction", "long")
         earnings = _load_earnings_evidence(conn, sig)
         confidence = score_confidence(
             context, sig["volume_ratio"], regime,
@@ -224,6 +295,7 @@ def dispatch_pass(
             is_intraday=is_intraday,
             time_multiplier=eff_multiplier, long_penalty=long_penalty,
             earnings=earnings, direction=direction,
+            psych_state=context.get("psych_state"),    # Layer 7 (Week 19.4)
         )
 
         if confidence > eff_threshold:
@@ -256,6 +328,55 @@ def dispatch_pass(
 
     conn.commit()
     return counts
+
+
+def _load_pre_event_states(conn: sqlite3.Connection) -> dict:
+    """{symbol: (pre_event_state, days_to_event, pre_event_run_10d)} from
+    indicator_live (written nightly by events/pre_event_risk.py, refreshed
+    intraday by the psychology pass). Empty when the columns aren't migrated."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol, pre_event_state, days_to_event, pre_event_run_10d "
+            "FROM indicator_live WHERE pre_event_state IS NOT NULL",
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {r[0]: (r[1], r[2], r[3]) for r in rows}
+
+
+def _claim_buy_rumor_warning(conn: sqlite3.Connection, symbol: str, now: datetime) -> bool:
+    """One BUY_RUMOR_WARNING per symbol per day: True only for the first claim.
+
+    The claim is a `buy_rumor_warning` row in `signals` (dispatched=1 so the
+    poll never picks it up) — giving the warning an audit trail for free."""
+    today = now.date().isoformat()
+    row = conn.execute(
+        "SELECT 1 FROM signals WHERE symbol=? AND signal_type='buy_rumor_warning' "
+        "AND detected_at LIKE ? LIMIT 1",
+        (symbol, f"{today}%"),
+    ).fetchone()
+    if row is not None:
+        return False
+    conn.execute(
+        "INSERT INTO signals (symbol, signal_type, detected_at, dispatched, dispatched_at) "
+        "VALUES (?, 'buy_rumor_warning', ?, 1, ?)",
+        (symbol, now.isoformat(), now.isoformat()),
+    )
+    return True
+
+
+def build_buy_rumor_warning(sig: dict, days_to_event, run_10d) -> str:
+    """The 18.3 message sent INSTEAD of a suppressed long signal."""
+    label = _SIGNAL_LABELS.get(sig.get("signal_type", ""), sig.get("signal_type", ""))
+    run_line = (f"Run-up 10d: {run_10d:+.1f}%" if isinstance(run_10d, (int, float))
+                else "Run-up 10d: >8%")
+    days = f"{days_to_event}d" if days_to_event is not None else "≤3d"
+    return (
+        f"⚠️ {sig['symbol']} — BUY RUMOR WARNING\n"
+        f"Long signal suppressed ({label}).\n"
+        f"{run_line} into a result due in {days} — the rumor looks bought.\n"
+        f"An in-line print can still sell off. Wait for the post-result reaction."
+    )
 
 
 def _load_bb_squeeze(conn: sqlite3.Connection, symbol: str) -> bool:
@@ -406,6 +527,7 @@ def _format_intraday(sig, context, confidence, market, sector, sector_info, leve
         f"VWAP {context.get('price_vs_vwap') or 'n/a'} {arrow} | "
         f"RSI(5m): {_fmt(context.get('rsi_5m'))} | "
         f"Trend: {context.get('trend_regime') or 'n/a'}\n"
+        f"{_format_psychology(context)}"
         f"{_format_levels(levels)}\n"
         f"Confidence: {_tier(confidence)} ({confidence:.2f})\n"
         f"{sl_t1} | ⏰ Flat by 15:15"
@@ -424,6 +546,7 @@ def _format_swing(sig, context, confidence, market, sector, sector_info,
         f"{_format_market(market)}"
         f"{_format_sector(sector, sector_info)}\n"
         f"Trend: {context.get('trend_regime') or 'n/a'}\n"
+        f"{_format_psychology(context)}"
         f"{_format_quality(quality)}"
         f"{_format_credit(credit)}"
         f"{_format_delivery(delivery)}"
@@ -431,6 +554,12 @@ def _format_swing(sig, context, confidence, market, sector, sector_info,
         f"Confidence: {_tier(confidence)} ({confidence:.2f})\n"
         f"{sl_t1} | 📅 Hold days; trail 21-EMA"
     )
+
+
+def _format_psychology(context: dict) -> str:
+    """Psychological state line (task 19.5), or '' before the classifier ran."""
+    state = context.get("psych_state")
+    return f"Psychology: {state}\n" if state else ""
 
 
 def _format_credit(credit: dict | None) -> str:
