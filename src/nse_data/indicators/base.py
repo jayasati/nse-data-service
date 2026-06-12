@@ -67,6 +67,16 @@ class Indicator(ABC):
     #: Render hint for the dashboard chart. See `Pane`.
     pane: Pane = "overlay"
 
+    #: Per-column render override for mixed-scale indicators (e.g. EodFullSet
+    #: packs price levels AND ADX/OBV/ratios in one table). Maps a column to:
+    #:   "hidden"     — API-only, no chart chip (state flags, redundant series)
+    #:   <group name> — render in a dedicated sub-pane shared by every column
+    #:                  mapped to the same group ("adx" → adx/di+/di− together)
+    #: Columns not listed follow the indicator-level `pane`. Without this, a
+    #: ~1.0 ratio or a billions-scale OBV lands on the price axis and crushes
+    #: the chart's y-scale.
+    column_panes: dict[str, str] = {}
+
     #: When to compute. See `Cadence`. Today only "eod" runs; intraday/session
     #: are reserved for the live-market scanner.
     cadence: Cadence = "eod"

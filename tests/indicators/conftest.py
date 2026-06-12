@@ -33,6 +33,9 @@ _INDICATOR_MIGRATIONS = (
     MIGRATIONS_DIR / "045_indicator_levels.sql",
     MIGRATIONS_DIR / "046_delivery_conviction.sql",
     MIGRATIONS_DIR / "066_indicator_expansion.sql",  # ema/atr/bb/rvol/cpr/structure/rs/oi
+    MIGRATIONS_DIR / "067_indicator_adx_5m.sql",
+    MIGRATIONS_DIR / "068_indicator_ema_200.sql",
+    MIGRATIONS_DIR / "069_indicator_chop.sql",
 )
 
 

@@ -62,6 +62,8 @@ class MarketStructure(Indicator):
     table = "indicator_structure"
     pk_cols = ("symbol", "date")
     output_columns = ("swing_high", "swing_low", "structure")
+    # The HH-HL/LH-LL state is a flag, not a price — API-only (bot reads it).
+    column_panes = {"structure": "hidden"}
     # enough history that several swings exist before the first printed state
     min_history = _K * 2 * 10
     pane = "overlay"

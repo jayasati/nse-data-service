@@ -33,7 +33,8 @@ def test_run_intraday_pass_invokes_compute_when_market_open(tmp_path):
         "029_indicator_rsi_5m.sql", "030_indicator_macd_5m.sql",
         "034_indicator_vwap_5m.sql", "035_indicator_live.sql",
         "043_indicator_eod_set.sql", "044_intraday_supertrend_voldelta.sql",
-        "066_indicator_expansion.sql",
+        "066_indicator_expansion.sql", "067_indicator_adx_5m.sql",
+        "068_indicator_ema_200.sql", "069_indicator_chop.sql",
     ]:
         conn.executescript((migrations / m).read_text())
 

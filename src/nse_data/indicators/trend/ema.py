@@ -18,15 +18,17 @@ import pandas_ta_classic as ta
 
 from ..base import Indicator
 
-_FAST, _SLOW = 20, 50
+_FAST, _SLOW, _REGIME = 20, 50, 200
 
 
 class EodEma(Indicator):
     name = "ema"
     table = "indicator_ema"
     pk_cols = ("symbol", "date")
-    output_columns = ("ema_20", "ema_50")
-    min_history = _SLOW * 6
+    output_columns = ("ema_20", "ema_50", "ema_200")
+    # 6× the longest span; on a shorter backfill the EOD source simply reads
+    # everything available and the 200-EMA starts once 200 closes exist.
+    min_history = _REGIME * 6
     pane = "overlay"
     cadence = "eod"
 
@@ -34,4 +36,5 @@ class EodEma(Indicator):
         result = pd.DataFrame(index=ohlcv.index)
         result["ema_20"] = ta.ema(ohlcv["close"], length=_FAST)
         result["ema_50"] = ta.ema(ohlcv["close"], length=_SLOW)
+        result["ema_200"] = ta.ema(ohlcv["close"], length=_REGIME)
         return result

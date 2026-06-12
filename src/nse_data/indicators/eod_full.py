@@ -14,6 +14,7 @@ import pandas as pd
 import pandas_ta_classic as ta
 
 from .base import Indicator
+from .trend.supertrend_calc import supertrend as _supertrend
 
 _BB_LEN, _BB_STD = 20, 2.0
 _ADX_LEN = 14
@@ -32,6 +33,17 @@ class EodFullSet(Indicator):
         "adx", "di_plus", "di_minus", "supertrend", "supertrend_dir",
         "obv", "vol_sma20", "volume_ratio",
     )
+    # Mixed-scale table: only the price-level columns may ride the price axis.
+    # Everything else gets a dedicated sub-pane (grouped where they belong
+    # together) or stays API-only — see Indicator.column_panes.
+    column_panes = {
+        "bb_width": "bb_width",
+        "bb_squeeze": "hidden",          # 0/1 flag — the bot reads it directly
+        "adx": "adx", "di_plus": "adx", "di_minus": "adx",
+        "obv": "obv",
+        "vol_sma20": "volume",
+        "volume_ratio": "volume_ratio",
+    }
     # Squeeze needs a year of band-width history; that dominates the lookback.
     min_history = _SQUEEZE_WINDOW
 
@@ -65,13 +77,9 @@ class EodFullSet(Indicator):
         else:
             out["adx"] = out["di_plus"] = out["di_minus"] = pd.NA
 
-        st = ta.supertrend(high, low, close, length=_ST_LEN, multiplier=_ST_MULT)
-        if st is not None and not st.empty:
-            ssfx = f"_{_ST_LEN}_{_ST_MULT}"
-            out["supertrend"] = st[f"SUPERT{ssfx}"]
-            out["supertrend_dir"] = st[f"SUPERTd{ssfx}"]
-        else:
-            out["supertrend"] = out["supertrend_dir"] = pd.NA
+        st = _supertrend(high, low, close, length=_ST_LEN, multiplier=_ST_MULT)
+        out["supertrend"] = st["supertrend"]
+        out["supertrend_dir"] = st["supertrend_dir"]
 
         out["obv"] = ta.obv(close, volume)
         vol_sma = ta.sma(volume, length=_VOL_LEN)

@@ -17,6 +17,7 @@ from .momentum.macd_intraday import MacdIntraday
 from .momentum.rsi import RelativeStrengthIndex
 from .momentum.rsi_intraday import RsiIntraday
 from .relative_strength import RelativeStrengthLine
+from .trend.adx_intraday import AdxIntraday
 from .trend.cpr import CentralPivotRange
 from .trend.ema import EodEma
 from .trend.ema_intraday import EmaIntraday
@@ -25,6 +26,7 @@ from .trend.sma import SimpleMovingAverage
 from .trend.supertrend_intraday import SupertrendIntraday
 from .volatility.atr_series import AtrIntraday, AtrSeries
 from .volatility.bollinger_intraday import BollingerIntraday
+from .volatility.chop import ChopEod, ChopIntraday
 from .volume.open_interest import OpenInterestEod
 from .volume.relative_volume_intraday import RelativeVolumeIntraday
 from .volume.volume_delta import VolumeDelta
@@ -38,6 +40,7 @@ INDICATORS: tuple[Indicator, ...] = (
     MovingAverageConvergenceDivergence(),
     EodFullSet(),
     AtrSeries(),
+    ChopEod(),
     CentralPivotRange(),
     MarketStructure(),
     RelativeStrengthLine(),
@@ -46,12 +49,14 @@ INDICATORS: tuple[Indicator, ...] = (
     # every minute during market hours by the live scheduler.
     RsiIntraday(),
     MacdIntraday(),
+    AdxIntraday(),
     VwapIntraday(),
     SupertrendIntraday(),
     VolumeDelta(),
     EmaIntraday(),
     AtrIntraday(),
     BollingerIntraday(),
+    ChopIntraday(),
     RelativeVolumeIntraday(),
     MarketStructureIntraday(),
 )

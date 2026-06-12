@@ -27,6 +27,8 @@ class CentralPivotRange(Indicator):
     pk_cols = ("symbol", "date")
     output_columns = ("cpr_pivot", "cpr_tc", "cpr_bc", "cpr_width_pct",
                       "r1", "s1", "r2", "s2")
+    # The width %, unlike the pivot levels, is not a price — own sub-pane.
+    column_panes = {"cpr_width_pct": "cpr_width"}
     min_history = 2          # needs exactly the prior bar
     pane = "overlay"
     cadence = "eod"
