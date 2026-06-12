@@ -1,0 +1,57 @@
+# Brokerage tiers for analyst-rating signals (FEATURE_CHECKLIST 18.7/18.8).
+#
+# Tier 1 — houses whose call changes move Indian large/mid caps: the global
+# bulge bracket plus the top domestic institutional desks. Only these fire
+# analyst_upgrade_tier1 / analyst_downgrade_tier1.
+# Tier 2 — credible domestic retail/research desks: stored (raw_analyst_ratings
+# carries every parsed reco) but never alerted.
+#
+# Matching is normalized (lowercase, punctuation stripped) SUBSTRING matching
+# against the brokerage string in the feed, so "Motilal Oswal Financial
+# Services" matches the "motilal oswal" entry. Keep entries lowercase and as
+# short as is unambiguous.
+
+tier1:
+  - goldman sachs
+  - morgan stanley
+  - jp morgan
+  - jpmorgan
+  - bofa
+  - bank of america
+  - citi
+  - ubs
+  - nomura
+  - jefferies
+  - macquarie
+  - clsa
+  - hsbc
+  - bernstein
+  - kotak institutional
+  - kotak securities
+  - icici securities
+  - axis capital
+  - motilal oswal
+  - hdfc securities
+
+tier2:
+  - emkay
+  - nuvama
+  - prabhudas lilladher
+  - sharekhan
+  - anand rathi
+  - angel one
+  - angel broking
+  - geojit
+  - icici direct
+  - religare
+  - lkp securities
+  - kr choksey
+  - arihant capital
+  - bob capital
+  - centrum
+  - dolat capital
+  - elara
+  - phillip capital
+  - sbi securities
+  - ventura
+  - yes securities
