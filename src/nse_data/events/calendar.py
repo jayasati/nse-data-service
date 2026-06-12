@@ -32,13 +32,15 @@ _CADENCE_DAYS = 91       # ~one quarter; for the no-board-meeting fallback
 
 
 def _parse_nse_date(s: str | None) -> _dt.date | None:
-    """Parse NSE date strings ('01-May-2026', '01-May-2026 17:00:00', ISO)."""
+    """Parse NSE date strings ('01-May-2026', '01-May-2026 17:00:00',
+    '01-May-2026 17:00' — raw_financial_results.filing_date drops the
+    seconds — and ISO)."""
     if not s:
         return None
     s = s.strip()
-    for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y", "%Y-%m-%d"):
+    for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y %H:%M", "%d-%b-%Y", "%Y-%m-%d"):
         try:
-            return _dt.datetime.strptime(s[:len(fmt) + 4], fmt).date()
+            return _dt.datetime.strptime(s[:len(fmt) + 4].strip(), fmt).date()
         except ValueError:
             continue
     try:

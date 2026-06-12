@@ -25,8 +25,16 @@ import sqlite3
 
 # The live-indicator fields carried on the context, in indicator_live order.
 # `updated_at` is included so consumers can detect a stale snapshot.
-_NUMERIC_FIELDS = ("vwap", "vwap_slope", "atr_14_daily", "atr_14_5m", "rsi_5m")
-_TEXT_FIELDS = ("updated_at", "price_vs_vwap", "trend_regime", "momentum_state")
+# psych_state / pre_event_* (Weeks 18–19) feed the confidence scorer's
+# psychological alignment term, the buy-rumor dispatch gate and the alert line.
+_NUMERIC_FIELDS = (
+    "vwap", "vwap_slope", "atr_14_daily", "atr_14_5m", "rsi_5m",
+    "pre_event_run_5d", "pre_event_run_10d", "days_to_event",
+)
+_TEXT_FIELDS = (
+    "updated_at", "price_vs_vwap", "trend_regime", "momentum_state",
+    "psych_state", "pre_event_state",
+)
 CONTEXT_FIELDS = (*_TEXT_FIELDS, *_NUMERIC_FIELDS)
 
 
@@ -70,9 +78,14 @@ def _from_sqlite(conn: sqlite3.Connection, symbol: str) -> dict | None:
     if not _has_table(conn, "indicator_live"):
         return None
     cols = ",".join(CONTEXT_FIELDS)
-    row = conn.execute(
-        f"SELECT {cols} FROM indicator_live WHERE symbol = ?", (symbol,),
-    ).fetchone()
+    try:
+        row = conn.execute(
+            f"SELECT {cols} FROM indicator_live WHERE symbol = ?", (symbol,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        # A DB that predates the newest columns (migration mid-rollout) —
+        # degrade to "no live row" rather than crashing the dispatch pass.
+        return None
     if row is None:
         return None
     return dict(zip(CONTEXT_FIELDS, row))

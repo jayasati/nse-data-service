@@ -166,14 +166,23 @@ def run_snapshot_pass(
 # -------------------------------------------------------------- persistence
 
 def write_snapshots(conn: sqlite3.Connection, rows: Iterable[dict]) -> int:
-    """Upsert snapshot dicts into indicator_live (INSERT OR REPLACE on symbol)."""
+    """Upsert snapshot dicts into indicator_live (UPSERT on symbol).
+
+    ON CONFLICT updates only THIS writer's columns. Other columns on the row
+    (pre_event_* from the nightly risk job, psych_state / consecutive_*_days
+    from the 5-min psychology pass — Weeks 18/19) belong to slower writers and
+    must survive the minute rewrite, so INSERT OR REPLACE would silently wipe
+    them.
+    """
     rows = list(rows)
     if not rows:
         return 0
     placeholders = ",".join("?" * len(_ALL_COLUMNS))
+    updates = ",".join(f"{c}=excluded.{c}" for c in _ALL_COLUMNS if c != "symbol")
     sql = (
-        f"INSERT OR REPLACE INTO indicator_live ({','.join(_ALL_COLUMNS)}) "
-        f"VALUES ({placeholders})"
+        f"INSERT INTO indicator_live ({','.join(_ALL_COLUMNS)}) "
+        f"VALUES ({placeholders}) "
+        f"ON CONFLICT(symbol) DO UPDATE SET {updates}"
     )
     conn.executemany(sql, [tuple(r[c] for c in _ALL_COLUMNS) for r in rows])
     conn.commit()
