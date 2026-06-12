@@ -29,17 +29,19 @@ try:
 except Exception:
     pass
 
-# incoming interval -> interval_in_minutes for the v1 candle endpoint.
-# (The v2 get_historical_candles endpoint is 403-forbidden on standard plans;
-# v1 get_historical_candle_data works and takes minutes as an int.)
-_MINUTES = {
-    "minute": 1, "3minute": 3, "5minute": 5, "10minute": 10,
-    "15minute": 15, "30minute": 30, "60minute": 60, "day": 1440,
+# Our kite-style interval -> Groww v2 `candle_interval` string for
+# get_historical_candles. v2 (unlike the deprecated v1 get_historical_candle_data,
+# which capped minute data at ~3 months) serves history back to 2020 and needs an
+# active Trading API subscription. Verified interval strings from the SDK constants.
+_V2_INTERVAL = {
+    "minute": "1minute", "3minute": "3minute", "5minute": "5minute",
+    "10minute": "10minute", "15minute": "15minute", "30minute": "30minute",
+    "60minute": "1hour", "day": "1day", "week": "1week",
 }
-# per-request day window — Groww caps minute requests at ~7 calendar days.
+# v2 per-request max window (calendar days): 1-5min=30, 10-30min=90, 1h+=180.
 _WINDOW_DAYS = {
-    "minute": 7, "3minute": 12, "5minute": 15, "10minute": 30,
-    "15minute": 45, "30minute": 90, "60minute": 150, "day": 1000,
+    "minute": 30, "3minute": 30, "5minute": 30, "10minute": 90,
+    "15minute": 90, "30minute": 90, "60minute": 180, "day": 180, "week": 365,
 }
 _RATE_SLEEP = 1.0   # between successful requests
 _MAX_RETRIES = 10   # on rate-limit / transient errors
@@ -142,11 +144,18 @@ def _norm(c) -> dict:
 def fetch_symbol(symbol: str, interval: str, start: date, end: date) -> list[dict]:
     """Fetch candles for a symbol over [start, end], paginating per window limit.
     Returns candles oldest-first with `ts` (UTC epoch secs). Interval is a
-    kite-style string ('minute','5minute','day',…)."""
-    if interval not in _MINUTES:
+    kite-style string ('minute','5minute','day',…).
+
+    Uses Groww v2 ``get_historical_candles`` — signature
+    (exchange, segment, groww_symbol, start_time, end_time, candle_interval) —
+    which serves history back to 2020 (the deprecated v1 capped minute data at
+    ~3 months). Needs an active Trading API subscription; without one the API
+    raises "Access forbidden for this request"."""
+    if interval not in _V2_INTERVAL:
         raise GrowwError(f"unsupported interval {interval!r}")
     client = _client()
-    mins = _MINUTES[interval]
+    gs = _groww_symbol(client, symbol)            # e.g. 'NSE-RELIANCE'
+    civ = _V2_INTERVAL[interval]
     window = timedelta(days=_WINDOW_DAYS[interval])
 
     out: list[dict] = []
@@ -158,16 +167,15 @@ def fetch_symbol(symbol: str, interval: str, start: date, end: date) -> list[dic
         payload = None
         for attempt in range(_MAX_RETRIES):
             try:
-                with warnings.catch_warnings():       # silence v1-deprecation notice
+                with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    payload = client.get_historical_candle_data(
-                        symbol, client.EXCHANGE_NSE, client.SEGMENT_CASH, s, e, mins)
+                    payload = client.get_historical_candles(
+                        client.EXCHANGE_NSE, client.SEGMENT_CASH, gs, s, e, civ)
                 break
             except Exception as ex:
                 if _is_rate_limit(ex) and attempt < _MAX_RETRIES - 1:
-                    # Linear backoff capped at 60s — Groww's minute-rate window
-                    # resets within ~60s, so this rides through instead of
-                    # blowing past it like 2^N did at attempt 6+.
+                    # Linear backoff capped at 60s — Groww's per-minute rate
+                    # window resets within ~60s, so this rides through it.
                     time.sleep(min(60, 5 * (attempt + 1)))
                     continue
                 raise

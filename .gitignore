@@ -25,3 +25,4 @@ tests/financial_extraction/ground_truth.bak/
 tests/financial_extraction/ground_truth_prerelabel/
 tests/financial_extraction/relabel_review/
 tests/financial_extraction/legacy/
+*.log*
