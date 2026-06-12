@@ -44,19 +44,25 @@ def search(q: str = Query("", max_length=40), limit: int = Query(20, ge=1, le=50
 @router.get("/{symbol}/history")
 def history(symbol: str, interval: str = Query("1d"),
             days: int = Query(365, ge=1, le=6000),
+            end: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
             svc: StockService = Depends(get_service)) -> JSONResponse:
-    return _run(lambda: svc.history(symbol, interval, days))
+    # `end` (YYYY-MM-DD, IST) anchors the right edge to a past date for
+    # point-in-time verification; None means "up to now" (live).
+    return _run(lambda: svc.history(symbol, interval, days, end=end))
 
 
 @router.get("/{symbol}/indicators")
 def indicators(symbol: str,
                days: int = Query(365, ge=1, le=6000),
                cadence: str | None = Query(None, pattern="^(eod|intraday|session)$"),
+               end: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
                svc: StockService = Depends(get_service)) -> JSONResponse:
     # `days` is repurposed as a row cap. For EOD indicators it's days of
     # history; for intraday (5-min bars) it's interpreted as "the latest N
     # rows", which the frontend translates from its timeframe.
-    return _run(lambda: svc.indicators(symbol, days, cadence=cadence))
+    # `end` (YYYY-MM-DD, IST) caps rows at a past date so overlays match a
+    # point-in-time history view.
+    return _run(lambda: svc.indicators(symbol, days, cadence=cadence, end=end))
 
 
 @router.get("/{symbol}/meta")

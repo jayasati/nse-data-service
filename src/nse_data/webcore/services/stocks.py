@@ -16,7 +16,40 @@ from ..config import BHAV, IST_OFFSET, LIVE_FRESH_SECS, RANK_EOD, RANK_LIVE
 from ..errors import BadRequest, NotFound, Unavailable
 from ..repositories.stocks import StockRepository
 
-_INTERVALS = ("1m", "5m", "1d", "1w")
+_INTERVALS = ("1m", "5m", "15m", "30m", "1d", "1w")
+# Intraday bucket seconds. The IST session opens 09:15 = 33300s into the chart
+# day; anchoring buckets to `33300 % bucket` makes bars start on session opens
+# (09:15, 09:45, …) like TradingView/Groww, not the :00/:30 wall-clock grid.
+_INTRADAY_BUCKET = {"5m": 300, "15m": 900, "30m": 1800}
+
+
+def _ist_day_end_charttime(end_date: str) -> float:
+    """Right edge of an IST day, in *chart time* (UTC epoch + IST_OFFSET, i.e.
+    the IST wall-clock expressed as a fake-UTC epoch — the same space the
+    intraday candle `time` lives in). `end_date` is 'YYYY-MM-DD' (IST)."""
+    d = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    return d.timestamp() + 86400  # next IST midnight
+
+
+def _ist_day_end_epoch(end_date: str) -> int:
+    """Right edge of an IST day as a raw UTC epoch (the units of the stored
+    `ts` columns), for `WHERE ts <= ?` indicator filtering."""
+    return int(_ist_day_end_charttime(end_date) - IST_OFFSET)
+
+
+def _last_sessions(candles: list[dict], n: int) -> list[dict]:
+    """Keep only the bars belonging to the newest `n` distinct IST trading
+    days present in `candles` (oldest-first input, order preserved). Counting
+    sessions — not calendar days — means weekends/holidays never eat into the
+    window: days=1 is always a full trading session."""
+    keep: set[int] = set()
+    for c in reversed(candles):
+        d = transforms.ist_day(c["time"])
+        if d not in keep:
+            if len(keep) == n:
+                break
+            keep.add(d)
+    return [c for c in candles if transforms.ist_day(c["time"]) in keep]
 
 
 class StockService:
@@ -68,25 +101,47 @@ class StockService:
                 "by": by, "count": len(stocks), "stocks": stocks}
 
     # -------------------------------------------------------------- history
-    def history(self, symbol: str, interval: str, days: int) -> dict:
+    def history(self, symbol: str, interval: str, days: int,
+                end: str | None = None) -> dict:
         if interval not in _INTERVALS:
-            raise BadRequest("interval must be 1m|5m|1d|1w")
+            raise BadRequest("interval must be 1m|5m|15m|30m|1d|1w")
         symbol = symbol.upper()
 
-        if interval in ("1m", "5m"):
-            # One MINUTE backfill powers both: full 1-min series (history + today),
-            # then resample for 5m.
+        if interval in ("1m", "5m", "15m", "30m"):
+            # The MINUTE backfill powers both: full 1-min series (history + today),
+            # then resample for 5m. The 12-36 month tail is stored as native
+            # 5-minute bars — merged in for 5m views, and used as the 1m
+            # fallback when the requested day predates 1-min coverage. With
+            # `end` set we view a past date, so the live snapshot stitch is
+            # skipped and the series is clamped to that IST day's right edge.
+            # For intraday, `days` counts TRADING SESSIONS (newest N distinct
+            # IST days with bars), not calendar days — so days=1 is the live
+            # session while the market is open, else the last trading day.
             hist = self._backfill_candles(symbol, "minute")
-            live = transforms.line_to_candles(
-                transforms.intraday_line(self.repo.intraday_snapshots(symbol)))
-            base = transforms.merge_candles(hist, live)
-            cutoff = (time.time() + IST_OFFSET) - days * 86400
-            base = [c for c in base if c["time"] >= cutoff]
-            points = transforms.resample_intraday(base, 300) if interval == "5m" else base
+            tail = self._backfill_candles(symbol, "5minute")
+            if end:
+                anchor = _ist_day_end_charttime(end)
+                base = [c for c in hist if c["time"] <= anchor]
+                tail = [c for c in tail if c["time"] <= anchor]
+            else:
+                live = transforms.line_to_candles(
+                    transforms.intraday_line(self.repo.intraday_snapshots(symbol)))
+                base = transforms.merge_candles(hist, live)
+            if interval == "1m":
+                series = base or tail   # pre-coverage day: show native 5-min bars
+            else:
+                # minute-derived bars win on days both cover; tail fills the rest
+                series = transforms.merge_candles(
+                    transforms.resample_intraday(base, 300), tail)
+                bucket = _INTRADAY_BUCKET[interval]
+                if bucket > 300:        # 15m/30m: rebucket, session-anchored
+                    series = transforms.resample_intraday(
+                        series, bucket, phase=33300 % bucket)
+            points = _last_sessions(series, days)
         else:
             if not self.repo.has_table(BHAV):
                 raise Unavailable(f"{BHAV} not available")
-            daily = self._daily_candles(symbol, days, stitch_live=True)
+            daily = self._daily_candles(symbol, days, stitch_live=(end is None), end=end)
             points = transforms.resample_weekly(daily) if interval == "1w" else daily
 
         return {"symbol": symbol, "interval": interval, "type": "candles",
@@ -97,10 +152,32 @@ class StockService:
                  "low": r["low"], "close": r["close"], "volume": r["volume"]}
                 for r in self.repo.backfill_candles(symbol, interval)]
 
-    def _daily_candles(self, symbol: str, days: int, stitch_live: bool) -> list[dict]:
+    def _broker_daily(self, symbol: str, days: int,
+                      end: str | None = None) -> list[dict]:
+        """Broker-backfilled EOD candles (interval='day') as daily chart bars
+        (date-string time axis), newest `days` rows, optionally clamped to
+        `end`. Broker dailies are corporate-action ADJUSTED (continuous across
+        bonuses/splits, like TradingView/Groww), unlike raw bhavcopy prints."""
+        out = []
+        for c in self._backfill_candles(symbol, "day"):
+            d = datetime.fromtimestamp(c["time"] - IST_OFFSET, tz=timezone.utc) \
+                        .astimezone(IST).date().isoformat()
+            if end and d > end:
+                break
+            out.append({**c, "time": d})
+        return out[-days:]
+
+    def _daily_candles(self, symbol: str, days: int, stitch_live: bool,
+                       end: str | None = None) -> list[dict]:
+        # Prefer the adjusted broker series when it covers the window at least
+        # as well as bhavcopy; never mix the two (an adjusted head spliced onto
+        # raw prints would fabricate a cliff at every corporate action).
         candles = [{"time": r["date"], "open": r["open"], "high": r["high"],
                     "low": r["low"], "close": r["close"], "volume": r["volume"]}
-                   for r in reversed(self.repo.daily_rows(symbol, days))]
+                   for r in reversed(self.repo.daily_rows(symbol, days, end=end))]
+        broker = self._broker_daily(symbol, days, end=end)
+        if len(broker) >= 0.9 * len(candles):
+            candles = broker
         if stitch_live:
             as_of = self.repo.live_as_of()
             if as_of is not None:
@@ -119,7 +196,8 @@ class StockService:
         return candles
 
     # ---------------------------------------------------------- indicators
-    def indicators(self, symbol: str, limit: int, *, cadence: str | None = None) -> dict:
+    def indicators(self, symbol: str, limit: int, *, cadence: str | None = None,
+                   end: str | None = None) -> dict:
         """
         Computed-indicator series for `symbol`, registry-driven.
 
@@ -145,8 +223,13 @@ class StockService:
             if cadence is not None and ind.cadence != cadence:
                 continue
             time_col = ind.pk_cols[1]
+            # Cap rows at the as-of date when one is given: `ts` columns are raw
+            # UTC epoch, `date` columns are 'YYYY-MM-DD' strings (compare lexically).
+            end_val = None
+            if end:
+                end_val = _ist_day_end_epoch(end) if time_col == "ts" else end
             rows = self.repo.indicator_rows(
-                ind.table, symbol, time_col, ind.output_columns, limit,
+                ind.table, symbol, time_col, ind.output_columns, limit, end=end_val,
             )
             offset = IST_OFFSET if time_col == "ts" else 0
             points = [
@@ -158,6 +241,9 @@ class StockService:
                 "table": ind.table,
                 "columns": list(ind.output_columns),
                 "pane": ind.pane,
+                # Per-column routing for mixed-scale indicators (ADX/OBV/ratio
+                # columns get their own sub-panes instead of the price axis).
+                "column_panes": dict(ind.column_panes),
                 "cadence": ind.cadence,
                 "time_key": time_col,         # frontend uses this to read points
                 "count": len(points),

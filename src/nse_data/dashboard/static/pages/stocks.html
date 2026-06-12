@@ -49,25 +49,10 @@
           <button data-m="ha">Heikin-Ashi</button>
         </div>
         <span class="sep"></span>
-        <div class="chips" id="overlays">
-          <button data-o="vwap">VWAP</button>
-          <button data-o="ema20">EMA20</button>
-          <button data-o="ema50">EMA50</button>
-          <button data-o="ema200">EMA200</button>
-          <button data-o="bb">Bollinger</button>
-        </div>
-        <span class="sep"></span>
         <!-- Server-computed indicators from indicator_* tables. Buttons are
              rendered dynamically from /api/stocks/{symbol}/indicators so every
              new Indicator registered in the backend shows up here automatically. -->
         <div class="chips" id="srv-indicators" title="Server-computed indicators"></div>
-        <span class="sep"></span>
-        <div class="chips" id="studies">
-          <button data-s="rsi">RSI</button>
-          <button data-s="macd">MACD</button>
-          <button data-s="adx">ADX</button>
-          <button data-s="chop">Chop</button>
-        </div>
       </div>
       <div id="tip"></div>
       <div id="chart" role="img" aria-label="Price chart"></div>
@@ -87,6 +72,12 @@
         <div class="seg" id="bars" title="Intraday bar size (1D only)">
           <button data-b="5m" class="on">5m</button>
           <button data-b="1m">1m</button>
+        </div>
+        <!-- As-of date: anchor the chart + indicator overlays to a past IST
+             date for point-in-time verification. Empty = live/latest. -->
+        <div class="seg asof" id="asofWrap" title="Verify a specific date (as-of)">
+          <input type="date" id="asof" class="asofinput">
+          <button id="asofClear" title="Back to live/latest" style="display:none">✕</button>
         </div>
         <button class="iconpill" id="candleBtn" title="Chart type">📈 Line</button>
         <span id="syminfo"></span>

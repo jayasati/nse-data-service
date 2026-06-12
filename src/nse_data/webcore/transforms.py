@@ -49,12 +49,14 @@ def merge_candles(hist: list[dict], live: list[dict]) -> list[dict]:
     return merged
 
 
-def resample_intraday(candles: list[dict], bucket: int) -> list[dict]:
-    """Aggregate 1-minute candles into `bucket`-second OHLC bars. IST_OFFSET is a
-    multiple of 300, so 5-min buckets align to the IST clock."""
+def resample_intraday(candles: list[dict], bucket: int, phase: int = 0) -> list[dict]:
+    """Aggregate finer candles into `bucket`-second OHLC bars. IST_OFFSET is a
+    multiple of 300, so 5-min buckets align to the IST clock. `phase` shifts
+    the bucket grid (e.g. 900 anchors 30-min bars to the 09:15 session open
+    instead of the :00/:30 wall-clock grid)."""
     out: "OrderedDict[int, dict]" = OrderedDict()
     for c in candles:
-        b = (c["time"] // bucket) * bucket
+        b = ((c["time"] - phase) // bucket) * bucket + phase
         if b not in out:
             out[b] = {"time": b, "open": c["open"], "high": c["high"],
                       "low": c["low"], "close": c["close"], "volume": c["volume"] or 0}

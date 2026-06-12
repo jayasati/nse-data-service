@@ -11,10 +11,17 @@ import { initCockpit, setCockpitSymbol } from "./stock_tabs.js";
 const chart = new ChartController("chart", "panes", "tip");
 
 let current = null, tf = "1D", mode = "area", lastBars = [];
+// As-of date (YYYY-MM-DD, IST) for point-in-time verification. null = live.
+// When set, the chart + server-indicator overlays are anchored to that date.
+let asof = null;
 // Intraday bar size for the 1D timeframe: "5m" (default, indicators comparable
 // with Groww/TV) or "1m" (a new candle every minute). Persisted across visits.
 let bar = localStorage.getItem("nse_intraday_bar") === "1m" ? "1m" : "5m";
-const overlays = { vwap: false, ema20: false, ema50: false, ema200: false, bb: false };
+// There are intentionally NO client-computed overlays (VWAP/EMA/Bollinger
+// used to be recomputed in the browser from whatever bars the chart loaded —
+// 1m vs 5m basis ≠ same value — and disagreed with the server chips). The
+// indicator_* tables (srv chips) are the single source of truth — the same
+// rows the prediction bot reads.
 let wl = new Set(JSON.parse(localStorage.getItem("nse_watchlist") || "[]"));
 
 // Server-side indicators state. `data` is the last /indicators payload for
@@ -26,25 +33,35 @@ const saveSrv = () => localStorage.setItem("nse_srv_overlays", JSON.stringify([.
 
 const MODES = ["area", "candle", "ha"];
 const MODE_LABEL = { area: "📈 Line", candle: "📊 Candle", ha: "📊 Heikin-Ashi" };
-const OV_COLOR = { vwap: "#7c6cdb", ema20: "#f59e0b", ema50: "#3b82f6", ema200: "#ec4899", bb: "#94a3b8" };
-const STUDY_LABEL = { rsi: "RSI 14", macd: "MACD", adx: "ADX", chop: "CHOP" };
+// There are intentionally NO client-computed studies (RSI/MACD/ADX/CHOP used
+// to be recomputed in the browser from the loaded bars — 14 one-min bars = a
+// 14-minute RSI — and disagreed with the server values). The indicator_*
+// tables (srv chips, intraday + EOD) are the single source of truth the bot
+// reads.
 
-// timeframe -> {interval, days} fetch plan.
+// timeframe -> {interval, days} fetch plan. `days` counts TRADING days:
+// the server returns the newest N intraday sessions / N EOD rows, so
+// weekends and holidays never shrink the window.
 function plan() {
   // 1D uses the `bar` toggle (5m default, or 1m). 5-min keeps RSI/MACD/ADX
   // comparable with Groww/TV (RSI 14 = a 70-min window vs only 14 min on
   // 1-min bars), so it's the default; 1m is opt-in for a candle every minute.
   // The render mode (line/candle/ha) does NOT change the bar size — that kept
   // the indicator basis stable when only the chart style changed.
-  if (tf === "1D") return { interval: bar, days: 4 };
-  const d = { "1W": 7, "1M": 23, "3M": 66, "6M": 132, "1Y": 260, "3Y": 1100, "5Y": 1900, "All": 6000 }[tf] || 260;
+  // 1D = the live session while the market is open, else the last trading day.
+  // Bar size scales with the window: 1W = 15-min bars, 1M = 30-min bars,
+  // 3M+ = daily bars.
+  if (tf === "1D") return { interval: bar, days: 1 };
+  if (tf === "1W") return { interval: "15m", days: 7 };
+  if (tf === "1M") return { interval: "30m", days: 22 };
+  const d = { "3M": 64, "6M": 126, "1Y": 250, "3Y": 750, "5Y": 1250, "All": 6000 }[tf] || 250;
   return { interval: "1d", days: d };
 }
 
 async function loadChart() {
   if (!current) return;
   const pl = plan();
-  const r = await Api.history(current, pl.interval, pl.days);
+  const r = await Api.history(current, pl.interval, pl.days, asof);
   const pts = r.points || [];
   lastBars = pts.map(p => r.type === "line"
     ? { time: p.time, open: p.value, high: p.value, low: p.value, close: p.value, volume: p.volume }
@@ -54,29 +71,29 @@ async function loadChart() {
     chart.render([], mode); return;
   }
   const info = chart.render(lastBars, mode);
-  chart.drawIndicators(lastBars, tf, overlays);
   drawSrvOverlays();
-  $("syminfo").innerHTML = `${info.count} bars · <span class="${info.up ? "up" : "down"}">${info.chg >= 0 ? "+" : ""}${info.chg.toFixed(1)}%</span> over ${tf}`;
+  const asofTag = asof ? ` · as of ${asof}` : "";
+  $("syminfo").innerHTML = `${info.count} bars · <span class="${info.up ? "up" : "down"}">${info.chg >= 0 ? "+" : ""}${info.chg.toFixed(1)}%</span> over ${tf}${asofTag}`;
 }
 
 // ---- server-computed indicator overlays ----
 // The chart's time axis matches one of two indicator cadences:
-//   • 1D timeframe → intraday 5-min bars (epoch ts + IST_OFFSET)
-//   • 1W+         → daily bars (date strings)
-// We fetch the indicator family that matches the current chart so the time
-// keys align without translation on the client.
-const tfCadence = () => (tf === "1D" ? "intraday" : "eod");
+//   • 1D/1W/1M (intraday bars) → 5-min indicator rows (epoch ts + IST_OFFSET);
+//     drawSrvOverlays clips them to the chart's bar times, and 15m/30m bar
+//     starts are 5-min aligned, so the surviving points sit on the bars.
+//   • 3M+ (daily bars)         → EOD rows (date strings)
+const tfCadence = () => (["1D", "1W", "1M"].includes(tf) ? "intraday" : "eod");
 
 async function loadSrvIndicators() {
   srv.data = null;
   if (!current) { renderSrvButtons(); return; }
   // Request enough rows to fill the chart with a little headroom on the left.
-  // For intraday: chart shows 4 days × ~75 5-min bars = 300, so ask for 400.
+  // For intraday: one session is ≤75 5-min rows, so 75/session + headroom.
   // For daily: ask for the visible timeframe's days +5.
   const pl = plan();
   const cadence = tfCadence();
-  const limit = cadence === "intraday" ? 400 : pl.days + 5;
-  try { srv.data = await Api.indicators(current, limit, cadence); }
+  const limit = cadence === "intraday" ? pl.days * 75 + 25 : pl.days + 5;
+  try { srv.data = await Api.indicators(current, limit, cadence, asof); }
   catch (e) { srv.data = null; }
   renderSrvButtons();
   drawSrvOverlays();
@@ -111,8 +128,14 @@ function renderSrvButtons() {
       btn.onclick = () => toggleSrv(key, color, btn);
       box.appendChild(btn);
     } else {
-      // Overlay: one button per column (SMA20 / SMA50 / SMA200).
+      // Overlay: one button per price-level column (SMA20 / SMA50 / …).
+      // `column_panes` reroutes mixed-scale columns: "hidden" = API-only
+      // (state flags the bot reads directly), any other value = a named
+      // sub-pane group rendered like an oscillator (ADX + DI± together).
+      // _dir columns never get a button — they color their parent line.
+      const colPane = block.column_panes || {};
       for (const col of block.columns) {
+        if (col.endsWith("_dir") || colPane[col]) continue;
         const key = `${name}.${col}`;
         const color = chart.srvColor(idx++);
         const on = srv.enabled.has(key);
@@ -124,8 +147,34 @@ function renderSrvButtons() {
         btn.onclick = () => toggleSrv(key, color, btn);
         box.appendChild(btn);
       }
+      for (const [group, cols] of Object.entries(paneGroups(block))) {
+        const key = `${name}.${group}.*`;
+        const color = chart.srvColor(idx++);
+        const on = srv.enabled.has(key);
+        const btn = document.createElement("button");
+        btn.textContent = group.toUpperCase();
+        btn.title = `${name} → ${cols.join(", ")} (server, sub-pane)`;
+        btn.classList.toggle("on", on);
+        if (on) { btn.style.background = color; btn.style.borderColor = color; }
+        btn.onclick = () => toggleSrv(key, color, btn);
+        box.appendChild(btn);
+      }
     }
   }
+}
+
+// Sub-pane groups of an overlay block: {group: [cols...]} from column_panes,
+// "hidden" excluded. Insertion order follows block.columns, so the color
+// cursor (idx) advances identically in renderSrvButtons and drawSrvOverlays.
+function paneGroups(block) {
+  const groups = {};
+  const colPane = block.column_panes || {};
+  for (const col of block.columns) {
+    const g = colPane[col];
+    if (!g || g === "hidden") continue;
+    (groups[g] = groups[g] || []).push(col);
+  }
+  return groups;
 }
 
 function toggleSrv(key, color, btn) {
@@ -160,14 +209,38 @@ function drawSrvOverlays() {
       }
       chart.showServerOscillator(name, block.columns, pointsByCol, color);
     } else {
+      const colPane = block.column_panes || {};
       for (const col of block.columns) {
+        if (col.endsWith("_dir") || colPane[col]) continue;  // rerouted or state flag
         const key = `${name}.${col}`;
         const color = chart.srvColor(idx++);
         if (!srv.enabled.has(key)) { chart.hideServerSeries(key); continue; }
+        // A sibling `<col>_dir` column (±1) colors the line per point — green
+        // while long, red while short — matching how TV paints Supertrend.
+        const dirCol = block.columns.includes(`${col}_dir`) ? `${col}_dir` : null;
         const pts = block.points
           .filter(p => p[col] != null && isFinite(p[col]) && candleTimes.has(p[tk]))
-          .map(p => ({ time: p[tk], value: p[col] }));
+          .map(p => {
+            const pt = { time: p[tk], value: p[col] };
+            if (dirCol && p[dirCol] != null) pt.color = p[dirCol] > 0 ? "#00b386" : "#eb5b3c";
+            return pt;
+          });
         chart.showServerSeries(key, pts, color);
+      }
+      // Mixed-scale columns rerouted into named sub-pane groups (ADX + DI±,
+      // OBV, ratios) — rendered exactly like a server oscillator family.
+      for (const [group, cols] of Object.entries(paneGroups(block))) {
+        const key = `${name}.${group}.*`;
+        const paneId = `${name}:${group}`;
+        const color = chart.srvColor(idx++);
+        if (!srv.enabled.has(key)) { chart.hideServerOscillator(paneId); continue; }
+        const pointsByCol = {};
+        for (const col of cols) {
+          pointsByCol[col] = block.points
+            .filter(p => p[col] != null && isFinite(p[col]) && candleTimes.has(p[tk]))
+            .map(p => ({ time: p[tk], value: p[col] }));
+        }
+        chart.showServerOscillator(paneId, cols, pointsByCol, color);
       }
     }
   }
@@ -247,31 +320,26 @@ $("bars").onclick = e => {
   document.querySelectorAll("#bars button").forEach(b => b.classList.toggle("on", b === e.target));
   if (current && tf === "1D") { loadChart(); loadSrvIndicators(); }
 };
+// ---- as-of date (point-in-time verification) ----
+// Picking a date anchors the chart + server-indicator overlays to that IST day
+// (composes with the timeframe: e.g. 1D shows that day, 1W the week ending then).
+// Clearing returns to the live/latest view.
+function setAsof(d) {
+  asof = d || null;
+  $("asof").value = asof || "";
+  $("asofClear").style.display = asof ? "" : "none";
+  $("asofWrap").classList.toggle("active", !!asof);
+  if (current) { loadChart(); loadSrvIndicators(); loadMeta(); }
+}
+$("asof").onchange = e => setAsof(e.target.value);
+$("asofClear").onclick = () => setAsof(null);
+
 $("termBtn").onclick = () => {
   const on = document.body.classList.toggle("terminal");
   $("termBtn").classList.toggle("on", on);
   requestAnimationFrame(() => chart.fit());
 };
 
-// ---- overlays & study panes ----
-$("overlays").onclick = e => {
-  if (e.target.tagName !== "BUTTON") return;
-  const o = e.target.dataset.o; overlays[o] = !overlays[o];
-  e.target.classList.toggle("on", overlays[o]);
-  e.target.style.background = overlays[o] ? OV_COLOR[o] : "";
-  e.target.style.borderColor = overlays[o] ? OV_COLOR[o] : "";
-  if (current) chart.drawIndicators(lastBars, tf, overlays);
-};
-$("studies").onclick = e => {
-  if (e.target.tagName !== "BUTTON") return;
-  const s = e.target.dataset.s, on = !e.target.classList.contains("on");
-  e.target.classList.toggle("on", on);
-  e.target.style.background = on ? "#7c6cdb" : "";
-  e.target.style.borderColor = on ? "#7c6cdb" : "";
-  if (on) chart.addStudy(s, STUDY_LABEL[s]); else chart.removeStudy(s);
-  chart.fit();
-  if (current) chart.drawIndicators(lastBars, tf, overlays);
-};
 $("fundaHead").onclick = () => $("funda").classList.toggle("collapsed");
 
 // ---- compose ----
@@ -288,4 +356,5 @@ initCockpit();
   try { const r = await Api.search(""); if (r.results && r.results.length) select(r.results[0].symbol); } catch (e) {}
 })();
 // Live refresh of the open stock (price + chart) while the feed updates.
-setInterval(() => { if (current) { loadMeta(); loadChart(); } }, 60000);
+// Suspended while viewing a past date (as-of) so the view stays put.
+setInterval(() => { if (current && !asof) { loadMeta(); loadChart(); } }, 60000);

@@ -60,7 +60,17 @@ class StockRepository:
         ).fetchall()
 
     # ---- candle sources ----
-    def daily_rows(self, symbol: str, days: int) -> list[sqlite3.Row]:
+    def daily_rows(self, symbol: str, days: int,
+                   end: str | None = None) -> list[sqlite3.Row]:
+        """Last `days` EOD rows, newest-first. With `end` ('YYYY-MM-DD') the
+        window ends on/at that date instead of the latest available."""
+        if end:
+            return self.conn.execute(
+                f"""SELECT date, open, high, low, close, volume FROM {BHAV}
+                    WHERE symbol = ? AND series = 'EQ' AND date <= ?
+                    ORDER BY date DESC LIMIT ?""",
+                (symbol, end, days),
+            ).fetchall()
         return self.conn.execute(
             f"""SELECT date, open, high, low, close, volume FROM {BHAV}
                 WHERE symbol = ? AND series = 'EQ' ORDER BY date DESC LIMIT ?""",
@@ -143,6 +153,7 @@ class StockRepository:
         time_col: str,
         columns: tuple[str, ...],
         limit: int,
+        end: int | str | None = None,
     ) -> list[sqlite3.Row]:
         """
         Return up to `limit` rows of indicator output for `symbol`, oldest-first.
@@ -150,6 +161,10 @@ class StockRepository:
         `time_col` is the PK time column — `date` for EOD indicators (TEXT
         date strings) or `ts` for intraday indicators (INTEGER epoch). Caller
         supplies it from the registered Indicator's `pk_cols[1]`.
+
+        `end`, when given, caps rows at `time_col <= end` (a UTC epoch for `ts`
+        columns, a 'YYYY-MM-DD' string for `date`) so the series matches a
+        point-in-time chart view.
 
         Table name, time column, and output columns all come from Indicator
         subclasses owned at import time — `_safe_ident` is belt-and-braces.
@@ -159,10 +174,16 @@ class StockRepository:
         safe_table = _safe_ident(table)
         safe_time = _safe_ident(time_col)
         safe_cols = ",".join(_safe_ident(c) for c in columns)
+        where = "WHERE symbol = ?"
+        args: list[object] = [symbol]
+        if end is not None:
+            where += f" AND {safe_time} <= ?"
+            args.append(end)
+        args.append(limit)
         rows = self.conn.execute(
             f"""SELECT {safe_time}, {safe_cols} FROM {safe_table}
-                WHERE symbol = ? ORDER BY {safe_time} DESC LIMIT ?""",
-            (symbol, limit),
+                {where} ORDER BY {safe_time} DESC LIMIT ?""",
+            tuple(args),
         ).fetchall()
         return list(reversed(rows))
 
