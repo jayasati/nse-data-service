@@ -155,6 +155,7 @@ def test_opening_window_skipped(signals_db):
     # (both event-driven)
     assert _run(signals_db, now=opening) == {
         "skipped": "opening_window", "earnings": 0, "quality": 0,
+        "result_beat_miss": 0,
     }
 
 
@@ -163,4 +164,5 @@ def test_lunch_window_skipped(signals_db):
     lunch = datetime(2025, 6, 2, 12, 0, 0, tzinfo=IST)
     assert _run(signals_db, now=lunch) == {
         "skipped": "lunch_window", "earnings": 0, "quality": 0,
+        "result_beat_miss": 0,
     }

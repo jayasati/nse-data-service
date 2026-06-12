@@ -50,6 +50,8 @@ VWAP_RECLAIM = "vwap_reclaim"        # intraday: price reclaims session VWAP
 EARNINGS_DIRECTION = "earnings_direction"  # intraday: directional reaction after a result
 RESULT_QUALITY_LOW = "result_quality_low"   # fundamental: low-quality beat (S3/S4)
 RESULT_QUALITY_HIGH = "result_quality_high"  # fundamental: clean two-sided beat
+RESULT_BEAT = "result_beat"          # 18.4: strong YoY revenue growth + positive tone
+RESULT_MISS = "result_miss"          # 18.5: revenue decline or strongly negative tone
 
 # Trade horizon per signal type — the single source of truth (the dispatcher,
 # scorer, timing gate, message template and Telegram topic all key off this).
@@ -73,6 +75,11 @@ REACTION_MAX_MINUTES = 15
 EARNINGS_MOVE_MIN = 1.5      # % move from the pre-result baseline to qualify
 # How far back to look for a just-filed result announcement.
 _REACTION_LOOKBACK_SECS = (REACTION_MAX_MINUTES + 5) * 60
+
+# --- result beat/miss rule (18.4/18.5) ---
+# Fired off the same freshly-extracted financials window as the quality rule.
+RESULT_BEAT_REV_YOY_MIN = 15.0    # % — YoY revenue growth above this = beat leg
+RESULT_MISS_REV_YOY_MAX = -10.0   # % — YoY revenue decline below this = miss leg
 
 # --- result-quality rule (S4) ---
 # Fundamental divergence read, fired off the freshly-extracted financials (the
@@ -153,11 +160,18 @@ def run_detection_pass(
     quality_fired = _detect_result_quality(
         conn, redis_client, dedup, detected_at, market_regime, now,
     )
+    # Result beat/miss (18.4/18.5) — same fresh-extraction window, but keyed to
+    # the headline revenue print + press-release tone rather than the
+    # operating-line divergence the quality rule reads.
+    result_fired = _detect_result_beat_miss(
+        conn, redis_client, dedup, detected_at, market_regime, now,
+    )
 
     window = _time_window_skip(now)
     if window is not None:
         return {
             "skipped": window, "earnings": earnings_fired, "quality": quality_fired,
+            "result_beat_miss": result_fired,
         }
 
     symbols = live_universe(conn)
@@ -201,7 +215,8 @@ def run_detection_pass(
         "fired": fired,
         "earnings": earnings_fired,
         "quality": quality_fired,
-        "signals": sum(fired.values()) + earnings_fired + quality_fired,
+        "result_beat_miss": result_fired,
+        "signals": sum(fired.values()) + earnings_fired + quality_fired + result_fired,
     }
 
 
@@ -442,6 +457,145 @@ def _detect_result_quality(
         log.info(
             "result_quality_signal", symbol=symbol, label=verdict.label,
             direction=verdict.direction, flags=verdict.flags, summary=verdict.summary,
+        )
+        fired += 1
+    return fired
+
+
+# ============================================================================
+# Result beat/miss detection (18.4 / 18.5)
+# ============================================================================
+
+def result_beat_check(growth: dict | None, narrative: dict | None) -> bool:
+    """18.4: YoY revenue growth > +15% AND the filing's sentiment is positive.
+
+    "Sentiment positive" = the press-release narrative's management tone is
+    positive, or guidance was raised (the strongest positive statement a filing
+    can make). A filing with no narrative carries no sentiment → no beat signal
+    (the rule requires BOTH legs).
+    """
+    if not growth or not narrative:
+        return False
+    rev = growth.get("yoy_revenue_pct")
+    if not isinstance(rev, (int, float)) or rev <= RESULT_BEAT_REV_YOY_MIN:
+        return False
+    return narrative.get("mgmt_tone") == "positive" or narrative.get("guidance") == "raised"
+
+
+def result_miss_check(growth: dict | None, narrative: dict | None) -> bool:
+    """18.5: YoY revenue growth < −10% OR strongly negative sentiment.
+
+    "Strongly negative" = negative management tone corroborated by a guidance
+    cut or a falling headline PAT — tone alone is too weak to short on.
+    """
+    growth = growth or {}
+    narrative = narrative or {}
+    rev = growth.get("yoy_revenue_pct")
+    if isinstance(rev, (int, float)) and rev < RESULT_MISS_REV_YOY_MAX:
+        return True
+    if narrative.get("mgmt_tone") != "negative":
+        return False
+    pat = growth.get("yoy_pat_pct")
+    return narrative.get("guidance") == "cut" or (
+        isinstance(pat, (int, float)) and pat < 0
+    )
+
+
+def _detect_result_beat_miss(
+    conn: sqlite3.Connection,
+    redis_client,
+    dedup: SignalDedup,
+    detected_at: str,
+    market_regime: str | None,
+    now: datetime,
+) -> int:
+    """Fire result_beat / result_miss off financials extracted in the last ~30 min.
+
+    Same freshness + recent-filing guards as the quality rule (so a nightly
+    backfill of old PDFs can't fire it). The earnings-quality verdict is carried
+    on the metrics as a HIGH/LOW flag for the alert card (18.4 "include
+    earnings quality flag"). Hard gates: blacklist + listing only — the
+    fundamental quality_score kill doesn't apply (a miss is a short)."""
+    if not _has_table(conn, "extracted_financials"):
+        return 0
+    import json as _json
+
+    from ..fundamentals.from_results import quarter_growth
+    from ..fundamentals.sectors import classify_result
+
+    extract_cutoff = int(now.timestamp()) - _QUALITY_EXTRACT_LOOKBACK_SECS
+    rows = conn.execute(
+        "SELECT symbol, period_ending, growth_json, broadcast_dt, "
+        "profit_on_sale_of_investments_cr, narrative_json "
+        "FROM extracted_financials "
+        "WHERE scope = 'standalone' AND extracted_at >= ? "
+        "ORDER BY extracted_at DESC LIMIT 50",
+        (extract_cutoff,),
+    ).fetchall()
+    if not rows:
+        return 0
+
+    blacklist = _load_blacklist(redis_client)
+    listing_bars = _load_listing_bars(conn)
+    fired = 0
+    seen: set[str] = set()
+    for symbol, period_ending, growth_json, broadcast_dt, treasury, narrative_json in rows:
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        if symbol in blacklist or listing_bars.get(symbol, 0) < MIN_LISTING_BARS:
+            continue
+        filed_ts = _broadcast_epoch(broadcast_dt, now) if broadcast_dt else None
+        if filed_ts is None or (now.timestamp() - filed_ts) > _QUALITY_FILING_MAX_AGE_SECS:
+            continue
+        growth = {}
+        if growth_json:
+            try:
+                growth = _json.loads(growth_json)
+            except (ValueError, TypeError):
+                growth = {}
+        if not growth:
+            growth = quarter_growth(conn, symbol, period_ending, "standalone")
+        narrative = None
+        if narrative_json:
+            try:
+                narrative = _json.loads(narrative_json)
+            except (ValueError, TypeError):
+                narrative = None
+
+        if result_beat_check(growth, narrative):
+            signal_type, direction = RESULT_BEAT, "long"
+        elif result_miss_check(growth, narrative):
+            signal_type, direction = RESULT_MISS, "short"
+        else:
+            continue
+        if not dedup.claim(symbol, signal_type):
+            continue
+        # Earnings-quality flag for the alert card: the sector-routed verdict
+        # (BFSI rule / GENERIC guard). A 'low' verdict marks the beat LOW.
+        verdict = classify_result(
+            symbol, growth, {"profit_on_sale_of_investments_cr": treasury},
+            narrative=narrative,
+        )
+        _, price = compute.compute_price_change(conn, symbol)
+        _emit(
+            conn, redis_client,
+            symbol=symbol, signal_type=signal_type, detected_at=detected_at,
+            metrics={
+                "price": price,
+                "oi_change_pct": None,
+                "price_change_pct": None,
+                "volume_ratio": None,
+                "direction": direction,
+                "quality_flag": "LOW" if verdict.label == "low" else "HIGH",
+            },
+            market_regime=market_regime,
+        )
+        log.info(
+            "result_beat_miss_signal", symbol=symbol, signal_type=signal_type,
+            yoy_revenue=growth.get("yoy_revenue_pct"),
+            tone=(narrative or {}).get("mgmt_tone"),
+            quality="LOW" if verdict.label == "low" else "HIGH",
         )
         fired += 1
     return fired
