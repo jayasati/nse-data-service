@@ -181,11 +181,35 @@ def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
         f"Today's regime: {regime or 'n/a'}"
         f"{(' ' + warnings) if warnings else ''}\n"
         f"→ {posture}\n\n"
-        f"Overnight events:\n{ev_lines}\n\n"
+        f"Overnight events:\n{ev_lines}\n"
+        f"{_psych_watch(conn)}\n"
         f"Expiry: {expiry_note}\n"
         f"Nifty support: {s1} | Resistance: {r1}\n"
         "━━━━━━━━━━━━━━━━━━━"
     )
+
+
+def _psych_watch(conn: sqlite3.Connection) -> str:
+    """Psychology watch line (Week-19 gate): the symbols the classifier left
+    tagged FOMO_EUPHORIA or CAPITULATION at the prior close. '' when none."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol, psych_state FROM indicator_live "
+            "WHERE psych_state IN ('FOMO_EUPHORIA', 'CAPITULATION') "
+            "ORDER BY psych_state, symbol LIMIT 12",
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    if not rows:
+        return ""
+    fomo = [s for s, st in rows if st == "FOMO_EUPHORIA"]
+    capit = [s for s, st in rows if st == "CAPITULATION"]
+    lines = ["\nPsychology watch:"]
+    if fomo:
+        lines.append(f"• FOMO euphoria (chase risk): {', '.join(fomo)}")
+    if capit:
+        lines.append(f"• Capitulation (reversal watch): {', '.join(capit)}")
+    return "\n".join(lines) + "\n"
 
 
 def _expiry_note(flags: dict) -> str:

@@ -15,6 +15,8 @@ signal's volume ratio and produces a single 0–1 number the dispatcher gates on
     market regime    risk_on          +0.10   | risk_off −0.10 | panic −0.20
     sector RS rank   1–3 (leading)    +0.08   | 9–11 (lagging) −0.08
     sector RS trend  improving        +0.03   | deteriorating −0.03
+    psychology       Layer 7 (Week 19.4): see _PSYCH_ADJUSTMENTS
+                     (e.g. long into FOMO_EUPHORIA −0.20, into CAPITULATION +0.15)
 
 The result is clamped to [0, 1]. Every input is optional: a missing value
 contributes 0 (neutral) rather than erroring, so a thin-data symbol still gets
@@ -45,6 +47,7 @@ def score_confidence(
     long_penalty: float = 1.0,
     earnings: dict | None = None,
     direction: str = "long",
+    psych_state: str | None = None,
 ) -> float:
     """Confidence in [0, 1] from live context + volume + market regime + sector RS.
 
@@ -76,8 +79,31 @@ def score_confidence(
     score += _pattern_adjustment(bb_squeeze, bearish_divergence, fake_breakout)
     score += _credit_adjustment(credit, is_intraday)
     score += _earnings_adjustment(earnings, direction)
+    score += _psychology_adjustment(psych_state, direction)
     score = _clamp01(score)
     return _clamp01(score * time_multiplier * long_penalty)
+
+
+# Layer 7 (Week 19.4): psychological alignment. The classifier's 8 states are
+# crowd-positioning reads; a long INTO euphoria/a bought rumor is fading fuel,
+# a long INTO capitulation/relief is buying exhaustion. Combos not listed in
+# the checklist table contribute 0 (neutral).
+_PSYCH_ADJUSTMENTS = {
+    ("NEUTRAL_TRENDING", "long"): 0.05,
+    ("FOMO_EUPHORIA", "long"): -0.20,
+    ("BUY_RUMOR", "long"): -0.10,
+    ("CAPITULATION", "long"): 0.15,
+    ("SELL_NEWS", "short"): 0.15,
+    ("RELIEF_BOUNCE", "long"): 0.10,
+    ("DEAD_CAT_BOUNCE", "long"): -0.15,
+    ("FEAR_BUILDING", "long"): -0.08,
+}
+
+
+def _psychology_adjustment(psych_state: str | None, direction: str) -> float:
+    if not psych_state:
+        return 0.0
+    return _PSYCH_ADJUSTMENTS.get((psych_state, direction), 0.0)
 
 
 def _earnings_adjustment(earnings: dict | None, direction: str) -> float:

@@ -76,3 +76,26 @@ def test_send_uses_injected_sender():
     # build + sender wiring separately:
     text = mb.build_brief(conn, now=datetime(2026, 6, 5, 9, 0, tzinfo=IST))
     assert fake_sender(None, None, text) is True and "Market Brief" in sent["text"]
+
+
+def test_brief_psych_watch_lists_fomo_and_capitulation():
+    """Week-19 gate: the brief must surface FOMO/CAPITULATION names."""
+    conn = _seed()
+    conn.executescript("""
+        CREATE TABLE indicator_live (symbol TEXT PRIMARY KEY, updated_at TEXT,
+                                     psych_state TEXT);
+        INSERT INTO indicator_live VALUES ('HYPE', 'x', 'FOMO_EUPHORIA');
+        INSERT INTO indicator_live VALUES ('CRSH', 'x', 'CAPITULATION');
+        INSERT INTO indicator_live VALUES ('MEH', 'x', 'NEUTRAL_TRENDING');
+    """)
+    text = mb.build_brief(conn, now=datetime(2026, 6, 5, 9, 0, tzinfo=IST))
+    assert "Psychology watch:" in text
+    assert "FOMO euphoria (chase risk): HYPE" in text
+    assert "Capitulation (reversal watch): CRSH" in text
+    assert "MEH" not in text
+
+
+def test_brief_psych_watch_absent_when_quiet():
+    conn = _seed()
+    text = mb.build_brief(conn, now=datetime(2026, 6, 5, 9, 0, tzinfo=IST))
+    assert "Psychology watch" not in text
