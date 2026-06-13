@@ -428,7 +428,7 @@ endpoints:
     enabled: true
 
   pdf_parser:
-      collector: nse_data.parsers.job:ParserJob
+      collector: nse_data.scheduler.jobs:ParserJob
       cadence: 10m
       active_hours: "08:00-19:30"
       enabled: true    # 50 newest-pending rows/run; new result PDFs get text within ~10m
