@@ -309,3 +309,83 @@ def fetch_symbol(
         time.sleep(_RATE_SLEEP)
         cur = win_end + timedelta(days=1)
     return out
+
+
+# ---- live quotes (LTP + day volume) ----------------------------------------
+
+_QUOTE_BATCH = 50          # getMarketData FULL-mode cap is 50 tokens/request
+
+
+def fetch_quotes(
+    symbols: list[str], instruments: dict[str, str] | None = None,
+) -> list[dict]:
+    """Live snapshot (LTP + cumulative day volume + OHLC) for NSE -EQ symbols.
+
+    Uses SmartAPI getMarketData in FULL mode, batched at 50 tokens/request (the
+    FULL-mode cap). Returns one dict per symbol that resolved AND was fetched:
+        {symbol, last_price, volume, open, day_high, day_low, prev_close}
+    Symbols whose token can't be resolved, or that the API doesn't return, are
+    silently dropped (an illiquid name with no quote isn't an error). Mirrors
+    fetch_symbol's auth-relogin + rate-limit backoff."""
+    if not symbols:
+        return []
+    client = _client()
+    instruments = instruments if instruments is not None else load_instruments()
+
+    tok_by_sym: dict[str, str] = {}
+    for s in symbols:
+        try:
+            tok_by_sym[s] = _token_for(s, instruments)
+        except Exception:
+            continue                      # unresolved token -> skip this symbol
+    sym_by_tok = {t: s for s, t in tok_by_sym.items()}
+
+    out: list[dict] = []
+    tokens = list(tok_by_sym.values())
+    for i in range(0, len(tokens), _QUOTE_BATCH):
+        batch = tokens[i:i + _QUOTE_BATCH]
+        payload = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                resp = cast(dict, client.getMarketData("FULL", {"NSE": batch}))
+                if isinstance(resp, dict) and not resp.get("status"):
+                    raise AngelError(resp.get("message") or resp.get("errorcode") or "request failed")
+                payload = resp
+                break
+            except Exception as ex:
+                if attempt < _MAX_RETRIES - 1 and _is_auth_error(ex):
+                    client = _relogin()
+                    continue
+                if _is_rate_limit(ex) and attempt < _MAX_RETRIES - 1:
+                    time.sleep(min(60, 5 * (attempt + 1)))
+                    continue
+                raise
+        for item in ((payload or {}).get("data") or {}).get("fetched") or []:
+            sym = sym_by_tok.get(str(item.get("symbolToken")))
+            if not sym:
+                continue
+            out.append({
+                "symbol": sym,
+                "last_price": _qf(item.get("ltp")),
+                "volume": _qi(item.get("tradeVolume")),
+                "open": _qf(item.get("open")),
+                "day_high": _qf(item.get("high")),
+                "day_low": _qf(item.get("low")),
+                "prev_close": _qf(item.get("close")),   # FULL 'close' = prior close
+            })
+        time.sleep(_RATE_SLEEP)
+    return out
+
+
+def _qf(v) -> float | None:
+    try:
+        return float(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _qi(v) -> int | None:
+    try:
+        return int(float(v)) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None

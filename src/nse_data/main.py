@@ -30,6 +30,7 @@ from .events.pre_event_risk import register_pre_event_risk_job
 from .events.pre_screen import register_pre_screen_job
 from .parsers.analyst_ratings import register_analyst_ratings_job
 from .psychology.state_classifier import register_state_classifier_job
+from .collectors.angel_live_equity import register_angel_live_job
 from .fundamentals.from_results import (
     register_extract_runner,
     register_fast_result_lane,
@@ -179,6 +180,10 @@ def main() -> int:
     # Moneycontrol broker-recos feed → raw_analyst_ratings + tier-1
     # upgrade/downgrade alerts — Week 18.7/18.8.
     registered.append(register_analyst_ratings_job(scheduler, db_path))
+    # Angel-sourced live quotes for the ~337 top-1000 names NSE's free feed
+    # doesn't serve (ETFs + sub-index stocks) → raw_equity_quotes under
+    # LIVE_INDEX, so their intraday 1-min candles build live like the rest.
+    registered.append(register_angel_live_job(scheduler, db_path))
     # Financial extraction, three latency tiers → extracted_financials:
     #  - fast lane (every 1 min, market hours): full pipeline on just-filed result
     #    PDFs so a mid-session reaction is scored with the real surprise
