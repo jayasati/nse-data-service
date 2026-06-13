@@ -67,6 +67,13 @@ class ParserRunReport:
     by_terminal_state: dict[str, int]
     errors: list[str] = field(default_factory=list)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Match the Layer 2 collector report contract: the runner logs
+        `collector_run` via `**report.to_dict()`. Without this the parser job
+        does its work, then the runner raises AttributeError on the missing
+        method and logs `collector_failed` — masking a fully successful run."""
+        return asdict(self)
+
 
 class ParserJob:
     """Scheduler-facing class for the parser pipeline.
