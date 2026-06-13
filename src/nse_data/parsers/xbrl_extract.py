@@ -70,18 +70,86 @@ def _has_table(conn: sqlite3.Connection, name: str) -> bool:
     ).fetchone() is not None
 
 
+def _resolve_via_api(session, symbol: str, qe: _dt.date) -> dict:
+    """Per-symbol XBRL URLs from NSE's NextApi (authoritative + current).
+
+    The global integrated-filing feed is incomplete and the old results feed
+    went stale when NSE moved to integrated filings, so the reliable source is
+    the per-symbol quote API. Tries the integrated feed first (modern results,
+    both scopes), then the financial-results feed (older quarters)."""
+    out: dict = {"standalone": None, "consolidated": None}
+    ref = f"https://www.nseindia.com/get-quote/equity/{symbol}"
+
+    def _scope(v: str | None) -> str:
+        return "consolidated" if (v or "").strip().lower().startswith("cons") \
+            and "non" not in (v or "").lower() else "standalone"
+
+    # 1. integrated filing (modern) — gfrQuaterEnded / gfrConsolidated / gfrXbrlFname
+    try:
+        data = session.get_json(
+            "nextapi",
+            f"/api/NextApi/apiClient/GetQuoteApi?functionName=getIntegratedFilingData&symbol={symbol}",
+            referer=ref)
+    except Exception as e:  # noqa: BLE001
+        log.warning("xbrl_api_failed", fn="integrated", symbol=symbol, error=str(e))
+        data = None
+    for rec in data or []:
+        if _api_date(rec.get("gfrQuaterEnded")) != qe:
+            continue
+        scope = _scope(rec.get("gfrConsolidated"))
+        if out[scope] is None and rec.get("gfrXbrlFname"):
+            out[scope] = rec["gfrXbrlFname"]
+    if out["standalone"] or out["consolidated"]:
+        return out
+
+    # 2. older financial-results feed — to_date / consolidated / xbrl_attachment
+    try:
+        data = session.get_json(
+            "nextapi",
+            f"/api/NextApi/apiClient/GetQuoteApi?functionName=getFinancialResultData&symbol={symbol}&marketApiType=equities&noOfRecords=8",
+            referer=ref)
+    except Exception as e:  # noqa: BLE001
+        log.warning("xbrl_api_failed", fn="financial", symbol=symbol, error=str(e))
+        data = None
+    for rec in data or []:
+        if _api_date(rec.get("to_date")) != qe:
+            continue
+        scope = _scope(rec.get("consolidated"))
+        if out[scope] is None and rec.get("xbrl_attachment"):
+            out[scope] = rec["xbrl_attachment"]
+    return out
+
+
+def _api_date(s: str | None) -> _dt.date | None:
+    """Parse NSE NextApi date strings ('31 Mar 2026', '31 Dec 2024')."""
+    if not s:
+        return None
+    for fmt in ("%d %b %Y", "%d-%b-%Y", "%Y-%m-%d"):
+        try:
+            return _dt.datetime.strptime(s.strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def resolve_xbrl_urls(
-    conn: sqlite3.Connection, symbol: str, broadcast_dt: str | None,
+    conn: sqlite3.Connection, symbol: str, broadcast_dt: str | None, *, session=None,
 ) -> dict:
     """{'standalone': url|None, 'consolidated': url|None} for the result's quarter.
 
-    Picks the integrated 'Financials' filing for (symbol, reported quarter); on
-    a revision, the most recently created row per scope wins. Falls back to the
-    older financial-results feed's single xbrl_url (scope unknown → standalone).
+    Primary source is NSE's per-symbol API (when a ``session`` is given) —
+    authoritative and complete. Falls back to the local integrated-filings /
+    financial-results feeds (which are partial/stale) when no session or the API
+    misses.
     """
     out: dict = {"standalone": None, "consolidated": None}
     bdate = _broadcast_date(broadcast_dt)
     qe = _quarter_end_on_or_before(bdate) if bdate else None
+
+    if session is not None and qe is not None:
+        out = _resolve_via_api(session, symbol, qe)
+        if out["standalone"] or out["consolidated"]:
+            return out
 
     if _has_table(conn, "raw_integrated_filings") and qe is not None:
         rows = conn.execute(
@@ -119,11 +187,14 @@ def _http_get(url: str) -> bytes:
 
 
 def extract_via_xbrl(
-    conn: sqlite3.Connection, symbol: str, broadcast_dt: str | None, *, fetch=None,
+    conn: sqlite3.Connection, symbol: str, broadcast_dt: str | None, *,
+    session=None, fetch=None,
 ) -> ExtractionResult | None:
     """Deterministic ExtractionResult from the result's XBRL, or None if no
-    parseable XBRL is available (caller then falls back to the LLM path)."""
-    urls = resolve_xbrl_urls(conn, symbol, broadcast_dt)
+    parseable XBRL is available (caller then falls back to the LLM path).
+    ``session`` (SessionManager) enables the authoritative per-symbol NSE URL
+    lookup; without it, only the local feeds are consulted."""
+    urls = resolve_xbrl_urls(conn, symbol, broadcast_dt, session=session)
     # Distinct URLs — an integrated XBRL is one scope per file (NatureOfReport),
     # so standalone and consolidated are usually two different files; dedupe in
     # case the feed pointed both slots at the same one.

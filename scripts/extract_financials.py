@@ -44,8 +44,10 @@ def main() -> int:
     from nse_data.parsers.state import State
     from nse_data.parsers.job import focus_universe
     from nse_data.fundamentals.from_results import extract_and_store, is_result_subject
+    from nse_data.session.manager import SessionManager
 
     conn = open_db(args.db)
+    session = SessionManager()   # enables the authoritative per-symbol XBRL lookup
     candidates = conn.execute(
         "SELECT fingerprint, symbol, subject, broadcast_dt, pdf_path "
         "FROM raw_announcements "
@@ -80,7 +82,7 @@ def main() -> int:
         try:
             r = extract_and_store(
                 conn, fingerprint=fp, symbol=sym, subject=subj,
-                broadcast_dt=bdt, pdf_path=path, use_llm=True,
+                broadcast_dt=bdt, pdf_path=path, use_llm=True, session=session,
             )
         except Exception as e:  # noqa: BLE001 — one bad PDF shouldn't stop the batch
             print(f"[{i:>3}/{len(todo)}] {sym:<14} ERROR {e!r}", flush=True)

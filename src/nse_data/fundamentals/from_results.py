@@ -299,6 +299,7 @@ def extract_and_store(
     pdf_path: str,
     use_llm: bool = True,
     now: int | None = None,
+    session=None,
 ) -> dict:
     """Run the financial extractor on one PDF and persist its numbers.
 
@@ -314,7 +315,7 @@ def extract_and_store(
     res = None
     try:
         from nse_data.parsers.xbrl_extract import extract_via_xbrl
-        res = extract_via_xbrl(conn, symbol, broadcast_dt)
+        res = extract_via_xbrl(conn, symbol, broadcast_dt, session=session)
     except Exception:  # noqa: BLE001 — XBRL trouble must never block the LLM fallback
         res = None
     if res is None or not (res.fields or res.consolidated):
@@ -370,6 +371,7 @@ def run_extract_pass(
     use_llm: bool = True,
     now: int | None = None,
     universe=_UNSET,
+    session=None,
 ) -> dict:
     """Backfill: extract+store financials for result PDFs not yet processed.
 
@@ -409,7 +411,7 @@ def run_extract_pass(
             continue   # off-universe — don't spend LLM budget
         r = extract_and_store(
             conn, fingerprint=fp, symbol=sym, subject=subj,
-            broadcast_dt=bdt, pdf_path=path, use_llm=use_llm, now=now,
+            broadcast_dt=bdt, pdf_path=path, use_llm=use_llm, now=now, session=session,
         )
         processed += 1
         stored += r["stored"]
