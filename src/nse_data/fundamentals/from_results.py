@@ -350,19 +350,32 @@ def extract_and_store(
     }
 
 
+_UNSET = object()   # "caller didn't pass universe" — resolve via focus_universe()
+
+
 def run_extract_pass(
     conn: sqlite3.Connection,
     *,
     limit: int = 20,
     use_llm: bool = True,
     now: int | None = None,
+    universe=_UNSET,
 ) -> dict:
     """Backfill: extract+store financials for result PDFs not yet processed.
 
     Selects announcements at ``text_extracted`` whose subject looks like a result
     and that have no extracted_financials rows yet. Bounded by ``limit`` (each
     PDF is one LLM call, so keep batches modest against the daily spend cap).
+
+    Focus-universe gated: results for symbols outside the top-1000 are skipped so
+    LLM budget isn't spent on off-universe/defunct names (the text-extracted
+    backlog predates the parser gate). `universe` defaults to focus_universe()
+    (the scheduled callers stay gated); pass None to disable, or a set to scope.
     """
+    if universe is _UNSET:
+        from nse_data.parsers.job import focus_universe
+        universe = focus_universe()
+
     candidates = conn.execute(
         "SELECT fingerprint, symbol, subject, broadcast_dt, pdf_path "
         "FROM raw_announcements "
@@ -382,6 +395,8 @@ def run_extract_pass(
             break
         if not is_result_subject(subj):
             continue
+        if universe is not None and (sym or "").upper() not in universe:
+            continue   # off-universe — don't spend LLM budget
         r = extract_and_store(
             conn, fingerprint=fp, symbol=sym, subject=subj,
             broadcast_dt=bdt, pdf_path=path, use_llm=use_llm, now=now,

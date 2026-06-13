@@ -42,6 +42,7 @@ def main() -> int:
 
     from nse_data.storage.db import open_db
     from nse_data.parsers.state import State
+    from nse_data.parsers.job import focus_universe
     from nse_data.fundamentals.from_results import extract_and_store, is_result_subject
 
     conn = open_db(args.db)
@@ -56,8 +57,19 @@ def main() -> int:
         (State.TEXT_EXTRACTED,),
     ).fetchall()
     results = [c for c in candidates if is_result_subject(c[2])]
+    # Focus-universe gate: don't spend LLM budget on results outside the
+    # top-1000 (the backlog has off-universe / defunct names from before the
+    # parser gate + ungated manual backfills). None = no gate (file absent).
+    universe = focus_universe()
+    if universe is not None:
+        in_uni = [c for c in results if (c[1] or "").upper() in universe]
+        skipped = len(results) - len(in_uni)
+        results = in_uni
+    else:
+        skipped = 0
     todo = results[: args.limit]
-    print(f"candidates with text: {len(candidates)} | result-subject: {len(results)} "
+    print(f"result candidates: {len(candidates)} text-extracted "
+          f"| in top-1000: {len(results)} (skipped {skipped} off-universe) "
           f"| extracting: {len(todo)}\n", flush=True)
 
     done = stored = 0

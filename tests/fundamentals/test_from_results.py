@@ -152,8 +152,24 @@ def test_run_extract_pass_filters_and_dedups(conn, monkeypatch):
     )
     monkeypatch.setattr("nse_data.parsers.financial_extractor.extract",
                         lambda *a, **k: fake)
-    rep = fr.run_extract_pass(conn, limit=20, use_llm=True, now=1700000000)
+    rep = fr.run_extract_pass(conn, limit=20, use_llm=True, now=1700000000, universe=None)
     assert rep["processed"] == 1 and rep["stored"] == 1   # only the result subject
     # second pass: already extracted -> dedup -> nothing processed
-    rep2 = fr.run_extract_pass(conn, limit=20, use_llm=True, now=1700000000)
+    rep2 = fr.run_extract_pass(conn, limit=20, use_llm=True, now=1700000000, universe=None)
     assert rep2["processed"] == 0
+
+
+def test_run_extract_pass_focus_universe_gate(conn, monkeypatch):
+    """Off-universe result subjects are skipped so LLM budget isn't wasted."""
+    _insert_announcement(conn, "fpIn", "RELIANCE", "Financial Results")
+    _insert_announcement(conn, "fpOff", "DEFUNCTCO", "Financial Results")
+    fake = ExtractionResult(
+        fields={"revenue_cr": 100.0}, confidence=0.9, strategy="text_llm",
+        units_phrase="INR crore", period_ending="2026-03-31",
+    )
+    monkeypatch.setattr("nse_data.parsers.financial_extractor.extract",
+                        lambda *a, **k: fake)
+    rep = fr.run_extract_pass(conn, limit=20, now=1700000000,
+                              universe=frozenset({"RELIANCE"}))
+    assert rep["processed"] == 1   # only RELIANCE; DEFUNCTCO gated out
+    assert [r["symbol"] for r in rep["rows"]] == ["RELIANCE"]
