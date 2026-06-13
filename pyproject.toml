@@ -29,7 +29,8 @@ dashboard = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
 # Optional: broker historical intraday backfill (brokers/groww.py, brokers/kite.py,
 # brokers/angel.py). smartapi-python is Angel One's SmartAPI SDK (the default
 # --source for backfill_groww_full.py).
-broker = ["growwapi>=0.1", "pyotp>=2.9", "kiteconnect>=4.2", "smartapi-python>=1.5"]
+broker = ["growwapi>=0.1", "pyotp>=2.9", "kiteconnect>=4.2", "smartapi-python>=1.5",
+          "logzero>=1.7", "websocket-client>=1.9"]   # smartapi-python under-declares these
 # Optional: technical indicators nightly compute (indicators/*). pandas-ta-classic
 # is the maintained pandas-ta fork that's compatible with numpy 2.x.
 indicators = ["pandas>=2.0,<3", "pandas-ta-classic>=0.6"]
