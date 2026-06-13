@@ -431,4 +431,5 @@ endpoints:
       collector: nse_data.parsers.job:ParserJob
       cadence: 10m
       active_hours: "08:00-19:30"
-      enabled: false   # leave disabled for Phase 2 backfill; flip after testing
+      enabled: true    # 50 newest-pending rows/run; new result PDFs get text within ~10m
+                       # (feeds financial extraction), the backlog drains gradually
