@@ -308,10 +308,20 @@ def extract_and_store(
     now = now if now is not None else int(time.time())
     from nse_data.parsers.financial_extractor import extract
 
-    res = extract(
-        pdf_path, use_llm_fallback=use_llm,
-        symbol=symbol, subject=subject, broadcast_dt=broadcast_dt,
-    )
+    # XBRL-first: the company's own structured submission is authoritative and
+    # free. Use it when a parseable XBRL exists; fall back to the LLM vision
+    # read only when it doesn't (older PDF-only filings, missing XBRL).
+    res = None
+    try:
+        from nse_data.parsers.xbrl_extract import extract_via_xbrl
+        res = extract_via_xbrl(conn, symbol, broadcast_dt)
+    except Exception:  # noqa: BLE001 — XBRL trouble must never block the LLM fallback
+        res = None
+    if res is None or not (res.fields or res.consolidated):
+        res = extract(
+            pdf_path, use_llm_fallback=use_llm,
+            symbol=symbol, subject=subject, broadcast_dt=broadcast_dt,
+        )
 
     stored = 0
     if res.period_ending:
