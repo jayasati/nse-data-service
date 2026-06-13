@@ -28,7 +28,7 @@ from typing import Any, Callable
 
 from apscheduler.triggers.cron import CronTrigger
 
-from nse_data.parsers.job import JobReport, run_job
+from nse_data.parsers.job import JobReport, focus_universe, run_job
 from nse_data.scheduler import market_hours
 
 LOG = logging.getLogger(__name__)
@@ -119,6 +119,7 @@ class ParserJob:
                 session=session,
                 archive_root=self.archive_root,
                 limit=self.batch_size,
+                universe=focus_universe(),   # gate to the top-1000 focus universe
             )
         finally:
             own_db.close()

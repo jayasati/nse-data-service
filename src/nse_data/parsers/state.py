@@ -42,6 +42,7 @@ class State:
     # Routing
     CLASSIFIED = "classified"
     SKIPPED_LOW_PRIORITY = "skipped_low_priority"
+    SKIPPED_OFF_UNIVERSE = "skipped_off_universe"   # symbol not in the top-1000 focus universe
 
     # Download
     DOWNLOADING = "downloading"
@@ -67,6 +68,7 @@ class State:
 # pick these up again.
 TERMINAL_STATES = frozenset({
     State.SKIPPED_LOW_PRIORITY,
+    State.SKIPPED_OFF_UNIVERSE,
     State.DOWNLOAD_FAILED,
     State.TEXT_EXTRACTED,
     State.TEXT_EXTRACTION_FAILED,

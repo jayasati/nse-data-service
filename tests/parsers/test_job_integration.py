@@ -242,3 +242,36 @@ def test_every_row_reaches_terminal_state(tmp_path: Path, seeded_db):
     ).fetchall()
     for fp, status in rows:
         assert status in TERMINAL_STATES, f"{fp} stuck at {status}"
+
+def _row(db, fp: str) -> dict:
+    cur = db.execute("SELECT * FROM raw_announcements WHERE fingerprint = ?", (fp,))
+    return {d[0]: v for d, v in zip(cur.description, cur.fetchone())}
+
+
+def test_off_universe_symbol_skipped_no_download(tmp_path: Path, seeded_db):
+    """A symbol outside the focus universe is parked at SKIPPED_OFF_UNIVERSE
+    with no PDF download/LLM. `universe` is injected, so the other tests (which
+    pass no universe) stay ungated."""
+    from nse_data.parsers.job import process_one_row
+
+    _seed_row(seeded_db, "fp_off", "Outcome of Board Meeting",
+              "http://example/never-fetched.pdf")   # symbol='TEST', not in universe
+    terminal = process_one_row(
+        seeded_db, StubSession({}), _row(seeded_db, "fp_off"), tmp_path / "archive",
+        universe=frozenset({"HDFCBANK", "RELIANCE"}))
+    assert terminal == State.SKIPPED_OFF_UNIVERSE
+
+
+def test_in_universe_symbol_not_gated(tmp_path: Path, seeded_db):
+    """A symbol IN the universe bypasses the gate and follows the normal path."""
+    from nse_data.parsers.job import process_one_row
+
+    seeded_db.execute(
+        "INSERT INTO raw_announcements (fingerprint, symbol, subject, attachment_url, broadcast_dt) "
+        "VALUES ('fp_in', 'RELIANCE', 'Trading Window', 'http://x/none.pdf', '20-May-2026 10:00:00')")
+    seeded_db.commit()
+    terminal = process_one_row(
+        seeded_db, StubSession({}), _row(seeded_db, "fp_in"), tmp_path / "archive",
+        universe=frozenset({"RELIANCE"}))
+    # 'Trading Window' is skip-priority → gate passed, classified as skip (not off-universe).
+    assert terminal == State.SKIPPED_LOW_PRIORITY

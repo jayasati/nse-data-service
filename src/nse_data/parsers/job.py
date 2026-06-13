@@ -29,6 +29,33 @@ from nse_data.storage import files
 
 LOG = logging.getLogger(__name__)
 
+# Focus universe (top-1000 by turnover). When present, the parser only does PDF
+# work (download/text/extract) for these symbols; announcements for any other
+# symbol are stored by the collector but marked SKIPPED_OFF_UNIVERSE here so
+# they never cost a PDF download or an LLM call. Absent file => no gate (process
+# everything, the pre-universe behaviour).
+_UNIVERSE_PATH = Path("config/universe_top1000.txt")
+_universe_cache: "tuple[float, frozenset[str]] | None" = None
+
+
+def focus_universe() -> "frozenset[str] | None":
+    """Top-1000 symbols from config/universe_top1000.txt, or None if absent.
+
+    Cached, with an mtime check so an edited universe is picked up without a
+    process restart."""
+    global _universe_cache
+    try:
+        mtime = _UNIVERSE_PATH.stat().st_mtime
+    except OSError:
+        _universe_cache = None
+        return None
+    if _universe_cache is None or _universe_cache[0] != mtime:
+        syms = frozenset(
+            l.strip().upper() for l in _UNIVERSE_PATH.read_text().splitlines() if l.strip()
+        )
+        _universe_cache = (mtime, syms)
+    return _universe_cache[1]
+
 
 @dataclass
 class JobReport:
@@ -53,6 +80,7 @@ def process_one_row(
     session: SessionManager,
     row: dict,
     archive_root: Path,
+    universe: "frozenset[str] | None" = None,
 ) -> str:
     """Run the full pipeline against one announcement row.
 
@@ -67,6 +95,20 @@ def process_one_row(
     attachment_url = row.get("attachment_url") or ""
     broadcast_dt = row.get("broadcast_dt") or ""
     now = int(time.time())
+
+    # ---- Step 0: focus-universe gate ---------------------------------------
+    # Only top-1000 symbols get PDF work; everything else is stored (by the
+    # collector) but parked here with no download / no LLM cost. Runs before
+    # classify so even a high-priority off-universe filing is skipped. `universe`
+    # is injected (None = no gate) so tests and the manual backfill stay
+    # ungated; the scheduled ParserJob passes focus_universe().
+    if universe is not None and (row.get("symbol") or "").upper() not in universe:
+        _update_row(db, fingerprint, {
+            "pdf_status": State.SKIPPED_OFF_UNIVERSE,
+            "pdf_status_updated_at": now,
+            "retention_policy": "skip",
+        })
+        return State.SKIPPED_OFF_UNIVERSE
 
     # ---- Step 1: classify subject -> priority ------------------------------
     priority = classify_subject(subject)
@@ -271,6 +313,7 @@ def run_job(
     archive_root: Path,
     fingerprints: Optional[list[str]] = None,
     limit: Optional[int] = None,
+    universe: "frozenset[str] | None" = None,
 ) -> JobReport:
     """..."""
     report = JobReport(started_at=time.time())
@@ -293,7 +336,7 @@ def run_job(
 
         row_started = time.time()
         try:
-            terminal = process_one_row(db, session, row, archive_root)
+            terminal = process_one_row(db, session, row, archive_root, universe=universe)
             report.add_outcome(terminal)
             report.rows_processed += 1
             elapsed = time.time() - row_started
