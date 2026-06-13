@@ -26,8 +26,10 @@ dev = ["pytest>=8.0"]
 redis = ["redis>=5.0"]
 # Optional: the web dashboard + API (nse_data.api.server:app).
 dashboard = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
-# Optional: broker historical intraday backfill (brokers/groww.py, brokers/kite.py).
-broker = ["growwapi>=0.1", "pyotp>=2.9", "kiteconnect>=4.2"]
+# Optional: broker historical intraday backfill (brokers/groww.py, brokers/kite.py,
+# brokers/angel.py). smartapi-python is Angel One's SmartAPI SDK (the default
+# --source for backfill_groww_full.py).
+broker = ["growwapi>=0.1", "pyotp>=2.9", "kiteconnect>=4.2", "smartapi-python>=1.5"]
 # Optional: technical indicators nightly compute (indicators/*). pandas-ta-classic
 # is the maintained pandas-ta fork that's compatible with numpy 2.x.
 indicators = ["pandas>=2.0,<3", "pandas-ta-classic>=0.6"]
