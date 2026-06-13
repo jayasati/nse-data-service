@@ -26,12 +26,15 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, cast
 
 import pandas as pd
+import structlog
 
 from .base import Indicator
 from .intraday_ohlcv import read_intraday_5m
 from .ohlcv import read_ohlcv
 from .registry import INDICATORS
 from .writer import last_computed_key, write_indicator
+
+_log = structlog.get_logger()
 
 
 @dataclass(frozen=True)
@@ -87,7 +90,13 @@ def run_all(
     results: list[ComputeResult] = []
     for symbol in symbols:
         for ind in selected:
-            results.append(compute_for_symbol(conn, ind, symbol, series=series))
+            try:
+                results.append(compute_for_symbol(conn, ind, symbol, series=series))
+            except Exception:
+                # One bad symbol (e.g. malformed volume) must not abort the whole
+                # universe sweep — log it, record zero rows, carry on.
+                _log.exception("indicator_compute_failed", symbol=symbol, indicator=ind.name)
+                results.append(ComputeResult(symbol, ind.name, 0))
     return results
 
 

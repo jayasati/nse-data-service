@@ -49,7 +49,11 @@ class EodFullSet(Indicator):
 
     def compute(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
         close, high, low, volume = (
-            ohlcv["close"], ohlcv["high"], ohlcv["low"], ohlcv["volume"],
+            ohlcv["close"], ohlcv["high"], ohlcv["low"],
+            # Coerce volume to numeric: some universe tickers (ETFs / index-like
+            # symbols) carry non-numeric or empty volume in bhavcopy, which made
+            # `volume / vol_sma` raise and abort the whole EOD sweep.
+            pd.to_numeric(ohlcv["volume"], errors="coerce"),
         )
         out = pd.DataFrame(index=ohlcv.index)
 
