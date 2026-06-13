@@ -85,6 +85,14 @@ async function loadChart() {
 const tfCadence = () => (["1D", "1W", "1M"].includes(tf) ? "intraday" : "eod");
 
 async function loadSrvIndicators() {
+  // Drop the previous cadence's overlays/sub-panes before reloading. A 1D→3M
+  // switch changes the indicator set (intraday `rsi_5m` → daily `rsi`), and a
+  // pane the new payload never mentions would otherwise never be hidden by
+  // drawSrvOverlays — it lingers in the time-sync group carrying its old
+  // intraday epoch range and drags the daily price chart's visible window down
+  // to that 2-day slice (the "3M shows only today" bug). Cleared synchronously
+  // here (before any await) so it's gone before loadChart renders the bars.
+  chart.clearServerSeries();
   srv.data = null;
   if (!current) { renderSrvButtons(); return; }
   // Request enough rows to fill the chart with a little headroom on the left.
