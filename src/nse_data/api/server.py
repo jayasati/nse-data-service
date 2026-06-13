@@ -21,6 +21,25 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope
+
+
+class RevalidatingStatic(StaticFiles):
+    """StaticFiles that asks the browser to revalidate every asset.
+
+    The bundle is unversioned (no ?v=<hash> on the script/CSS tags), so without
+    this a browser happily serves a stale cached stocks.js after a deploy —
+    which silently breaks the dashboard against a changed API until a manual
+    hard refresh. `no-cache` doesn't mean "don't cache": it means "cache, but
+    revalidate before use" — the browser sends If-None-Match/If-Modified-Since
+    and StaticFiles answers 304 when unchanged (cheap), or 200 with the new file
+    right after a deploy. So pages stay fast AND always run current code.
+    """
+
+    async def get_response(self, path: str, scope: Scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 from ..dashboard import routes as dashboard_routes
 from ..dashboard.routes import STATIC_DIR
@@ -43,7 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(market_routes.router)        # /api/market/* (regime + sector radar)
     app.include_router(earnings_routes.router)      # /api/earnings/* (reaction odds + setups)
     app.include_router(llm_routes.router)            # /api/llm/* (spend tracking)
-    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount("/static", RevalidatingStatic(directory=str(STATIC_DIR)), name="static")
     return app
 
 
