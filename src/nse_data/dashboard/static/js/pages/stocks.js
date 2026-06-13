@@ -10,7 +10,9 @@ import { initCockpit, setCockpitSymbol } from "./stock_tabs.js";
 
 const chart = new ChartController("chart", "panes", "tip");
 
-let current = null, tf = "1D", mode = "area", lastBars = [];
+// `tf` persists across reloads so a refresh keeps the view (1W/1M/3M/…) instead
+// of snapping back to the 1D default.
+let current = null, tf = localStorage.getItem("nse_tf") || "1D", mode = "area", lastBars = [];
 // As-of date (YYYY-MM-DD, IST) for point-in-time verification. null = live.
 // When set, the chart + server-indicator overlays are anchored to that date.
 let asof = null;
@@ -94,7 +96,12 @@ async function loadSrvIndicators() {
   // here (before any await) so it's gone before loadChart renders the bars.
   chart.clearServerSeries();
   srv.data = null;
-  if (!current) { renderSrvButtons(); return; }
+  // Indicators are a Terminal-only feature: the chips are hidden by CSS in
+  // normal mode, so the drawn overlays/sub-panes must hide with them — else
+  // normal mode shows indicator lines with no way to toggle them off. Cleared
+  // above; skip fetching/drawing until Terminal is on. The Terminal toggle
+  // re-runs this so overlays appear on enter and vanish on leave.
+  if (!current || !document.body.classList.contains("terminal")) { renderSrvButtons(); return; }
   // Request enough rows to fill the chart with a little headroom on the left.
   // For intraday: one session is ≤75 5-min rows, so 75/session + headroom.
   // For daily: ask for the visible timeframe's days +5.
@@ -316,11 +323,23 @@ function syncBarsUI() {
 $("tfs").onclick = e => {
   if (e.target.tagName !== "BUTTON") return;
   tf = e.target.dataset.t;
+  localStorage.setItem("nse_tf", tf);
   document.querySelectorAll("#tfs button").forEach(b => b.classList.toggle("on", b === e.target));
   $("tftag").textContent = tf;
   syncBarsUI();
   if (current) { loadChart(); loadSrvIndicators(); }
 };
+
+// Reflect the persisted timeframe + Terminal state in the UI before the first
+// chart load, so a reload restores the exact view the user left.
+function restoreView() {
+  document.querySelectorAll("#tfs button").forEach(b => b.classList.toggle("on", b.dataset.t === tf));
+  $("tftag").textContent = tf;
+  if (localStorage.getItem("nse_terminal") === "1") {
+    document.body.classList.add("terminal");
+    $("termBtn").classList.add("on");
+  }
+}
 $("bars").onclick = e => {
   if (e.target.tagName !== "BUTTON") return;
   bar = e.target.dataset.b;
@@ -345,6 +364,8 @@ $("asofClear").onclick = () => setAsof(null);
 $("termBtn").onclick = () => {
   const on = document.body.classList.toggle("terminal");
   $("termBtn").classList.toggle("on", on);
+  localStorage.setItem("nse_terminal", on ? "1" : "0");
+  if (current) loadSrvIndicators();   // draw overlays on enter, clear them on leave
   requestAnimationFrame(() => chart.fit());
 };
 
@@ -354,6 +375,7 @@ $("fundaHead").onclick = () => $("funda").classList.toggle("collapsed");
 new SearchBox({ inputId: "search", dropdownId: "dropdown", onSelect: select, inWatchlist: s => wl.has(s) });
 initThemeToggle("themeBtn", () => chart.themeAll());
 chart.themeAll();  // sync chart to the (possibly persisted) theme on load
+restoreView();     // reflect the persisted timeframe + Terminal state
 syncBarsUI();      // reflect the persisted bar size and 1D-only visibility
 
 initCockpit();
