@@ -49,16 +49,35 @@ def main() -> int:
                          "displayed quarters; merges integrated + financial feeds)")
     ap.add_argument("--sleep", type=float, default=0.4,
                     help="seconds between symbols (be gentle on NSE)")
+    ap.add_argument("--only-missing", action="store_true",
+                    help="skip symbols that already have xbrl rows (cheap gap re-fill)")
     args = ap.parse_args()
 
     from nse_data.storage.db import open_db
     from nse_data.session.manager import SessionManager
+    from nse_data.session.circuit import CircuitOpenError
     from nse_data.parsers.xbrl_extract import _http_get, _api_date, _file_ts
     from nse_data.parsers.xbrl_financials import parse_xbrl
     from nse_data.fundamentals.from_results import persist_extraction, quarter_growth
 
     conn = open_db(args.db)
     session = SessionManager()
+
+    def get_json(path: str, ref: str):
+        """get_json that survives the circuit breaker: a few timeouts trip the
+        nextapi circuit (deep-feed is call-heavy), after which every symbol fails
+        instantly for the 60s cooldown — so on CircuitOpenError WAIT for recovery
+        and retry the same symbol instead of burning through ~300 of them."""
+        for attempt in range(4):
+            try:
+                return session.get_json("nextapi", path, referer=ref)
+            except CircuitOpenError:
+                time.sleep(65)          # let the cooldown lapse → half-open probe
+            except Exception:           # noqa: BLE001 — timeout / transient
+                if attempt == 3:
+                    raise
+                time.sleep(3 * (attempt + 1))
+        return session.get_json("nextapi", path, referer=ref)
 
     if args.symbols:
         syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
@@ -67,6 +86,13 @@ def main() -> int:
         syms = [l.strip().upper() for l in lines if l.strip() and not l.startswith("#")]
     if args.limit:
         syms = syms[: args.limit]
+    if args.only_missing:
+        have = {r[0].upper() for r in conn.execute(
+            "SELECT DISTINCT symbol FROM extracted_financials WHERE strategy='xbrl'")}
+        before = len(syms)
+        syms = [s for s in syms if s not in have]
+        print(f"--only-missing: {before - len(syms)} already filled, {len(syms)} to do",
+              flush=True)
 
     print(f"filling {len(syms)} symbols from XBRL "
           f"({args.quarters} quarters each, sleep={args.sleep}s)\n", flush=True)
@@ -80,10 +106,9 @@ def main() -> int:
         esym = quote(sym, safe="")
         ref = f"https://www.nseindia.com/get-quote/equity/{sym}"
         try:
-            data = session.get_json(
-                "nextapi",
+            data = get_json(
                 f"/api/NextApi/apiClient/GetQuoteApi?functionName=getIntegratedFilingData&symbol={esym}",
-                referer=ref)
+                ref)
         except Exception as e:  # noqa: BLE001
             n_err += 1
             print(f"[{i:>4}/{len(syms)}] {sym:<14} API-ERR {e!r}", flush=True)
@@ -103,11 +128,10 @@ def main() -> int:
                 by_q.setdefault(qe, []).append(r)
         if len(by_q) < args.quarters:
             try:
-                fin = session.get_json(
-                    "nextapi",
+                fin = get_json(
                     f"/api/NextApi/apiClient/GetQuoteApi?functionName=getFinancialResultData"
                     f"&symbol={esym}&marketApiType=equities&noOfRecords=16",
-                    referer=ref) or []
+                    ref) or []
             except Exception:  # noqa: BLE001 — older feed is best-effort
                 fin = []
             for r in fin:
