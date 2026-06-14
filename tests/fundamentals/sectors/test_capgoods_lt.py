@@ -85,3 +85,27 @@ def test_capgoods_drawdown_quarter_shorts():
     assert v.label == "low"
     assert "low_quality_beat" in v.flags
     assert "other_income_propped" in v.flags
+
+
+def test_capgoods_working_capital_balloon_caps_long():
+    """The income-statement edge: a clean operating beat funded by a ballooning
+    working capital (receivables/WIP up far faster than revenue) isn't converting
+    to cash → the long caps to a flagged neutral."""
+    growth = {
+        "yoy_pat_pct": 9.0, "yoy_ebitda_pct": 7.0, "yoy_revenue_pct": 6.0,
+        "yoy_wc_ratio_chg_pp": 28.0,        # WC/revenue rose 28pp YoY
+    }
+    v = classify_result("LT", growth)
+    assert v.direction is None and v.label == "neutral"
+    assert "working_capital_balloon" in v.flags
+
+
+def test_capgoods_clean_cash_conversion_stays_long():
+    """Operating beat with working capital flat/improving → genuine, stays LONG."""
+    growth = {
+        "yoy_pat_pct": 12.0, "yoy_ebitda_pct": 10.0, "yoy_revenue_pct": 9.0,
+        "yoy_wc_ratio_chg_pp": -4.0,        # WC intensity actually fell
+    }
+    v = classify_result("LT", growth)
+    assert v.direction == "long" and v.label == "high"
+    assert "working_capital_balloon" not in v.flags

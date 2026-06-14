@@ -39,6 +39,7 @@ from .base import (
     SectorClass,
     SectorSpec,
     apply_narrative,
+    enrich_signal,
     out_of_scope_verdict,
     unbuilt_spec,
 )
@@ -74,7 +75,9 @@ def sector_class_for(symbol: str) -> SectorClass:
          deliberately unrouted, recognised industries→their sector, the rest
          →GENERIC).
     Anything still unresolved is ``UNKNOWN`` (out-of-scope neutral)."""
-    from ...market.sector_map import metadata_class_for, sector_for  # lazy: avoid import cycle
+    from ...market.sector_map import (  # lazy: avoid import cycle
+        index_class_for, metadata_class_for, sector_for,
+    )
 
     symbol = symbol.upper()
     override = SYMBOL_TO_CLASS.get(symbol)
@@ -91,6 +94,15 @@ def sector_class_for(symbol: str) -> SectorClass:
             return SectorClass(meta)
         except ValueError:
             pass   # stale config value from a newer/older code vintage
+    # Full-universe fallback: NSE index-CSV sector → class (config/sector_class_
+    # map.yaml). Consulted AFTER index + quote-metadata so the bank routing they
+    # own wins; Financial Services is absent from this map (the lender guard).
+    idx_cls = index_class_for(symbol)
+    if idx_cls:
+        try:
+            return SectorClass(idx_cls)
+        except ValueError:
+            pass
     return SectorClass.UNKNOWN
 
 
@@ -104,6 +116,7 @@ def classify_result(
     growth: dict | None,
     fields: dict | None = None,
     narrative: dict | None = None,
+    surprise: dict | None = None,
 ) -> QualityVerdict:
     """Route a result to its sector rule and apply the P1 built guard.
 
@@ -115,16 +128,23 @@ def classify_result(
     ``narrative`` is the filing's press-release signal dict
     (``NarrativeFields.as_dict()``, P7 — guidance / volumes / FDA / order book);
     when present it is folded into the P&L verdict via ``apply_narrative``,
-    using the sector's own operating line for the guidance gate."""
+    using the sector's own operating line for the guidance gate.
+
+    ``surprise`` is the optional fundamental-surprise dict (``events.matcher`` —
+    carries ``surprise_basis`` 'consensus'|'trend'); a real consensus surprise
+    lifts the v2 confidence to HIGH. Every returned verdict carries the v2 axes
+    (confidence / metrics / kpi_signals) via ``enrich_signal``."""
     spec = spec_for(symbol)
     if not spec.built:
-        return out_of_scope_verdict(spec.sector_class)
+        return enrich_signal(
+            out_of_scope_verdict(spec.sector_class), spec.sector_class,
+            growth, narrative, surprise)
     verdict = spec.classify(growth, fields)
     if narrative:
         verdict = apply_narrative(
             verdict, growth, narrative, spec.sector_class, spec.operating_line,
         )
-    return verdict
+    return enrich_signal(verdict, spec.sector_class, growth, narrative, surprise)
 
 
 __all__ = [

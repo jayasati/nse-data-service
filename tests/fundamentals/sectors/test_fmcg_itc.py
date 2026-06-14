@@ -85,3 +85,33 @@ def test_fmcg_price_led_revenue_with_margin_squeeze_shorts():
     assert v.label == "low"
     assert "low_quality_beat" in v.flags
     assert "other_income_propped" in v.flags
+
+
+def test_fmcg_price_led_volume_caps_long():
+    """Clean operating beat, but the narrative says volumes were flat while
+    revenue rose — price-led, not demand-led → the long caps to neutral."""
+    growth = {"yoy_revenue_pct": 8.0, "yoy_ebitda_pct": 6.0, "yoy_pat_pct": 7.0}
+    v = classify_result("ITC", growth, narrative={"volume_growth": 0.0})
+    assert v.direction is None and v.label == "neutral"
+    assert "price_led_growth" in v.flags
+
+
+def test_fmcg_volume_contraction_shorts_when_operating_flat():
+    """UVG is the signal: an outright volume contraction with a flat operating
+    line and no price offset (revenue also soft) is a demand red flag → SHORT."""
+    growth = {"yoy_revenue_pct": -1.0, "yoy_ebitda_pct": 0.5, "yoy_pat_pct": 2.0}
+    v = classify_result("ITC", growth, narrative={"volume_growth": -3.0})
+    assert v.direction == "short" and v.label == "low"
+    assert "volume_decline" in v.flags
+
+
+def test_fmcg_commodity_tailwind_caps_long():
+    """Margin beat driven by cheaper palm oil/packaging (material intensity fell
+    and explains the margin gain) → not durable → capped to neutral."""
+    growth = {
+        "yoy_revenue_pct": 4.0, "yoy_ebitda_pct": 8.0, "yoy_pat_pct": 9.0,
+        "yoy_ebitda_margin_chg_pp": 2.0, "yoy_material_ratio_chg_pp": -1.8,
+    }
+    v = classify_result("ITC", growth)
+    assert v.direction is None and v.label == "neutral"
+    assert "commodity_tailwind" in v.flags

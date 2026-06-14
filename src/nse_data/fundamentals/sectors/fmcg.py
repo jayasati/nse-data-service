@@ -1,37 +1,48 @@
-"""§2.4 FMCG — ✅ BUILT (operating-line verdict; volume/margin KPIs pending P7).
+"""§2.4 FMCG — ✅ BUILT (operating line + commodity guard + UVG narrative rule).
 
-FMCG's full tell is **volume growth** + gross/EBITDA margin — revenue alone lies
-(inflation fakes revenue growth; the §2.4 prop is "revenue up but volumes flat",
-price-led not demand-led). Volume lives in the press release / investor deck,
-not the P&L, so it waits on P7 narrative ingestion. What the P&L *does* support
-is the engine's core: the operating line (EBITDA) vs the headline, plus the
-other-income / tax props — and because the operating line is EBITDA (not
-revenue), a price-led print with shrinking margins shows up as an EBITDA miss
-even before volume data lands.
+FMCG's whole signal is **underlying volume growth (UVG)** — revenue alone lies
+(inflation/price fakes value growth). Generic reads value growth as quality; for
+FMCG it isn't unless volumes are growing. This rule layers the sector's three
+edges on the shared operating-quality verdict:
 
-  * Operating line: EBITDA (generic non-bank line). Volume growth & gross
-    margin proper need P7.
-  * KPIs still pending: underlying volume growth, gross margin, A&P spend,
-    rural vs urban commentary.
+  * **Operating line: EBITDA** (not revenue) — a price-led print with shrinking
+    margins already shows up as an EBITDA miss even before volume data lands.
+    Validated on the real ITC Q2 FY26 filing — revenue FELL −2.4% YoY while
+    EBITDA grew +3.5% (the *inverse* inflation trap), read correctly as a long.
+  * **commodity guard** (shared with auto) — FMCG *buys* commodities (palm oil,
+    packaging, wheat); a margin pop on cheaper inputs is an input windfall, not
+    durable demand → caps the long when the input drop explains the margin gain.
+  * **UVG (narrative, P7)** via ``base.apply_narrative`` — revenue up but volumes
+    ≤0 = price-led (caps a long); an outright volume *contraction* is a demand
+    red flag → never a long, and a short when the operating line doesn't offset
+    it. UVG phrasing is already lifted by ``parsers/narrative``.
 
-Validated against the real ITC Q2 FY26 standalone filing (clean operating beat
-→ long; revenue actually FELL −2.4% YoY while EBITDA grew — the inverse of the
-inflation trap, which the EBITDA line reads correctly) in
-tests/fundamentals/sectors/test_fmcg_itc.py.
+KPIs still narrative-only: gross margin, A&P spend, rural-vs-urban mix.
+Regression: tests/fundamentals/sectors/test_fmcg_itc.py.
 """
 from __future__ import annotations
 
+from ..earnings_quality import QualityVerdict
 from .base import (
     SectorClass,
     SectorSpec,
+    apply_commodity_guard,
     classify_operating_quality,
     generic_operating_growth,
 )
 
+
+def _classify(growth: dict | None, fields: dict | None = None) -> QualityVerdict:
+    # operating-quality verdict, then the shared input-cost (commodity) guard;
+    # the UVG/volume edge is folded in later by base.apply_narrative (it needs
+    # the filing's narrative, which classify() doesn't receive).
+    return apply_commodity_guard(classify_operating_quality(growth, fields), growth)
+
+
 SPEC = SectorSpec(
     sector_class=SectorClass.FMCG,
     operating_line=generic_operating_growth,
-    classify=classify_operating_quality,
+    classify=_classify,
     built=True,   # validated against the real ITC Q2 FY26 filing
     kpis=("volume growth", "gross margin", "EBITDA margin", "A&P spend", "rural vs urban"),
 )

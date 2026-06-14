@@ -40,10 +40,22 @@ class QualityVerdict:
     direction: str | None = None      # 'short' | 'long' | None — market-reaction lean
     flags: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
+    # --- Sector Signal Engine v2 (additive; defaults preserve old behaviour) ---
+    confidence: str = "medium"        # 'low' | 'medium' | 'high' — trade-gating tier
+    metrics: dict = field(default_factory=dict)   # numeric drivers — backtest audit trail
+    kpi_signals: list[str] = field(default_factory=list)  # sector KPIs that moved the read
 
     @property
     def summary(self) -> str:
         return "; ".join(self.reasons) if self.reasons else "no quality divergence"
+
+    @property
+    def tradable(self) -> bool:
+        """A directional call the engine is confident enough to act on.
+
+        Confidence gating (roadmap §"Confidence gating"): LOW is context-only —
+        better to skip a half-extracted or unproven read than trade it."""
+        return self.direction is not None and self.confidence != "low"
 
     def as_dict(self) -> dict:
         return {
@@ -51,6 +63,10 @@ class QualityVerdict:
             "direction": self.direction,
             "flags": list(self.flags),
             "summary": self.summary,
+            "confidence": self.confidence,
+            "metrics": dict(self.metrics),
+            "kpi_signals": list(self.kpi_signals),
+            "tradable": self.tradable,
         }
 
 

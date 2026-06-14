@@ -333,6 +333,41 @@ def classify_operating_quality(growth: dict | None, fields: dict | None = None) 
 # line is a pharma warning letter / import alert (playbook §2.6 — "very
 # negative regardless of P&L").
 _FDA_NEGATIVE = ("warning_letter", "import_alert")
+_VOLUME_DECLINE = -1.0      # FMCG underlying-volume contraction worse than this = demand red flag
+
+# Commodity-guard thresholds (percentage points of revenue) for input-buying
+# sectors (auto, FMCG): a margin move this large attributable to raw materials
+# flips a read from operating quality to an input-cost windfall / squeeze.
+_MATERIAL_TAILWIND_PP = -1.5
+_MATERIAL_HEADWIND_PP = 1.5
+
+
+def apply_commodity_guard(verdict: QualityVerdict, growth: dict | None) -> QualityVerdict:
+    """Input-buying sectors (auto, FMCG) — separate durable margin quality from a
+    raw-material windfall/squeeze (cheaper steel/aluminium/palm-oil/packaging).
+
+    Caps a long to a flagged neutral when the operating beat rode softer inputs
+    (material-cost intensity fell ≥1.5pp AND that drop explains ≥60% of the
+    EBITDA-margin gain — so a volume/mix-led beat with only minor input help
+    stays long). Flags an input-cost squeeze on a miss. Reads
+    ``material_ratio_chg_pp`` + ``ebitda_margin_chg_pp`` from ``quarter_growth``."""
+    mat = _g(growth, "yoy_material_ratio_chg_pp")        # −ve = inputs cheaper
+    if mat is None:
+        return verdict
+    margin = _g(growth, "yoy_ebitda_margin_chg_pp")       # +ve = margin expanded
+    if verdict.direction == "long" and mat <= _MATERIAL_TAILWIND_PP:
+        dominant = margin is None or (margin > 0 and abs(mat) >= 0.6 * margin)
+        if dominant:
+            verdict.flags.append("commodity_tailwind")
+            verdict.reasons.append(
+                f"margin aided by softer input costs (materials −{abs(mat):.1f}pp of "
+                f"revenue) — not a durable demand-led beat")
+            verdict.label, verdict.direction = "neutral", None
+    elif verdict.direction == "short" and mat >= _MATERIAL_HEADWIND_PP:
+        verdict.flags.append("commodity_headwind")
+        verdict.reasons.append(
+            f"margin squeezed by costlier inputs (materials +{mat:.1f}pp of revenue)")
+    return verdict
 
 
 def apply_narrative(
@@ -392,13 +427,26 @@ def apply_narrative(
     if sector_class in (SectorClass.FMCG, SectorClass.AUTO):
         vol = narrative.get("volume_growth")
         rev = _g(growth, "yoy_revenue_pct")
-        if vol is not None and vol <= 0.0 and rev is not None and rev > 0.0:
+        price_led = vol is not None and vol <= 0.0 and rev is not None and rev > 0.0
+        if price_led:
             verdict.flags.append("price_led_growth")
             verdict.reasons.append(
                 f"revenue {rev:+.1f}% but volumes {vol:+.1f}% — price-led, not demand-led"
             )
             if verdict.direction == "long":
                 verdict.label, verdict.direction = "neutral", None
+        # FMCG: volume IS the signal (§2.4). An outright volume CONTRACTION is a
+        # demand red flag — never a long; and when the operating line isn't
+        # beating to offset it, the market sells the print → short.
+        if sector_class == SectorClass.FMCG and vol is not None and vol < _VOLUME_DECLINE:
+            if not price_led:
+                verdict.flags.append("volume_decline")
+                verdict.reasons.append(f"underlying volumes contracted {vol:+.1f}% — demand weakness")
+            op, _ = operating_line(growth)
+            if verdict.direction == "long":
+                verdict.label, verdict.direction = "neutral", None
+            elif verdict.direction is None and op is not None and op <= _OP_BEAT:
+                verdict.label, verdict.direction = "low", "short"
 
     return verdict
 
@@ -435,3 +483,94 @@ def unbuilt_spec(
         built=False,
         kpis=kpis,
     )
+
+
+# --- Sector Signal Engine v2: confidence + metrics + KPI surfacing ------------
+# A post-classify enrichment applied by ``classify_result`` to EVERY built
+# sector. It is deliberately read-only on ``label``/``direction`` (so the nine
+# validated regressions are untouched) and adds the v2 axes the roadmap calls
+# for: a confidence tier (trade-gating), a numeric ``metrics`` dict (the
+# backtest audit trail), and the sector KPIs that contextualise the read.
+
+# Operating-line labels that mean we fell back to the weak revenue proxy — a
+# read with no visible operating line can't be high confidence.
+_REVENUE_PROXY = ("revenue yoy", "revenue qoq", "operating line")
+
+# Per-sector narrative KPIs worth surfacing on the signal (the "one number that
+# matters" per playbook §2/§3). Cross-sector context (guidance/dividend/tone)
+# is handled separately by apply_narrative.
+_SECTOR_KPI_KEYS: dict[SectorClass, tuple[str, ...]] = {
+    SectorClass.METALS: ("ebitda_per_tonne",),
+    SectorClass.AUTO: ("volume_growth",),
+    SectorClass.FMCG: ("volume_growth",),
+    SectorClass.IT: ("cc_revenue_growth_pct", "tcv_usd_mn", "attrition_pct"),
+    SectorClass.ENERGY: ("grm_usd_bbl",),
+    SectorClass.PHARMA: ("us_sales_growth_pct", "fda_status"),
+    SectorClass.CAPGOODS: ("order_inflow", "order_book"),
+}
+
+
+def assess_confidence(
+    growth: dict | None,
+    surprise: dict | None = None,
+    *,
+    sector_kpi_present: bool = False,
+) -> str:
+    """Trade-gating confidence (``low``/``medium``/``high``).
+
+    HIGH only when the read rests on a genuine surprise-vs-Street (consensus) or
+    a corroborating sector KPI on a visible operating line. LOW when there is no
+    operating line to stand on (only the revenue proxy, or nothing) — those are
+    context-only, never tradable (roadmap §"Confidence gating")."""
+    op_growth, op_label = generic_operating_growth(growth)
+    if op_growth is None or op_label.lower() in _REVENUE_PROXY:
+        return "low"
+    if surprise and surprise.get("surprise_basis") == "consensus":
+        return "high"
+    if sector_kpi_present:
+        return "high"
+    return "medium"
+
+
+def signal_metrics(growth: dict | None, narrative: dict | None = None) -> dict:
+    """The numeric drivers behind the verdict — the backtest audit trail
+    (``SectorSignal.metrics`` in the roadmap). Only non-null values are kept."""
+    op_growth, op_label = generic_operating_growth(growth)
+    out: dict = {"operating_line": op_label}
+    if op_growth is not None:
+        out["operating_growth_pct"] = round(op_growth, 2)
+    for key in ("yoy_pat_pct", "yoy_revenue_pct", "yoy_other_income_pct",
+                "yoy_pbt_pct", "yoy_tax_pct", "yoy_ppop_pct"):
+        v = _g(growth, key)
+        if v is not None:
+            out[key] = round(v, 2)
+    if narrative:
+        for k, v in narrative.items():
+            if v is not None and not str(k).startswith("_") and isinstance(v, (int, float, str)):
+                out[f"kpi_{k}"] = v
+    return out
+
+
+def enrich_signal(
+    verdict: QualityVerdict,
+    sector_class: SectorClass,
+    growth: dict | None,
+    narrative: dict | None = None,
+    surprise: dict | None = None,
+) -> QualityVerdict:
+    """Attach the v2 axes (confidence, metrics, kpi_signals) to a verdict.
+
+    Never changes ``label``/``direction`` — those are the sector rule's job;
+    this only adds the trade-gating + audit layer. An out-of-scope verdict
+    (unbuilt sector) is pinned to LOW confidence."""
+    kpi_keys = _SECTOR_KPI_KEYS.get(sector_class, ())
+    present = [k for k in kpi_keys if narrative and narrative.get(k) is not None]
+    verdict.kpi_signals = [f"{k}={narrative[k]}" for k in present] if narrative else []
+    verdict.metrics = signal_metrics(growth, narrative)
+
+    if "sector_out_of_scope" in verdict.flags:
+        verdict.confidence = "low"
+    else:
+        verdict.confidence = assess_confidence(
+            growth, surprise, sector_kpi_present=bool(present))
+    return verdict
