@@ -1,241 +1,225 @@
-"""Fetch NSE per-stock sector metadata for the focus universe and emit a
-sector-grouped markdown reference (SECTOR_UNIVERSE.md).
+"""Divide the top-1000 universe by NSE sector and emit SECTOR_UNIVERSE.md.
 
-The doc divides all top-1000 symbols by NSE's macro sector (Financial Services,
-Industrials, Healthcare, ...) and, per sector, documents the result-reading
-signal focus + which engine sector-class (fundamentals/sectors/) handles it.
-It is the human-readable companion to config/sector_mapping.yaml: a reviewer can
-see, for any quarter, which KPIs the sector-wise analysis should weigh.
+Source of truth is NSE's own index-constituent CSVs on nsearchives (NIFTY Total
+Market — the broadest 750-name index — carries an ``Industry`` column = NSE's
+~21 macro-sector taxonomy). These load from any IP (unlike /api/quote-equity,
+which NSE 403s), so the doc is reproducible on laptop or server.
 
-Source of truth is raw_quote_metadata (NSE /api/quote-equity per symbol). This
-fills the gaps first (only symbols missing metadata, unless --refresh), then
-writes the MD.
+Per sector the doc documents the **result-reading signal focus** and which engine
+class in ``fundamentals/sectors/`` handles it — the human-readable companion to
+``config/sector_mapping.yaml`` used when reading financial extractions.
+
+Coverage: ~666/1000 fall inside NSE Total Market. ETFs/index funds (no results)
+are listed separately. Genuine micro-caps outside every NSE index have no public
+sector feed and are grouped as Unclassified (generic operating-quality read).
 
     PYTHONPATH=src .venv/bin/python -u scripts/build_sector_md.py
-    .venv/bin/python -u scripts/build_sector_md.py --no-fetch   # MD only
-    .venv/bin/python -u scripts/build_sector_md.py --refresh    # re-fetch all
 """
 from __future__ import annotations
 
 import argparse
-import sys
-import time
+import csv
+import io
 from pathlib import Path
 
-from dotenv import load_dotenv
+import httpx
 
-load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=True)
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
+_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+# NIFTY Total Market (750) is a superset of Nifty 500 / midcap / smallcap /
+# microcap, so it alone gives full index coverage; the others are kept as
+# harmless fallbacks in case NSE renames the file.
+_INDEX_CSVS = [
+    "ind_niftytotalmarket_list.csv",
+    "ind_nifty500list.csv",
+    "ind_niftymicrocap250_list.csv",
+]
 
-# NSE macro sector -> (engine sector-class, built?, signal focus bullets).
-# "built" = the engine has a validated per-sector rule; otherwise it falls back
-# to the generic operating-quality read (revenue/EBITDA, with other-income/tax
-# props guarded). See SECTOR_RESULT_PLAYBOOK.md and fundamentals/sectors/.
+# NSE sector -> (engine sector-class, validated-rule?, signal-focus bullets).
+# "validated" = the engine has a proven per-sector rule (fundamentals/sectors/);
+# others fall back to the generic operating-quality read (revenue/EBITDA with
+# other-income & tax props guarded). See SECTOR_RESULT_PLAYBOOK.md.
 SECTOR_SIGNALS: dict[str, dict] = {
-    "Financial Services": {
-        "engine": "bfsi (lenders) / generic (AMC, broker, exchange)", "built": True,
-        "signals": [
-            "NII & NIM (margin trend), PPOP — the pre-provision earning power",
-            "Provisions & credit cost, GNPA/NNPA, slippages — asset quality",
-            "Loan & deposit growth, CASA; NBFC: AUM growth + credit cost",
-            "Lender guard: only banks/NBFC/HFC use the BFSI rule; fee-income "
-            "financials (AMC/exchange/broker) read as generic",
-        ],
-    },
-    "Information Technology": {
-        "engine": "it", "built": True,
-        "signals": [
-            "Constant-currency revenue growth & sequential momentum",
-            "Deal TCV / net new bookings, book-to-bill",
-            "EBIT margin trend, guidance, attrition",
-        ],
-    },
-    "Energy": {
-        "engine": "energy", "built": True,
-        "signals": [
-            "EBITDA operating line — GRM / marketing & refining margin, realizations",
-            "Other-income prop & tax prop GUARDS (ONGC false-LONG fix)",
-            "Volumes / throughput, capex cycle",
-        ],
-    },
-    "Utilities": {
-        "engine": "energy / generic", "built": False,
-        "signals": [
-            "Regulated RoE, PLF / plant load factor, capacity additions",
-            "Operating EBITDA ex other-income; tariff & receivables",
-        ],
-    },
-    "Healthcare": {
-        "engine": "pharma", "built": False,
-        "signals": [
-            "US / regulated-market sales, base business vs one-offs",
-            "Gross margin, R&D spend, USFDA status (narrative)",
-            "Operating quality read (generic fallback until pharma rule is built)",
-        ],
-    },
-    "Fast Moving Consumer Goods": {
-        "engine": "fmcg", "built": False,
-        "signals": [
-            "Underlying volume growth (UVG) vs price-led growth",
-            "Gross & EBITDA margin (input-cost cycle), A&P spend",
-        ],
-    },
-    "Consumer Discretionary": {
-        "engine": "auto / realty / generic", "built": False,
-        "signals": [
-            "Auto: volume growth + EBITDA margin + realization/ASP",
-            "Realty: pre-sales / bookings, collections, net debt",
-            "Retail & durables: SSSG, store adds, gross margin",
-        ],
-    },
-    "Industrials": {
-        "engine": "capgoods / generic", "built": False,
-        "signals": [
-            "Order inflow & closing order book, book-to-bill",
-            "Execution revenue, EBITDA margin, working-capital cycle",
-        ],
-    },
-    "Commodities": {
-        "engine": "metals / generic", "built": False,
-        "signals": [
-            "Realization & EBITDA per tonne, sales volumes",
-            "Input-cost spreads (coking coal, ore); cement: realization/bag",
-        ],
-    },
-    "Telecommunication": {
-        "engine": "generic", "built": False,
-        "signals": [
-            "ARPU trend, subscriber net adds, churn",
-            "EBITDA margin, capex / 5G rollout, net debt",
-        ],
-    },
-    "Services": {
-        "engine": "generic", "built": False,
-        "signals": [
-            "Segment revenue & EBITDA; read as generic operating quality",
-        ],
-    },
+    "Financial Services": {"engine": "bfsi (lenders) / generic (AMC·broker·exchange)", "built": True, "signals": [
+        "NII & NIM trend, PPOP — pre-provision earning power",
+        "Provisions & credit cost, GNPA/NNPA, slippages — asset quality",
+        "Loan/deposit growth, CASA; NBFC: AUM growth + credit cost",
+        "Lender guard: only banks/NBFC/HFC use the BFSI rule; fee-income names read generic"]},
+    "Information Technology": {"engine": "it", "built": True, "signals": [
+        "Constant-currency revenue growth & sequential momentum",
+        "Deal TCV / net-new bookings, book-to-bill",
+        "EBIT margin trend, guidance, attrition"]},
+    "Oil Gas & Consumable Fuels": {"engine": "energy", "built": True, "signals": [
+        "EBITDA operating line — GRM / refining & marketing margin, realizations",
+        "Other-income prop & tax prop GUARDS (the ONGC false-LONG fix)",
+        "Throughput / volumes, capex cycle"]},
+    "Power": {"engine": "energy / generic", "built": False, "signals": [
+        "PLF / plant load factor, capacity additions, regulated RoE",
+        "Operating EBITDA ex other-income; tariff & receivables"]},
+    "Utilities": {"engine": "energy / generic", "built": False, "signals": [
+        "Volumes (units sold / distributed), regulated returns",
+        "Operating EBITDA ex other-income; receivables cycle"]},
+    "Healthcare": {"engine": "pharma", "built": False, "signals": [
+        "US / regulated-market sales, base business vs one-offs",
+        "Gross margin, R&D spend, USFDA status (narrative)",
+        "Generic operating read until the pharma rule is built"]},
+    "Fast Moving Consumer Goods": {"engine": "fmcg", "built": False, "signals": [
+        "Underlying volume growth (UVG) vs price-led growth",
+        "Gross & EBITDA margin (input-cost cycle), A&P spend"]},
+    "Automobile and Auto Components": {"engine": "auto", "built": False, "signals": [
+        "Volume growth + realization/ASP + EBITDA margin",
+        "Mix (EV/premium), commodity (steel/Al) cost pass-through"]},
+    "Capital Goods": {"engine": "capgoods", "built": False, "signals": [
+        "Order inflow & closing order book, book-to-bill",
+        "Execution revenue, EBITDA margin, working-capital cycle"]},
+    "Construction": {"engine": "capgoods / generic", "built": False, "signals": [
+        "Order book & inflows, execution pace, EBITDA margin",
+        "Net debt & working capital (stretched receivables)"]},
+    "Metals & Mining": {"engine": "metals", "built": False, "signals": [
+        "Realization & EBITDA per tonne, sales volumes",
+        "Input-cost spreads (coking coal, ore), inventory effects"]},
+    "Construction Materials": {"engine": "metals / generic", "built": False, "signals": [
+        "Realization per bag/tonne, volumes, EBITDA/tonne",
+        "Fuel & freight cost (pet-coke, diesel)"]},
+    "Realty": {"engine": "realty", "built": False, "signals": [
+        "Pre-sales / bookings value & area, collections, launches",
+        "Net debt, embedded margin; revenue is POCS-lumpy — read bookings not P&L"]},
+    "Chemicals": {"engine": "generic", "built": False, "signals": [
+        "Realization & volumes, spreads vs raw material",
+        "Gross/EBITDA margin (commodity vs specialty mix)"]},
+    "Consumer Durables": {"engine": "generic", "built": False, "signals": [
+        "Volume growth, gross margin, channel inventory",
+        "Seasonality; commodity input cost"]},
+    "Consumer Services": {"engine": "generic", "built": False, "signals": [
+        "SSSG / same-store growth, store adds, occupancy/ARR-type KPIs",
+        "Gross margin & operating leverage"]},
+    "Textiles": {"engine": "generic", "built": False, "signals": [
+        "Realization & volumes, cotton/yarn spread, capacity utilization",
+        "Gross/EBITDA margin, export mix"]},
+    "Telecommunication": {"engine": "generic", "built": False, "signals": [
+        "ARPU trend, subscriber net adds, churn",
+        "EBITDA margin, capex / 5G rollout, net debt"]},
+    "Media Entertainment & Publication": {"engine": "generic", "built": False, "signals": [
+        "Ad vs subscription revenue, content cost",
+        "EBITDA margin, viewership/subscriber trend"]},
+    "Services": {"engine": "generic", "built": False, "signals": [
+        "Segment revenue & EBITDA; generic operating-quality read"]},
+    "Diversified": {"engine": "generic", "built": False, "signals": [
+        "Read each segment on its own; consolidated EBITDA & other-income mix"]},
 }
 _UNKNOWN = {"engine": "generic", "built": False,
-            "signals": ["No NSE macro sector on file — generic operating-quality read."]}
+            "signals": ["No NSE index sector on file — generic operating-quality read."]}
+
+# Micro-cap names outside every NSE index have no public sector feed; ETFs/funds
+# carry no results at all. Pattern-flag the latter so they're excluded, not
+# mislabelled.
+_ETF_TOKENS = ("BEES", "ETF", "LIQUID", "GOLD", "SILVER", "NIFTY", "SENSEX",
+               "CASE", "MAFANG", "MOM", "GSEC", "SDL", "NV20", "ALPHA", "MIDSEL")
 
 
-def _fetch_missing(conn, session, syms, refresh: bool) -> int:
-    from nse_data.collectors.quote_metadata import QuoteMetadata
-    have = {r[0].upper() for r in conn.execute(
-        "SELECT symbol FROM raw_quote_metadata WHERE sector IS NOT NULL")}
-    todo = syms if refresh else [s for s in syms if s not in have]
-    print(f"metadata: {len(have)} on file, fetching {len(todo)}\n", flush=True)
-    qm = QuoteMetadata()
-    cols = ("symbol", "company_name", "isin", "industry", "sector", "listing_date",
-            "face_value", "is_fno", "series", "trading_status", "last_price",
-            "pe_ratio", "market_cap_cr", "fetched_at")
-    n = 0
-    from nse_data.collectors.base import Request
-    for i, sym in enumerate(todo, 1):
-        time.sleep(0.35)
+def _looks_etf(sym: str) -> bool:
+    return any(t in sym for t in _ETF_TOKENS)
+
+
+def _fetch_index_sectors() -> dict[str, str]:
+    sec: dict[str, str] = {}
+    for f in _INDEX_CSVS:
         try:
-            data = session.get_json(
-                "quote_equity", "/api/quote-equity", params={"symbol": sym},
-                referer=f"https://www.nseindia.com/get-quotes/equity?symbol={sym}")
-            rows = qm.normalize(data, Request(
-                path_or_url="/api/quote-equity", params={"symbol": sym},
-                response_type="json", meta={"symbol": sym}))
+            r = httpx.get(f"https://nsearchives.nseindia.com/content/indices/{f}",
+                          headers={"User-Agent": _UA, "Referer": "https://www.nseindia.com/"},
+                          timeout=30, follow_redirects=True)
+            if r.status_code != 200:
+                print(f"  {f}: HTTP {r.status_code}", flush=True)
+                continue
+            n0 = len(sec)
+            for row in csv.DictReader(io.StringIO(r.text)):
+                s = (row.get("Symbol") or "").strip().upper()
+                ind = (row.get("Industry") or "").strip()
+                if s and ind:
+                    sec.setdefault(s, ind)
+            print(f"  {f}: +{len(sec)-n0} (total {len(sec)})", flush=True)
         except Exception as e:  # noqa: BLE001
-            print(f"[{i}/{len(todo)}] {sym:<14} ERR {e!r}", flush=True)
-            continue
-        if not rows or not rows[0].get("sector"):
-            print(f"[{i}/{len(todo)}] {sym:<14} no-sector", flush=True)
-            continue
-        r = rows[0]
-        conn.execute(
-            f"INSERT OR REPLACE INTO raw_quote_metadata ({', '.join(cols)}) "
-            f"VALUES ({', '.join(['?']*len(cols))})", [r[c] for c in cols])
-        conn.commit()
-        n += 1
-        if i % 25 == 0 or i == len(todo):
-            print(f"[{i}/{len(todo)}] {sym:<14} {r['sector']} / {r['industry']}", flush=True)
-    print(f"\nfetched {n} symbols\n", flush=True)
-    return n
-
-
-def _build_md(conn, syms) -> str:
-    rows = {r[0].upper(): r for r in conn.execute(
-        "SELECT symbol, sector, industry, company_name FROM raw_quote_metadata")}
-    by_sector: dict[str, list] = {}
-    for s in syms:
-        r = rows.get(s)
-        sector = (r[1] if r and r[1] else None) or "Unclassified"
-        by_sector.setdefault(sector, []).append((s, (r[2] if r else None) or "—"))
-
-    order = sorted(by_sector, key=lambda k: (-len(by_sector[k]), k))
-    out: list[str] = []
-    out.append("# Sector Universe — top-1000 result-signal map\n")
-    out.append("> Generated by `scripts/build_sector_md.py` from NSE per-stock "
-               "metadata (`raw_quote_metadata`). Each stock is grouped by NSE's "
-               "macro sector; per sector we note the **result-reading signal "
-               "focus** and which engine class in `fundamentals/sectors/` handles "
-               "it. Companion to `config/sector_mapping.yaml` and "
-               "`SECTOR_RESULT_PLAYBOOK.md`. Re-run when the universe changes.\n")
-    classified = sum(len(v) for k, v in by_sector.items() if k != "Unclassified")
-    out.append(f"**Coverage:** {classified}/{len(syms)} classified across "
-               f"{len([k for k in by_sector if k!='Unclassified'])} sectors.\n")
-
-    # summary table
-    out.append("## Summary\n")
-    out.append("| Sector | Stocks | Engine class | Validated rule |")
-    out.append("|---|---:|---|:--:|")
-    for sec in order:
-        meta = SECTOR_SIGNALS.get(sec, _UNKNOWN)
-        out.append(f"| {sec} | {len(by_sector[sec])} | {meta['engine']} | "
-                   f"{'✅' if meta['built'] else '⏳ generic'} |")
-    out.append("")
-
-    # per-sector detail
-    for sec in order:
-        meta = SECTOR_SIGNALS.get(sec, _UNKNOWN)
-        members = sorted(by_sector[sec])
-        out.append(f"## {sec}  ({len(members)})\n")
-        out.append(f"- **Engine class:** `{meta['engine']}` "
-                   f"({'validated rule' if meta['built'] else 'generic fallback'})")
-        out.append("- **Signal focus:**")
-        for s in meta["signals"]:
-            out.append(f"  - {s}")
-        out.append("")
-        # group members by NSE industry for readability
-        by_ind: dict[str, list[str]] = {}
-        for sym, ind in members:
-            by_ind.setdefault(ind, []).append(sym)
-        for ind in sorted(by_ind):
-            out.append(f"- *{ind}* — {', '.join(sorted(by_ind[ind]))}")
-        out.append("")
-    return "\n".join(out)
+            print(f"  {f}: ERR {e}", flush=True)
+    return sec
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--db", default="data/nse.db")
     ap.add_argument("--universe", default="config/universe_top1000.txt")
     ap.add_argument("--out", default="SECTOR_UNIVERSE.md")
-    ap.add_argument("--no-fetch", action="store_true", help="skip metadata fetch")
-    ap.add_argument("--refresh", action="store_true", help="re-fetch all symbols")
     args = ap.parse_args()
 
-    from nse_data.storage.db import open_db
-    from nse_data.session.manager import SessionManager
+    print("fetching NSE index-constituent CSVs:", flush=True)
+    sec = _fetch_index_sectors()
 
-    conn = open_db(args.db)
     syms = [l.strip().upper() for l in Path(args.universe).read_text().splitlines()
             if l.strip() and not l.startswith("#")]
 
-    if not args.no_fetch:
-        _fetch_missing(conn, SessionManager(), syms, args.refresh)
+    by_sector: dict[str, list[str]] = {}
+    etfs: list[str] = []
+    for s in syms:
+        if s in sec:
+            by_sector.setdefault(sec[s], []).append(s)
+        elif _looks_etf(s):
+            etfs.append(s)
+        else:
+            by_sector.setdefault("Unclassified", []).append(s)
 
-    md = _build_md(conn, syms)
-    Path(args.out).write_text(md)
-    conn.close()
-    print(f"wrote {args.out} ({len(md.splitlines())} lines)", flush=True)
+    real_sectors = [k for k in by_sector if k != "Unclassified"]
+    classified = sum(len(by_sector[k]) for k in real_sectors)
+    order = sorted(real_sectors, key=lambda k: (-len(by_sector[k]), k))
+    if "Unclassified" in by_sector:
+        order.append("Unclassified")
+
+    out: list[str] = []
+    out.append("# Sector Universe — top-1000 result-signal map\n")
+    out.append("> Generated by `scripts/build_sector_md.py` from NSE's index-"
+               "constituent CSVs (NIFTY Total Market `Industry` column = NSE macro "
+               "sector). Per sector: the **result-reading signal focus** and the "
+               "engine class in `fundamentals/sectors/` that handles it. Companion "
+               "to `config/sector_mapping.yaml` + `SECTOR_RESULT_PLAYBOOK.md`.\n")
+    out.append(f"**Coverage:** {classified}/{len(syms)} classified across "
+               f"{len(real_sectors)} NSE sectors · "
+               f"{len(by_sector.get('Unclassified', []))} unclassified micro-caps · "
+               f"{len(etfs)} ETFs/funds excluded.\n")
+
+    out.append("## Summary\n")
+    out.append("| Sector | Stocks | Engine class | Validated rule |")
+    out.append("|---|---:|---|:--:|")
+    for s in order:
+        m = SECTOR_SIGNALS.get(s, _UNKNOWN)
+        out.append(f"| {s} | {len(by_sector[s])} | {m['engine']} | "
+                   f"{'✅' if m['built'] else '⏳ generic'} |")
+    out.append("")
+
+    for s in order:
+        m = SECTOR_SIGNALS.get(s, _UNKNOWN)
+        members = sorted(by_sector[s])
+        out.append(f"## {s}  ({len(members)})\n")
+        out.append(f"- **Engine class:** `{m['engine']}` "
+                   f"({'validated rule' if m['built'] else 'generic fallback'})")
+        out.append("- **Signal focus:**")
+        for sig in m["signals"]:
+            out.append(f"  - {sig}")
+        out.append("")
+        # 8 per line for compact, scannable membership lists
+        for i in range(0, len(members), 8):
+            out.append("  " + ", ".join(f"`{x}`" for x in members[i:i + 8]))
+        out.append("")
+
+    if etfs:
+        out.append(f"## Excluded — ETFs / index funds  ({len(etfs)})\n")
+        out.append("> No company financials; should be dropped from "
+                   "`config/universe_top1000.txt`.\n")
+        es = sorted(etfs)
+        for i in range(0, len(es), 8):
+            out.append("  " + ", ".join(f"`{x}`" for x in es[i:i + 8]))
+        out.append("")
+
+    Path(args.out).write_text("\n".join(out))
+    print(f"\nwrote {args.out}: {classified}/{len(syms)} classified, "
+          f"{len(by_sector.get('Unclassified', []))} unclassified, "
+          f"{len(etfs)} ETFs", flush=True)
     return 0
 
 
