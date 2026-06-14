@@ -1,19 +1,26 @@
 """Bulk-fill extracted_financials for the whole focus universe from XBRL only.
 
 Deterministic and free: for each top-1000 symbol we ask NSE's NextApi for the
-latest result quarter, run the (audited) XBRL extractor, and persist the
-standalone + consolidated P&L. No PDF and no LLM are involved, so this never
-touches the Azure spend cap. Symbols without a parseable XBRL for their latest
-quarter are skipped (the announcement-driven LLM path / reconcile catches those).
+recent result quarters, run the (audited) XBRL parser on each, persist the
+standalone + consolidated P&L, then compute YoY/QoQ growth from the stored
+history. No PDF and no LLM are involved, so this never touches the Azure cap.
 
-Idempotent: persist_extraction upserts on (symbol, period_ending, scope), so
-re-running only refreshes. Strategy is stamped ``xbrl`` (confidence 1.0) — the
-same authoritative tier the after-close reconcile produces.
+Why multiple quarters: the dashboard reads YoY/QoQ from each row's stored
+``growth_json``, which ``quarter_growth`` derives by comparing a quarter to the
+prior-year quarter (12m back) and prior quarter (3m back) ALSO stored in
+extracted_financials. A single latest-quarter fill therefore shows YoY = "—";
+filling several recent quarters gives the comparison base. The integrated-filing
+API returns up to ~8 quarters in ONE call, so this costs one request per symbol
+plus the per-XBRL fetches.
+
+Idempotent: persist_extraction upserts on (symbol, period_ending, scope) and the
+growth pass re-UPDATEs growth_json, so re-running only refreshes. Strategy is
+stamped ``xbrl`` (confidence 1.0).
 
     PYTHONPATH=src .venv/bin/python -u scripts/fill_financials_xbrl.py
     # subset / smoke:
-    .venv/bin/python -u scripts/fill_financials_xbrl.py --symbols SBIN,INFY,RELIANCE
-    .venv/bin/python -u scripts/fill_financials_xbrl.py --limit 25 --sleep 0.5
+    .venv/bin/python -u scripts/fill_financials_xbrl.py --symbols SBIN,INFY
+    .venv/bin/python -u scripts/fill_financials_xbrl.py --limit 25 --quarters 6
 
 `-u` (unbuffered) keeps the per-symbol progress streaming live over SSH.
 """
@@ -37,16 +44,17 @@ def main() -> int:
     ap.add_argument("--universe", default="config/universe_top1000.txt")
     ap.add_argument("--symbols", help="comma list, overrides the universe file")
     ap.add_argument("--limit", type=int, default=0, help="cap symbols (0 = all)")
+    ap.add_argument("--quarters", type=int, default=8,
+                    help="recent quarters to backfill per symbol (for YoY/QoQ base)")
     ap.add_argument("--sleep", type=float, default=0.4,
                     help="seconds between symbols (be gentle on NSE)")
-    ap.add_argument("--only-missing", action="store_true",
-                    help="skip symbols that already have an xbrl-strategy row")
     args = ap.parse_args()
 
     from nse_data.storage.db import open_db
     from nse_data.session.manager import SessionManager
-    from nse_data.parsers.xbrl_extract import extract_via_xbrl, _api_date
-    from nse_data.fundamentals.from_results import persist_extraction
+    from nse_data.parsers.xbrl_extract import _http_get, _api_date, _file_ts
+    from nse_data.parsers.xbrl_financials import parse_xbrl
+    from nse_data.fundamentals.from_results import persist_extraction, quarter_growth
 
     conn = open_db(args.db)
     session = SessionManager()
@@ -56,23 +64,18 @@ def main() -> int:
     else:
         lines = Path(args.universe).read_text().splitlines()
         syms = [l.strip().upper() for l in lines if l.strip() and not l.startswith("#")]
-    if args.only_missing:
-        have = {r[0].upper() for r in conn.execute(
-            "SELECT DISTINCT symbol FROM extracted_financials WHERE strategy='xbrl'")}
-        syms = [s for s in syms if s not in have]
     if args.limit:
         syms = syms[: args.limit]
 
-    print(f"filling {len(syms)} symbols from XBRL (sleep={args.sleep}s)\n", flush=True)
+    print(f"filling {len(syms)} symbols from XBRL "
+          f"({args.quarters} quarters each, sleep={args.sleep}s)\n", flush=True)
 
-    n_ok = n_noxbrl = n_nofiling = n_err = 0
-    rows_stored = 0
+    n_ok = n_nofiling = n_err = 0
+    rows_stored = grown = 0
     started = time.time()
     for i, sym in enumerate(syms, 1):
         time.sleep(args.sleep)   # gentle on NSE to avoid blocked responses
         t0 = time.time()
-        # Find the latest result quarter for this symbol so extract_via_xbrl
-        # resolves the right filing (passing that quarter-end as broadcast_dt).
         try:
             data = session.get_json(
                 "nextapi",
@@ -82,43 +85,71 @@ def main() -> int:
             n_err += 1
             print(f"[{i:>4}/{len(syms)}] {sym:<14} API-ERR {e!r}", flush=True)
             continue
-        latest = max((_api_date(r.get("gfrQuaterEnded")) for r in (data or [])
-                      if _api_date(r.get("gfrQuaterEnded"))), default=None)
-        if latest is None:
+
+        # Group result filings by quarter-end; keep the newest filing per scope
+        # for each quarter (a re-filed correction supersedes). recs: qe -> [rows]
+        by_q: dict = {}
+        for r in (data or []):
+            qe = _api_date(r.get("gfrQuaterEnded"))
+            if qe is None or not r.get("gfrXbrlFname"):
+                continue
+            by_q.setdefault(qe, []).append(r)
+        if not by_q:
             n_nofiling += 1
             print(f"[{i:>4}/{len(syms)}] {sym:<14} no-filing", flush=True)
             continue
-        bdt = latest.strftime("%d-%b-%Y")
 
-        try:
-            res = extract_via_xbrl(conn, sym, bdt, session=session)
-        except Exception as e:  # noqa: BLE001 — one bad XBRL must not stop the batch
-            n_err += 1
-            print(f"[{i:>4}/{len(syms)}] {sym:<14} XBRL-ERR {e!r}", flush=True)
-            continue
-        if res is None or not res.period_ending or not (res.fields or res.consolidated):
-            n_noxbrl += 1
-            print(f"[{i:>4}/{len(syms)}] {sym:<14} no-xbrl (qe {bdt})", flush=True)
-            continue
-
-        stored = 0
-        for scope, block in (("standalone", res.fields), ("consolidated", res.consolidated)):
-            if block:
+        periods_done: list[tuple[str, str]] = []   # (period_ending, scope)
+        for qe in sorted(by_q, reverse=True)[: args.quarters]:
+            bdt = qe.strftime("%d-%b-%Y")
+            newest: dict = {}
+            for r in sorted(by_q[qe], key=lambda r: _file_ts(r.get("gfSystym")), reverse=True):
+                sc = "consolidated" if str(r.get("gfrConsolidated", "")).lower().startswith("cons") \
+                    else "standalone"
+                newest.setdefault(sc, r)
+            for rec in newest.values():
+                try:
+                    parsed = parse_xbrl(_http_get(rec["gfrXbrlFname"]))
+                except Exception:  # noqa: BLE001 — one bad XBRL must not stop the batch
+                    continue
+                if not parsed or not parsed.get("fields") or not parsed.get("period_ending"):
+                    continue
+                scope = "consolidated" if parsed.get("scope") == "consolidated" else "standalone"
                 persist_extraction(
-                    conn, symbol=sym, period_ending=res.period_ending, scope=scope,
-                    fields=block, units_phrase="xbrl", confidence=res.confidence,
+                    conn, symbol=sym, period_ending=parsed["period_ending"], scope=scope,
+                    fields=parsed["fields"], units_phrase="xbrl", confidence=1.0,
                     strategy="xbrl", source_fingerprint=None, broadcast_dt=bdt,
                 )
-                stored += 1
+                rows_stored += 1
+                periods_done.append((parsed["period_ending"], scope))
+
+        if not periods_done:
+            n_err += 1
+            print(f"[{i:>4}/{len(syms)}] {sym:<14} no-parseable-xbrl", flush=True)
+            continue
+
+        # Growth pass: now that the history is on file, compute YoY/QoQ per row
+        # and write growth_json (what the dashboard reads).
+        for period, scope in periods_done:
+            g = quarter_growth(conn, sym, period, scope)
+            if g:
+                import json
+                conn.execute(
+                    "UPDATE extracted_financials SET growth_json=? "
+                    "WHERE symbol=? AND period_ending=? AND scope=?",
+                    (json.dumps(g, sort_keys=True), sym, period, scope))
+                grown += 1
+        conn.commit()
+
         n_ok += 1
-        rows_stored += stored
-        print(f"[{i:>4}/{len(syms)}] OK  {sym:<14} stored={stored} "
-              f"period={res.period_ending} std={bool(res.fields)} "
-              f"con={bool(res.consolidated)} ({time.time()-t0:.1f}s)", flush=True)
+        quarters = sorted({p for p, _ in periods_done}, reverse=True)
+        print(f"[{i:>4}/{len(syms)}] OK  {sym:<14} rows={len(periods_done)} "
+              f"quarters={len(quarters)} latest={quarters[0]} "
+              f"({time.time()-t0:.1f}s)", flush=True)
 
     conn.close()
-    print(f"\nDONE in {time.time()-started:.0f}s: "
-          f"{n_ok} filled ({rows_stored} rows), {n_noxbrl} no-xbrl, "
+    print(f"\nDONE in {time.time()-started:.0f}s: {n_ok} symbols filled "
+          f"({rows_stored} rows, {grown} with growth), "
           f"{n_nofiling} no-filing, {n_err} errors", flush=True)
     return 0
 
