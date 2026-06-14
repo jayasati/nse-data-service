@@ -421,6 +421,133 @@ def run_extract_pass(
     return {"processed": processed, "stored": stored, "cost_usd": total_cost, "rows": report}
 
 
+# Fields whose change between the intraday LLM read and the after-close XBRL is
+# "material" enough to flag/alert — the headline numbers a trade keys off.
+_MATERIAL_FIELDS = ("revenue_cr", "total_income_cr", "pat_cr", "eps_basic")
+_MATERIAL_PCT = 3.0   # >3% move, or a sign flip, is material
+
+
+def _read_row(conn: sqlite3.Connection, symbol: str, period: str, scope: str) -> dict:
+    """Stored fields + narrative for one (symbol, period, scope). Does NOT touch
+    conn.row_factory (a global mutation would surprise callers)."""
+    cur = conn.execute(
+        "SELECT * FROM extracted_financials WHERE symbol=? AND period_ending=? AND scope=?",
+        (symbol, period, scope),
+    )
+    r = cur.fetchone()
+    return {d[0]: v for d, v in zip(cur.description, r)} if r else {}
+
+
+def _field_diffs(old: dict, new: dict) -> list[tuple]:
+    """(field, old, new, material) for numeric fields that changed."""
+    diffs = []
+    for f, nv in new.items():
+        if not isinstance(nv, (int, float)):
+            continue
+        ov = old.get(f)
+        if ov is None or abs(float(ov) - float(nv)) < 0.01:
+            continue
+        ref = max(abs(float(ov)), abs(float(nv)), 1e-9)
+        material = f in _MATERIAL_FIELDS and (
+            (float(ov) > 0) != (float(nv) > 0)                       # sign flip
+            or abs(float(ov) - float(nv)) / ref * 100.0 > _MATERIAL_PCT
+        )
+        diffs.append((f, ov, nv, material))
+    return diffs
+
+
+def reconcile_xbrl_pass(
+    conn: sqlite3.Connection, *, session, limit: int = 50, now: int | None = None,
+    sender=None, token: str | None = None, chat_id: str | None = None,
+) -> dict:
+    """After-close: replace intraday LLM-extracted financials with the
+    authoritative XBRL once NSE broadcasts it (hours after the PDF).
+
+    For each (symbol, period_ending) stored via a non-XBRL strategy, re-resolve
+    the XBRL; when available, overwrite the numbers (preserving the press-release
+    narrative, since XBRL carries none) and, if a headline figure changed
+    materially, send a correction note. Idempotent: once a row is strategy=xbrl
+    it's no longer a candidate.
+    """
+    now = now if now is not None else int(time.time())
+    from nse_data.parsers.xbrl_extract import extract_via_xbrl
+    targets = conn.execute(
+        "SELECT DISTINCT symbol, period_ending FROM extracted_financials "
+        "WHERE strategy IS NOT NULL AND strategy != 'xbrl' "
+        "ORDER BY period_ending DESC",
+    ).fetchall()
+
+    checked = corrected = 0
+    report: list[dict] = []
+    for symbol, period in targets:
+        if checked >= limit:
+            break
+        meta = conn.execute(
+            "SELECT source_fingerprint, broadcast_dt FROM extracted_financials "
+            "WHERE symbol=? AND period_ending=? AND strategy!='xbrl' LIMIT 1",
+            (symbol, period),
+        ).fetchone()
+        src_fp, bdt = (meta[0], meta[1]) if meta else (None, None)
+        try:
+            res = extract_via_xbrl(conn, symbol, bdt, session=session)
+        except Exception:  # noqa: BLE001
+            res = None
+        checked += 1
+        if res is None or res.period_ending != period:
+            continue   # XBRL not broadcast yet (or wrong quarter) — try again later
+
+        scope_diffs: list = []
+        for scope, block in (("standalone", res.fields), ("consolidated", res.consolidated)):
+            if not block:
+                continue
+            old = _read_row(conn, symbol, period, scope)
+            diffs = _field_diffs(old, block)
+            narrative = None
+            if old.get("narrative_json"):
+                try:
+                    narrative = json.loads(old["narrative_json"])   # keep press-release read
+                except (ValueError, TypeError):
+                    narrative = None
+            persist_extraction(
+                conn, symbol=symbol, period_ending=period, scope=scope,
+                fields=block, units_phrase="xbrl", confidence=1.0, strategy="xbrl",
+                source_fingerprint=src_fp, broadcast_dt=bdt, narrative=narrative, now=now,
+            )
+            if diffs:
+                scope_diffs.append((scope, diffs))
+        if scope_diffs:
+            corrected += 1
+            material = any(m for _, ds in scope_diffs for *_, m in ds)
+            report.append({"symbol": symbol, "period": period,
+                           "material": material, "diffs": scope_diffs})
+            log.info("xbrl_reconciled", symbol=symbol, period=period, material=material)
+            if material and sender is not None:
+                _send_correction(sender, token, chat_id, symbol, period, scope_diffs)
+    out = {"checked": checked, "corrected": corrected, "rows": report}
+    log.info("reconcile_xbrl_pass", checked=checked, corrected=corrected)
+    return out
+
+
+def _send_correction(sender, token, chat_id, symbol: str, period: str, scope_diffs: list) -> None:
+    """Telegram note: XBRL corrected an intraday-LLM result (material change)."""
+    import os
+    lines = [f"📒 {symbol} — Result figures corrected by XBRL ({period})"]
+    for scope, diffs in scope_diffs:
+        mats = [(f, o, n) for f, o, n, m in diffs if m]
+        if not mats:
+            continue
+        lines.append(f"  {scope}:")
+        for f, o, n in mats:
+            lines.append(f"    {f}: {o} -> {n}")
+    lines.append("(intraday LLM read superseded by the company's XBRL)")
+    thread = os.environ.get("TELEGRAM_TOPIC_EARNINGS")
+    thread_id = int(thread) if thread and thread.lstrip("-").isdigit() else None
+    try:
+        sender(token, chat_id, "\n".join(lines), thread_id)
+    except Exception:  # noqa: BLE001 — an alert failure must not abort reconciliation
+        log.exception("correction_alert_failed", symbol=symbol)
+
+
 # Per-night batch bound. Each PDF is one gpt-4o call; 40 keeps a heavy results
 # night well under the LLMClient daily cap ($10). Unprocessed results carry over
 # to the next night (the pass only picks text_extracted rows not yet stored).
@@ -504,10 +631,23 @@ def register_extract_runner(scheduler, db_path: str) -> str:
     def _tick():
         if not market_hours.is_trading_day(market_hours.now_ist().date()):
             return
+        from nse_data.session.manager import SessionManager
         conn = open_db(db_path)
+        session = SessionManager()   # XBRL URL lookup + correction sends
         try:
-            report = run_extract_pass(conn, limit=EXTRACT_BATCH_LIMIT, use_llm=True)
+            report = run_extract_pass(conn, limit=EXTRACT_BATCH_LIMIT, use_llm=True,
+                                      session=session)
             log.info("extract_financials_job", **report)
+            # After close the structured XBRL is broadcast: replace any intraday
+            # LLM reads with the authoritative numbers and alert on material fixes.
+            try:
+                from nse_data.bot.dispatcher import load_telegram_config, send_telegram
+                token, chat_id = load_telegram_config()
+                rec = reconcile_xbrl_pass(conn, session=session, limit=EXTRACT_BATCH_LIMIT,
+                                          sender=send_telegram, token=token, chat_id=chat_id)
+                log.info("reconcile_xbrl_job", **{k: rec[k] for k in ("checked", "corrected")})
+            except Exception:
+                log.exception("reconcile_xbrl_job_failed")
         except Exception:
             log.exception("extract_financials_job_failed")
         finally:

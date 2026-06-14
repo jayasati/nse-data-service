@@ -77,7 +77,9 @@ def _resolve_via_api(session, symbol: str, qe: _dt.date) -> dict:
     went stale when NSE moved to integrated filings, so the reliable source is
     the per-symbol quote API. Tries the integrated feed first (modern results,
     both scopes), then the financial-results feed (older quarters)."""
+    from urllib.parse import quote
     out: dict = {"standalone": None, "consolidated": None}
+    esym = quote(symbol, safe="")        # symbols like M&M / J&KBANK break the query otherwise
     ref = f"https://www.nseindia.com/get-quote/equity/{symbol}"
 
     def _scope(v: str | None) -> str:
@@ -88,12 +90,14 @@ def _resolve_via_api(session, symbol: str, qe: _dt.date) -> dict:
     try:
         data = session.get_json(
             "nextapi",
-            f"/api/NextApi/apiClient/GetQuoteApi?functionName=getIntegratedFilingData&symbol={symbol}",
+            f"/api/NextApi/apiClient/GetQuoteApi?functionName=getIntegratedFilingData&symbol={esym}",
             referer=ref)
     except Exception as e:  # noqa: BLE001
         log.warning("xbrl_api_failed", fn="integrated", symbol=symbol, error=str(e))
         data = None
-    for rec in data or []:
+    # Newest filing first: a company can re-file a corrected result for the same
+    # quarter (e.g. ENRIN), and only the latest submission matches the headline.
+    for rec in sorted(data or [], key=lambda r: _file_ts(r.get("gfSystym")), reverse=True):
         if _api_date(rec.get("gfrQuaterEnded")) != qe:
             continue
         scope = _scope(rec.get("gfrConsolidated"))
@@ -106,7 +110,7 @@ def _resolve_via_api(session, symbol: str, qe: _dt.date) -> dict:
     try:
         data = session.get_json(
             "nextapi",
-            f"/api/NextApi/apiClient/GetQuoteApi?functionName=getFinancialResultData&symbol={symbol}&marketApiType=equities&noOfRecords=8",
+            f"/api/NextApi/apiClient/GetQuoteApi?functionName=getFinancialResultData&symbol={esym}&marketApiType=equities&noOfRecords=8",
             referer=ref)
     except Exception as e:  # noqa: BLE001
         log.warning("xbrl_api_failed", fn="financial", symbol=symbol, error=str(e))
@@ -118,6 +122,17 @@ def _resolve_via_api(session, symbol: str, qe: _dt.date) -> dict:
         if out[scope] is None and rec.get("xbrl_attachment"):
             out[scope] = rec["xbrl_attachment"]
     return out
+
+
+def _file_ts(s: str | None) -> _dt.datetime:
+    """Filing timestamp ('08-May-2026 16:42') for newest-first ordering."""
+    if s:
+        for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y %H:%M", "%d-%b-%Y"):
+            try:
+                return _dt.datetime.strptime(s.strip(), fmt)
+            except ValueError:
+                continue
+    return _dt.datetime.min
 
 
 def _api_date(s: str | None) -> _dt.date | None:

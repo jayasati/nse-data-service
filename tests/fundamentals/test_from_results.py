@@ -173,3 +173,49 @@ def test_run_extract_pass_focus_universe_gate(conn, monkeypatch):
                               universe=frozenset({"RELIANCE"}))
     assert rep["processed"] == 1   # only RELIANCE; DEFUNCTCO gated out
     assert [r["symbol"] for r in rep["rows"]] == ["RELIANCE"]
+
+
+def test_reconcile_xbrl_overwrites_and_alerts(conn, monkeypatch):
+    """After-close: an intraday LLM (vision) result is overwritten by the XBRL,
+    and a material change fires a correction note."""
+    from nse_data.parsers.financial_extractor import ExtractionResult
+
+    # Intraday LLM row (wrong PAT 100 vs true 150) for SBIN Q4.
+    fr.persist_extraction(
+        conn, symbol="SBIN", period_ending="2026-03-31", scope="standalone",
+        fields={"revenue_cr": 1000.0, "pat_cr": 100.0, "eps_basic": 10.0},
+        units_phrase="vision", confidence=0.8, strategy="vision",
+        source_fingerprint="fpV", broadcast_dt="08-May-2026 14:01:38", now=1700000000)
+
+    xbrl_res = ExtractionResult(
+        fields={"revenue_cr": 1000.0, "pat_cr": 150.0, "eps_basic": 15.0},
+        consolidated={}, period_ending="2026-03-31", strategy="xbrl",
+        confidence=1.0, llm_cost_usd=0.0)
+    monkeypatch.setattr("nse_data.parsers.xbrl_extract.extract_via_xbrl",
+                        lambda *a, **k: xbrl_res)
+
+    sent = []
+    rep = fr.reconcile_xbrl_pass(
+        conn, session=object(), limit=10, now=1700100000,
+        sender=lambda tok, ch, txt, thr=None: sent.append(txt) or True)
+
+    assert rep["corrected"] == 1 and rep["rows"][0]["material"] is True
+    row = conn.execute(
+        "SELECT strategy, pat_cr, eps_basic FROM extracted_financials "
+        "WHERE symbol='SBIN' AND scope='standalone'").fetchone()
+    assert row == ("xbrl", 150.0, 15.0)        # overwritten with XBRL
+    assert sent and "SBIN" in sent[0] and "pat_cr: 100.0 -> 150.0" in sent[0]
+
+
+def test_reconcile_skips_when_no_xbrl(conn, monkeypatch):
+    """No XBRL yet (intraday) -> leave the LLM row untouched, no alert."""
+    fr.persist_extraction(
+        conn, symbol="ACME", period_ending="2026-03-31", scope="standalone",
+        fields={"pat_cr": 50.0}, units_phrase="vision", confidence=0.8,
+        strategy="vision", source_fingerprint="fp", broadcast_dt="08-May-2026 14:00:00",
+        now=1700000000)
+    monkeypatch.setattr("nse_data.parsers.xbrl_extract.extract_via_xbrl",
+                        lambda *a, **k: None)
+    rep = fr.reconcile_xbrl_pass(conn, session=object(), limit=10)
+    assert rep["corrected"] == 0
+    assert conn.execute("SELECT strategy FROM extracted_financials WHERE symbol='ACME'").fetchone()[0] == "vision"

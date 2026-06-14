@@ -60,10 +60,13 @@ def test_parse_xbrl_current_quarter_and_scaling():
     assert f["revenue_cr"] != 200.0
 
 
-def test_eps_prefers_continuing_and_discontinued():
+def test_eps_prefers_continuing_operations():
+    # NSE's headline EPS is the continuing-operations figure, so it wins over the
+    # combined continuing+discontinued tag. Diluted has no continuing tag in this
+    # fixture, so it falls back to the combined one.
     f = parse_xbrl(_XBRL)["fields"]
-    assert f["eps_basic"] == 4.2          # C&D preferred over continuing-only 5.0
-    assert f["eps_diluted"] == 4.1
+    assert f["eps_basic"] == 5.0          # continuing preferred over C&D 4.2
+    assert f["eps_diluted"] == 4.1        # fallback to C&D (no continuing-diluted)
 
 
 def test_consolidated_scope_detected():

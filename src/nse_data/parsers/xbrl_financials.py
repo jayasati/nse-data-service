@@ -17,33 +17,61 @@ import xml.etree.ElementTree as ET
 
 _RUPEES_TO_CRORE = 1e7
 
-# in-bse-fin local tag name -> canonical *_cr field (amounts, scaled by 1e7).
+# canonical *_cr field -> XBRL local tag names in PRIORITY order (first present
+# wins). Amounts are absolute rupees, scaled by 1e7. Covers both the commercial
+# INDAS taxonomy and the BANKING taxonomy (banks tag the same concepts
+# differently — e.g. ProfitLossForThePeriod, not ProfitLossForPeriod).
 _AMOUNT_TAGS = {
-    "RevenueFromOperations": "revenue_cr",
-    "OtherIncome": "other_income_cr",
-    "Income": "total_income_cr",
-    "Expenses": "total_expenses_cr",
-    "ProfitBeforeTax": "pbt_cr",
-    "TaxExpense": "tax_cr",
-    "ProfitLossForPeriod": "pat_cr",
-    "ComprehensiveIncomeForThePeriod": "total_comprehensive_income_cr",
+    "revenue_cr": ["RevenueFromOperations"],
+    "other_income_cr": ["OtherIncome"],
+    "total_income_cr": ["Income", "TotalIncome", "OperatingIncome"],   # OperatingIncome = general insurance
+    "total_expenses_cr": ["Expenses", "TotalExpenses"],
+    "pbt_cr": ["ProfitBeforeTax",
+               "ProfitBeforeExtraordinaryItemsAndTax",            # bank
+               "ProfitLossFromOrdinaryActivitiesBeforeTax",       # bank alt
+               "ProfitLossBeforeTax",                             # life insurance (IRDAI)
+               "ProfitOrLossBeforeTax"],                          # general insurance
+    "tax_cr": ["TaxExpense"],
+    "pat_cr": ["ProfitLossForPeriod",
+               "ProfitLossForThePeriod",                           # bank
+               "ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates",  # consolidated
+               "ProfitLossAfterTaxAndExtraordinaryItems",          # life insurance
+               "ProfitLossAfterTaxBeforeExtraordinaryItems",       # life insurance (no EO items)
+               "ProfitLossAfterTax"],                             # general insurance
+    "total_comprehensive_income_cr": ["ComprehensiveIncomeForThePeriod"],
+    # --- BFSI / banking lines ---
+    "operating_profit_cr": ["OperatingProfitBeforeProvisionAndContingencies"],  # PPOP
+    "provisions_cr": ["ProvisionsOtherThanTaxAndContingencies"],
+    "interest_earned_cr": ["InterestEarned"],
+    "interest_expended_cr": ["InterestExpended"],
 }
-# EPS (per-share rupees, NOT scaled). Headline = continuing+discontinued; fall
-# back to continuing-only when the combined tag is absent.
+# EPS (per-share rupees, NOT scaled). Headline = continuing+discontinued; bank
+# taxonomy uses the (Before|After)ExtraordinaryItems variants.
 _EPS_TAGS = {
+    # NSE's headline EPS is the CONTINUING-operations figure, so it comes first;
+    # the combined continuing+discontinued tag is only a fallback for filers that
+    # don't split it out (for them the two are equal anyway).
     "eps_basic": [
-        "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
         "BasicEarningsLossPerShareFromContinuingOperations",
+        "BasicEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
+        "BasicEarningsPerShareBeforeExtraordinaryItems",           # bank (NSE headline = before EO)
+        "BasicEarningsPerShareAfterExtraordinaryItems",            # bank alt
+        "BasicAndDilutedEPSAfterExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized",   # insurance
+        "BasicAndDilutedEPSBeforeExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized",  # insurance
     ],
     "eps_diluted": [
-        "DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
         "DilutedEarningsLossPerShareFromContinuingOperations",
+        "DilutedEarningsLossPerShareFromContinuingAndDiscontinuedOperations",
+        "DilutedEarningsPerShareBeforeExtraordinaryItems",         # bank (NSE headline = before EO)
+        "DilutedEarningsPerShareAfterExtraordinaryItems",          # bank alt
+        "BasicAndDilutedEPSAfterExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized",   # insurance (combined)
+        "BasicAndDilutedEPSBeforeExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized",  # insurance (combined)
     ],
 }
 
-# A current-quarter context is a 3-month duration (allow month-length wobble).
-_QUARTER_MIN_DAYS = 80
-_QUARTER_MAX_DAYS = 100
+# A reporting period is a duration; the full-year YTD is ~365 days. Anything
+# shorter is an interim (quarter, or a half-year for banks that file H2 at Q4).
+_ANNUAL_MIN_DAYS = 350
 
 
 def _local(tag: str) -> str:
@@ -75,8 +103,8 @@ def _parse_contexts(root) -> dict[str, dict]:
                 ctx["end"] = (sub.text or "").strip()
             elif lt == "instant":
                 ctx["instant"] = (sub.text or "").strip()
-            elif lt == "explicitMember":
-                ctx["has_dim"] = True       # dimensioned (segment/expense breakdown)
+            elif lt in ("explicitMember", "typedMember"):
+                ctx["has_dim"] = True       # dimensioned (segment/related-party/etc.)
         out[el.get("id")] = ctx
     return out
 
@@ -93,20 +121,26 @@ def _quarter_days(ctx: dict) -> int | None:
 
 
 def _current_quarter_context(contexts: dict[str, dict]) -> str | None:
-    """The un-dimensioned ~3-month context with the latest end date.
+    """The un-dimensioned interim-reporting context the result leads with.
 
-    The headline P&L facts hang off this; dimensioned (segment/expense) and
-    year-to-date contexts are excluded, and 'latest end' avoids the year-ago
-    quarter."""
+    Headline P&L facts hang off this. Dimensioned (segment/expense) contexts are
+    excluded. We take the latest end date (avoids the year-ago period) and, among
+    those, prefer the shortest *sub-annual* duration — the quarter for normal
+    filers, or the half-year for banks that report H2 at the Q4 filing — falling
+    back to the full-year only if no interim period exists."""
     cands = [
-        (cid, ctx) for cid, ctx in contexts.items()
+        (cid, ctx, d) for cid, ctx in contexts.items()
         if not ctx["has_dim"]
         and (d := _quarter_days(ctx)) is not None
-        and _QUARTER_MIN_DAYS <= d <= _QUARTER_MAX_DAYS
+        and d > 0
     ]
     if not cands:
         return None
-    return max(cands, key=lambda kc: kc[1]["end"])[0]
+    latest_end = max(c[1]["end"] for c in cands)
+    at_latest = [c for c in cands if c[1]["end"] == latest_end]
+    sub_annual = [c for c in at_latest if c[2] < _ANNUAL_MIN_DAYS]
+    pool = sub_annual or at_latest        # interim if present, else the YTD/year
+    return min(pool, key=lambda c: c[2])[0]   # shortest = the lead reporting period
 
 
 def parse_xbrl(data: bytes | str) -> dict | None:
@@ -138,14 +172,20 @@ def parse_xbrl(data: bytes | str) -> dict | None:
                 raw[lt] = val
 
     fields: dict[str, float] = {}
-    for tag, canon in _AMOUNT_TAGS.items():
-        if tag in raw:
-            fields[canon] = round(raw[tag] / _RUPEES_TO_CRORE, 2)
+    for canon, tags in _AMOUNT_TAGS.items():
+        for tag in tags:                       # first present tag wins
+            if tag in raw:
+                fields[canon] = round(raw[tag] / _RUPEES_TO_CRORE, 2)
+                break
     for canon, tags in _EPS_TAGS.items():
         for tag in tags:
             if tag in raw:
                 fields[canon] = raw[tag]
                 break
+    # Banks report NII implicitly; derive it from the interest lines.
+    if "interest_earned_cr" in fields and "interest_expended_cr" in fields:
+        fields["net_interest_income_cr"] = round(
+            fields["interest_earned_cr"] - fields["interest_expended_cr"], 2)
 
     period = contexts[cur_id]["end"]
     return {
