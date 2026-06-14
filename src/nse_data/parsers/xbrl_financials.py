@@ -39,11 +39,38 @@ _AMOUNT_TAGS = {
                "ProfitLossAfterTaxBeforeExtraordinaryItems",       # life insurance (no EO items)
                "ProfitLossAfterTax"],                             # general insurance
     "total_comprehensive_income_cr": ["ComprehensiveIncomeForThePeriod"],
+    # --- non-bank operating-EBITDA inputs (EBITDA = PBT + finance_cost +
+    #     depreciation − other_income; from_results.derive_ebitda). Without these
+    #     the EBITDA YoY column is blank and the operating line falls back to the
+    #     weaker core-ex-OI / revenue proxy. ---
+    "depreciation_cr": ["DepreciationDepletionAndAmortisationExpense",
+                        "DepreciationAndAmortisationExpense"],
+    "finance_cost_cr": ["FinanceCosts", "FinanceCost"],
+    # --- cost structure (non-bank): gross margin & bottom-up EBITDA inputs ---
+    "cost_of_materials_cr": ["CostOfMaterialsConsumed"],
+    "purchases_of_stock_cr": ["PurchasesOfStockInTrade"],
+    "change_in_inventory_cr": ["ChangesInInventoriesOfFinishedGoodsWorkInProgressAndStockInTrade"],
+    "employee_cost_cr": ["EmployeeBenefitExpense", "EmployeesCost"],   # non-bank | bank
+    "other_expenses_cr": ["OtherExpenses"],
+    # --- earnings quality: the prop / one-off detectors ---
+    "exceptional_items_cr": ["ExceptionalItemsBeforeTax", "ExceptionalItems",
+                             "ExtraordinaryItems"],
+    "pbt_before_exceptional_cr": ["ProfitBeforeExceptionalItemsAndTax"],
+    "current_tax_cr": ["CurrentTax"],
+    "deferred_tax_cr": ["DeferredTax"],
+    # --- below-the-line / comprehensive ---
+    "share_of_associates_cr": ["ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod"],
+    "other_comprehensive_income_cr": ["OtherComprehensiveIncomeNetOfTaxes",
+                                      "OtherComprehensiveIncome"],
     # --- BFSI / banking lines ---
     "operating_profit_cr": ["OperatingProfitBeforeProvisionAndContingencies"],  # PPOP
     "provisions_cr": ["ProvisionsOtherThanTaxAndContingencies"],
     "interest_earned_cr": ["InterestEarned"],
     "interest_expended_cr": ["InterestExpended"],
+    "operating_expenses_cr": ["OperatingExpenses",
+                              "ExpenditureExcludingProvisionsAndContingencies"],
+    "gross_npa_cr": ["GrossNonPerformingAssets"],
+    "net_npa_cr": ["NonPerformingAssets"],
 }
 # EPS (per-share rupees, NOT scaled). Headline = continuing+discontinued; bank
 # taxonomy uses the (Before|After)ExtraordinaryItems variants.
@@ -67,6 +94,16 @@ _EPS_TAGS = {
         "BasicAndDilutedEPSAfterExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized",   # insurance (combined)
         "BasicAndDilutedEPSBeforeExtraordinaryItemsNetOfTaxExpenseForThePeriodNotToBeAnnualized",  # insurance (combined)
     ],
+}
+
+# Ratio/percentage tags (banks): stored as FRACTIONS in the XBRL
+# (PercentageOfGrossNpa = 0.0149 → 1.49%), so scale ×100, never to crore. These
+# feed the asset-quality columns the bank result row renders (GNPA%/NNPA%).
+_RATIO_TAGS = {
+    "gross_npa_pct": ["PercentageOfGrossNpa"],
+    "net_npa_pct": ["PercentageOfNpa"],
+    "cet1_ratio": ["CET1Ratio"],              # bank capital adequacy
+    "return_on_assets": ["ReturnOnAssets"],   # bank ROA
 }
 
 # A reporting period is a duration; the full-year YTD is ~365 days. Anything
@@ -143,6 +180,23 @@ def _current_quarter_context(contexts: dict[str, dict]) -> str | None:
     return min(pool, key=lambda c: c[2])[0]   # shortest = the lead reporting period
 
 
+def _current_instant_context(contexts: dict[str, dict], period_end: str | None) -> str | None:
+    """The undimensioned balance-sheet (instant) context at the reporting date.
+
+    Balance-sheet facts (receivables / inventory / payables — the working-capital
+    inputs) hang off an *instant* context, not the quarter's duration context.
+    Prefer the instant that matches the period end; else the latest instant."""
+    cands = [(cid, ct["instant"]) for cid, ct in contexts.items()
+             if not ct["has_dim"] and ct["instant"]]
+    if not cands:
+        return None
+    if period_end:
+        for cid, inst in cands:
+            if inst[:10] == period_end[:10]:
+                return cid
+    return max(cands, key=lambda c: c[1])[0]
+
+
 def parse_xbrl(data: bytes | str) -> dict | None:
     """Parse one XBRL instance → {scope, period_ending, fields} or None.
 
@@ -182,12 +236,43 @@ def parse_xbrl(data: bytes | str) -> dict | None:
             if tag in raw:
                 fields[canon] = raw[tag]
                 break
+    for canon, tags in _RATIO_TAGS.items():       # fraction → percent
+        for tag in tags:
+            if tag in raw:
+                fields[canon] = round(raw[tag] * 100.0, 2)
+                break
     # Banks report NII implicitly; derive it from the interest lines.
     if "interest_earned_cr" in fields and "interest_expended_cr" in fields:
         fields["net_interest_income_cr"] = round(
             fields["interest_earned_cr"] - fields["interest_expended_cr"], 2)
 
     period = contexts[cur_id]["end"]
+
+    # Balance-sheet working-capital inputs (capgoods working_capital_balloon
+    # guard): read from the period-end INSTANT context. Receivables & payables
+    # sum current + non-current (capgoods carry large non-current retention).
+    inst_id = _current_instant_context(contexts, period)
+    if inst_id is not None:
+        raw_i: dict[str, float] = {}
+        for el in root.iter():
+            if el.get("contextRef") == inst_id:
+                lt = _local(el.tag)
+                v = _to_float(el.text)
+                if v is not None and lt not in raw_i:
+                    raw_i[lt] = v
+
+        def _sum_bs(*tags: str) -> float | None:
+            present = [raw_i[t] for t in tags if t in raw_i]
+            return round(sum(present) / _RUPEES_TO_CRORE, 2) if present else None
+
+        for canon, tags in (
+            ("trade_receivables_cr", ("TradeReceivablesCurrent", "TradeReceivablesNoncurrent")),
+            ("inventories_cr", ("Inventories",)),
+            ("trade_payables_cr", ("TradePayablesCurrent", "TradePayablesNoncurrent")),
+        ):
+            v = _sum_bs(*tags)
+            if v is not None:
+                fields[canon] = v
     return {
         "scope": "consolidated" if scope and "consolid" in scope else "standalone",
         "period_ending": period[:10] if period else None,

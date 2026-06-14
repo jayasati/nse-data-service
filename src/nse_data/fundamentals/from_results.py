@@ -33,6 +33,15 @@ AMOUNT_FIELDS = (
     "pbt_cr", "tax_cr", "pat_cr", "total_comprehensive_income_cr",
     "eps_basic", "eps_diluted", "cfo_cr",
     "depreciation_cr", "finance_cost_cr",   # non-bank operating-EBITDA inputs (P3)
+    # cost structure (gross margin & bottom-up EBITDA) + earnings-quality lines
+    # + below-the-line (migration 072). NULL when the filing/XBRL omits them.
+    "cost_of_materials_cr", "purchases_of_stock_cr", "change_in_inventory_cr",
+    "employee_cost_cr", "other_expenses_cr",
+    "exceptional_items_cr", "pbt_before_exceptional_cr",
+    "current_tax_cr", "deferred_tax_cr",
+    "share_of_associates_cr", "other_comprehensive_income_cr",
+    # balance-sheet working capital (migration 073) — capgoods balloon guard
+    "trade_receivables_cr", "inventories_cr", "trade_payables_cr",
 )
 
 # BFSI operating lines (Week 17.5, S2) — persisted alongside the headline fields
@@ -42,6 +51,9 @@ BFSI_FIELDS = (
     "interest_earned_cr", "interest_expended_cr", "net_interest_income_cr",
     "operating_profit_cr", "provisions_cr", "profit_on_sale_of_investments_cr",
     "gross_npa_pct", "net_npa_pct", "slippages_cr",
+    # bank health (migration 072): opex, NPA amounts, capital adequacy, ROA.
+    "operating_expenses_cr", "gross_npa_cr", "net_npa_cr",
+    "cet1_ratio", "return_on_assets",
 )
 
 # A result filing's announcement subject. Board-meeting *outcomes* often carry
@@ -825,16 +837,25 @@ def derive_core_operating(growth: dict | None, fields: dict | None) -> dict:
 def derive_ebitda(growth: dict | None, fields: dict | None) -> dict:
     """True operating EBITDA growth, when the inputs are extracted.
 
-    ``EBITDA = PBT + finance_cost + depreciation − other_income`` — operating
-    profit before interest, tax, D&A and excluding non-operating other income.
-    This is the textbook operating line for non-banks; it supersedes the
-    core-ex-OI proxy when depreciation & finance costs are present, and falls
-    back to it (and finally revenue) when they are not. Adds ``yoy``/``qoq_
-    ebitda_pct``. Pure arithmetic; only emitted when the prior-period EBITDA base
-    is positive. Banks ignore this key — their operating line is PPOP."""
+    ``EBITDA = PBT(before exceptional) + finance_cost + depreciation − other_income``
+    — operating profit before interest, tax, D&A, **exceptional items** and
+    non-operating other income. Using PBT-before-exceptional is what keeps a
+    one-off (e.g. JSW Steel's Q4 FY26 ₹17,888 cr exceptional gain) from inflating
+    the operating line; it falls back to plain PBT when the filing doesn't split
+    out exceptionals (i.e. when there are none). This is the textbook operating
+    line for non-banks; it supersedes the core-ex-OI proxy when depreciation &
+    finance costs are present, and falls back to it (and finally revenue) when
+    they are not. Adds ``yoy``/``qoq_ebitda_pct``. Pure arithmetic; only emitted
+    when the prior-period EBITDA base is positive. Banks ignore this key — their
+    operating line is PPOP."""
     growth = growth or {}
     fields = fields or {}
-    pbt, oi = fields.get("pbt_cr"), fields.get("other_income_cr")
+    # PBT before exceptional items when the filing splits it out, else plain PBT.
+    pbt = fields.get("pbt_before_exceptional_cr")
+    pbt_key = "pbt_before_exceptional"
+    if not isinstance(pbt, (int, float)):
+        pbt, pbt_key = fields.get("pbt_cr"), "pbt"
+    oi = fields.get("other_income_cr")
     dep, fin = fields.get("depreciation_cr"), fields.get("finance_cost_cr")
     if (not isinstance(pbt, (int, float)) or not isinstance(oi, (int, float))
             or not isinstance(dep, (int, float)) or not isinstance(fin, (int, float))):
@@ -842,7 +863,11 @@ def derive_ebitda(growth: dict | None, fields: dict | None) -> dict:
     ebitda_cur = pbt + fin + dep - oi
     out: dict[str, float] = {}
     for period in ("yoy", "qoq"):
-        pbt_p = _undo_pct(pbt, growth.get(f"{period}_pbt_pct"))
+        # prior PBT-before-exceptional growth, falling back to plain PBT growth
+        pbt_pct = growth.get(f"{period}_{pbt_key}_pct")
+        if pbt_pct is None:
+            pbt_pct = growth.get(f"{period}_pbt_pct")
+        pbt_p = _undo_pct(pbt, pbt_pct)
         fin_p = _undo_pct(fin, growth.get(f"{period}_finance_cost_pct"))
         dep_p = _undo_pct(dep, growth.get(f"{period}_depreciation_pct"))
         oi_p = _undo_pct(oi, growth.get(f"{period}_other_income_pct"))
@@ -882,7 +907,9 @@ def _nearest_prior_row(
     rows = conn.execute(
         "SELECT period_ending, revenue_cr, pat_cr, eps_basic, total_income_cr, "
         "operating_profit_cr, net_interest_income_cr, provisions_cr, other_income_cr, "
-        "pbt_cr, tax_cr, depreciation_cr, finance_cost_cr "
+        "pbt_cr, tax_cr, depreciation_cr, finance_cost_cr, pbt_before_exceptional_cr, "
+        "cost_of_materials_cr, employee_cost_cr, other_expenses_cr, "
+        "trade_receivables_cr, inventories_cr, trade_payables_cr "
         "FROM extracted_financials "
         "WHERE symbol = ? AND scope = ? AND period_ending < ?",
         (symbol, scope, current_period),
@@ -901,10 +928,14 @@ def _nearest_prior_row(
 
 # Column index in the _nearest_prior_row / cur SELECT for each growth input.
 # (period_ending=0, revenue=1, pat=2, eps=3, total_income=4, ppop=5, nii=6,
-#  provisions=7, other_income=8, pbt=9, tax=10, depreciation=11, finance_cost=12)
+#  provisions=7, other_income=8, pbt=9, tax=10, depreciation=11, finance_cost=12,
+#  pbt_before_exceptional=13, cost_of_materials=14, employee_cost=15, other_expenses=16,
+#  trade_receivables=17, inventories=18, trade_payables=19)
 _GROW_IDX = {"revenue": 1, "pat": 2, "total_income": 4, "ppop": 5, "nii": 6,
              "provisions": 7, "other_income": 8, "pbt": 9, "tax": 10,
-             "depreciation": 11, "finance_cost": 12}
+             "depreciation": 11, "finance_cost": 12, "pbt_before_exceptional": 13,
+             "cost_of_materials": 14, "employee_cost": 15, "other_expenses": 16,
+             "trade_receivables": 17, "inventories": 18, "trade_payables": 19}
 
 
 def quarter_growth(
@@ -923,7 +954,9 @@ def quarter_growth(
     cur = conn.execute(
         "SELECT period_ending, revenue_cr, pat_cr, eps_basic, total_income_cr, "
         "operating_profit_cr, net_interest_income_cr, provisions_cr, other_income_cr, "
-        "pbt_cr, tax_cr, depreciation_cr, finance_cost_cr "
+        "pbt_cr, tax_cr, depreciation_cr, finance_cost_cr, pbt_before_exceptional_cr, "
+        "cost_of_materials_cr, employee_cost_cr, other_expenses_cr, "
+        "trade_receivables_cr, inventories_cr, trade_payables_cr "
         "FROM extracted_financials "
         "WHERE symbol = ? AND scope = ? AND period_ending = ?",
         (symbol, scope, period_ending),
@@ -945,6 +978,10 @@ def quarter_growth(
             ("yoy_pbt_pct", "pbt"), ("yoy_tax_pct", "tax"),
             ("yoy_depreciation_pct", "depreciation"),
             ("yoy_finance_cost_pct", "finance_cost"),
+            ("yoy_pbt_before_exceptional_pct", "pbt_before_exceptional"),
+            ("yoy_cost_of_materials_pct", "cost_of_materials"),
+            ("yoy_employee_cost_pct", "employee_cost"),
+            ("yoy_other_expenses_pct", "other_expenses"),
         ):
             i = _GROW_IDX[name]
             v = _pct_change(g(i), yoy[i])
@@ -959,11 +996,55 @@ def quarter_growth(
             ("qoq_pbt_pct", "pbt"), ("qoq_tax_pct", "tax"),
             ("qoq_depreciation_pct", "depreciation"),
             ("qoq_finance_cost_pct", "finance_cost"),
+            ("qoq_pbt_before_exceptional_pct", "pbt_before_exceptional"),
+            ("qoq_cost_of_materials_pct", "cost_of_materials"),
+            ("qoq_employee_cost_pct", "employee_cost"),
+            ("qoq_other_expenses_pct", "other_expenses"),
         ):
             i = _GROW_IDX[name]
             v = _pct_change(g(i), qoq[i])
             if v is not None:
                 out[key] = round(v, 2)
+
+    # Cost-line INTENSITY change (percentage points of revenue), computed from the
+    # current vs prior rows directly. Negative material-ratio change = inputs got
+    # cheaper as a share of revenue — the commodity-tailwind signal the auto/FMCG
+    # rules use to tell a durable margin gain (volume/mix/pricing) from an
+    # input-cost windfall. ``mi`` = cost-line column index in the SELECT. The
+    # EBITDA-margin change (pp) lets a rule check whether the input move actually
+    # explains the margin gain.
+    def _ebitda_lvl(r):
+        pbt = r[13] if r[13] is not None else r[9]      # before-exceptional, else PBT
+        if pbt is None or r[12] is None or r[11] is None or r[8] is None:
+            return None
+        return pbt + r[12] + r[11] - r[8]               # +finance +deprec −other income
+
+    for period, prior in (("yoy", yoy), ("qoq", qoq)):
+        if prior is None:
+            continue
+        rev_c, rev_p = g(1), prior[1]
+        if not rev_c or not rev_p:
+            continue
+        for key, mi in (("material_ratio_chg_pp", 14),
+                        ("employee_ratio_chg_pp", 15),
+                        ("other_exp_ratio_chg_pp", 16)):
+            cc, cp = g(mi), prior[mi]
+            if cc is not None and cp is not None:
+                out[f"{period}_{key}"] = round((cc / rev_c - cp / rev_p) * 100, 2)
+        eb_c, eb_p = _ebitda_lvl(cur), _ebitda_lvl(prior)
+        if eb_c is not None and eb_p is not None:
+            out[f"{period}_ebitda_margin_chg_pp"] = round((eb_c / rev_c - eb_p / rev_p) * 100, 2)
+        # Working-capital intensity change (pp of revenue): WC = receivables +
+        # inventory − payables. A rising ratio = cash stuck in the balance sheet
+        # (the capgoods working_capital_balloon tell). Needs all three balance-
+        # sheet lines on both rows.
+        def _wc(r):
+            recv, inv, pay = r[17], r[18], r[19]
+            return None if recv is None or inv is None or pay is None else recv + inv - pay
+        wc_c, wc_p = _wc(cur), _wc(prior)
+        if wc_c is not None and wc_p is not None:
+            out[f"{period}_wc_ratio_chg_pp"] = round((wc_c / rev_c - wc_p / rev_p) * 100, 2)
+
     # Derive the non-bank operating lines from the growth just computed — the
     # lines the energy/generic sector rules read (base.generic_operating_growth):
     # true EBITDA when depreciation & finance costs are present, else core profit
@@ -971,6 +1052,7 @@ def quarter_growth(
     levels = {
         "pbt_cr": g(9), "other_income_cr": g(8),
         "depreciation_cr": g(11), "finance_cost_cr": g(12),
+        "pbt_before_exceptional_cr": g(13),
     }
     out.update(derive_core_operating(out, levels))
     out.update(derive_ebitda(out, levels))

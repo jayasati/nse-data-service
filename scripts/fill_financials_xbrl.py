@@ -44,8 +44,9 @@ def main() -> int:
     ap.add_argument("--universe", default="config/universe_top1000.txt")
     ap.add_argument("--symbols", help="comma list, overrides the universe file")
     ap.add_argument("--limit", type=int, default=0, help="cap symbols (0 = all)")
-    ap.add_argument("--quarters", type=int, default=8,
-                    help="recent quarters to backfill per symbol (for YoY/QoQ base)")
+    ap.add_argument("--quarters", type=int, default=12,
+                    help="quarters to backfill per symbol (deeper = YoY/QoQ on more "
+                         "displayed quarters; merges integrated + financial feeds)")
     ap.add_argument("--sleep", type=float, default=0.4,
                     help="seconds between symbols (be gentle on NSE)")
     args = ap.parse_args()
@@ -76,24 +77,49 @@ def main() -> int:
     for i, sym in enumerate(syms, 1):
         time.sleep(args.sleep)   # gentle on NSE to avoid blocked responses
         t0 = time.time()
+        esym = quote(sym, safe="")
+        ref = f"https://www.nseindia.com/get-quote/equity/{sym}"
         try:
             data = session.get_json(
                 "nextapi",
-                f"/api/NextApi/apiClient/GetQuoteApi?functionName=getIntegratedFilingData&symbol={quote(sym, safe='')}",
-                referer=f"https://www.nseindia.com/get-quote/equity/{sym}")
+                f"/api/NextApi/apiClient/GetQuoteApi?functionName=getIntegratedFilingData&symbol={esym}",
+                referer=ref)
         except Exception as e:  # noqa: BLE001
             n_err += 1
             print(f"[{i:>4}/{len(syms)}] {sym:<14} API-ERR {e!r}", flush=True)
             continue
 
         # Group result filings by quarter-end; keep the newest filing per scope
-        # for each quarter (a re-filed correction supersedes). recs: qe -> [rows]
+        # for each quarter (a re-filed correction supersedes). recs: qe -> [rows].
+        # The integrated feed carries only the recent ~5 quarters; the older
+        # financial-results feed extends history back years (its xbrl_attachment
+        # parses with the same parser) — merge it so YoY/QoQ compute for the
+        # PREVIOUS quarters too, not just the latest. Records are normalised to
+        # the integrated shape; integrated wins on overlap (modern, both scopes).
         by_q: dict = {}
         for r in (data or []):
             qe = _api_date(r.get("gfrQuaterEnded"))
-            if qe is None or not r.get("gfrXbrlFname"):
-                continue
-            by_q.setdefault(qe, []).append(r)
+            if qe is not None and r.get("gfrXbrlFname"):
+                by_q.setdefault(qe, []).append(r)
+        if len(by_q) < args.quarters:
+            try:
+                fin = session.get_json(
+                    "nextapi",
+                    f"/api/NextApi/apiClient/GetQuoteApi?functionName=getFinancialResultData"
+                    f"&symbol={esym}&marketApiType=equities&noOfRecords=16",
+                    referer=ref) or []
+            except Exception:  # noqa: BLE001 — older feed is best-effort
+                fin = []
+            for r in fin:
+                qe = _api_date(r.get("to_date"))
+                if qe is None or not r.get("xbrl_attachment") or qe in by_q:
+                    continue
+                by_q.setdefault(qe, []).append({
+                    "gfrQuaterEnded": r.get("to_date"),
+                    "gfrConsolidated": r.get("consolidated"),
+                    "gfrXbrlFname": r.get("xbrl_attachment"),
+                    "gfSystym": r.get("creation_date") or r.get("submission_date") or "",
+                })
         if not by_q:
             n_nofiling += 1
             print(f"[{i:>4}/{len(syms)}] {sym:<14} no-filing", flush=True)
@@ -102,26 +128,33 @@ def main() -> int:
         periods_done: list[tuple[str, str]] = []   # (period_ending, scope)
         for qe in sorted(by_q, reverse=True)[: args.quarters]:
             bdt = qe.strftime("%d-%b-%Y")
-            newest: dict = {}
+            # Candidates per scope, newest filing first. A quarter is often
+            # RE-FILED (corrections), and the newest entry's XBRL URL sometimes
+            # 404s (a dead *_WEB.xml) while an older filing still parses — so try
+            # each candidate in order and take the first that parses, rather than
+            # dropping the quarter (this is what cost LT its year-ago YoY base).
+            cands: dict[str, list] = {"standalone": [], "consolidated": []}
             for r in sorted(by_q[qe], key=lambda r: _file_ts(r.get("gfSystym")), reverse=True):
                 sc = "consolidated" if str(r.get("gfrConsolidated", "")).lower().startswith("cons") \
                     else "standalone"
-                newest.setdefault(sc, r)
-            for rec in newest.values():
-                try:
-                    parsed = parse_xbrl(_http_get(rec["gfrXbrlFname"]))
-                except Exception:  # noqa: BLE001 — one bad XBRL must not stop the batch
-                    continue
-                if not parsed or not parsed.get("fields") or not parsed.get("period_ending"):
-                    continue
-                scope = "consolidated" if parsed.get("scope") == "consolidated" else "standalone"
-                persist_extraction(
-                    conn, symbol=sym, period_ending=parsed["period_ending"], scope=scope,
-                    fields=parsed["fields"], units_phrase="xbrl", confidence=1.0,
-                    strategy="xbrl", source_fingerprint=None, broadcast_dt=bdt,
-                )
-                rows_stored += 1
-                periods_done.append((parsed["period_ending"], scope))
+                cands[sc].append(r)
+            for scope_cands in cands.values():
+                for rec in scope_cands:
+                    try:
+                        parsed = parse_xbrl(_http_get(rec["gfrXbrlFname"]))
+                    except Exception:  # noqa: BLE001 — try the next (older) re-filing
+                        continue
+                    if not parsed or not parsed.get("fields") or not parsed.get("period_ending"):
+                        continue
+                    scope = "consolidated" if parsed.get("scope") == "consolidated" else "standalone"
+                    persist_extraction(
+                        conn, symbol=sym, period_ending=parsed["period_ending"], scope=scope,
+                        fields=parsed["fields"], units_phrase="xbrl", confidence=1.0,
+                        strategy="xbrl", source_fingerprint=None, broadcast_dt=bdt,
+                    )
+                    rows_stored += 1
+                    periods_done.append((parsed["period_ending"], scope))
+                    break   # this scope is filled; don't parse older re-filings
 
         if not periods_done:
             n_err += 1
