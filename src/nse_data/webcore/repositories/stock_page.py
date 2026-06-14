@@ -86,7 +86,15 @@ class StockPageRepository:
             "net_interest_income_cr, operating_profit_cr, provisions_cr, "
             "gross_npa_pct, net_npa_pct, eps_basic, growth_json, narrative_json, "
             "extract_confidence, strategy, broadcast_dt, "
-            "profit_on_sale_of_investments_cr "
+            "profit_on_sale_of_investments_cr, "
+            "total_income_cr, finance_cost_cr, depreciation_cr, tax_cr, "
+            "cost_of_materials_cr, purchases_of_stock_cr, change_in_inventory_cr, "
+            "employee_cost_cr, other_expenses_cr, exceptional_items_cr, "
+            "pbt_before_exceptional_cr, "
+            "current_tax_cr, deferred_tax_cr, share_of_associates_cr, "
+            "other_comprehensive_income_cr, operating_expenses_cr, "
+            "gross_npa_cr, net_npa_cr, cet1_ratio, return_on_assets, "
+            "interest_earned_cr, interest_expended_cr "
             "FROM extracted_financials WHERE symbol=? "
             "ORDER BY period_ending DESC, scope LIMIT ?",
             (symbol, limit),

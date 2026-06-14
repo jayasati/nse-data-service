@@ -106,18 +106,38 @@ function renderResults(d) {
       <div class="vflags">${flags}</div>${narrative}</div>`);
   }
   const bank = d.quarters.some(q => q.nii_cr != null || q.ppop_cr != null);
-  out.push(section("Quarterly extractions", table(
+  const p1 = x => x != null ? num(x) + "%" : "—";   // a stored percentage (margin/ratio)
+  const qtable = qs => table(
     bank
-      ? ["Period", "Scope", "Revenue", "NII", "PPOP", "Provisions", "PAT", "PAT YoY", "PPOP YoY", "GNPA%"]
-      : ["Period", "Scope", "Revenue", "Rev YoY", "Other inc", "PBT", "PAT", "PAT YoY", "EBITDA YoY", "EPS"],
-    d.quarters.map(q => bank
-      ? [dt(q.period_ending), esc(q.scope), cr(q.revenue_cr), cr(q.nii_cr), cr(q.ppop_cr),
-         cr(q.provisions_cr), cr(q.pat_cr), pct(q.yoy_pat_pct), pct(q.yoy_ppop_pct),
-         q.gnpa_pct != null ? num(q.gnpa_pct) + "%" : "—"]
-      : [dt(q.period_ending), esc(q.scope), cr(q.revenue_cr), pct(q.yoy_revenue_pct),
-         cr(q.other_income_cr), cr(q.pbt_cr), cr(q.pat_cr), pct(q.yoy_pat_pct),
-         pct(q.yoy_ebitda_pct), num(q.eps)]),
-  )) || section("Quarterly extractions", empty("no extracted results yet")));
+      ? ["Period", "NII", "PPOP", "PPOP YoY", "PPOP QoQ", "Provisions", "GNPA%", "NNPA%", "CET1%", "ROA%", "PAT", "PAT YoY", "PAT QoQ"]
+      : ["Period", "Revenue", "Rev YoY", "Rev QoQ", "EBITDA", "EBITDA%", "EBITDA YoY", "EBITDA QoQ", "PAT", "PAT YoY", "PAT QoQ", "Def.tax", "EPS"],
+    qs.map(q => bank
+      ? [dt(q.period_ending), cr(q.nii_cr), cr(q.ppop_cr), pct(q.yoy_ppop_pct), pct(q.qoq_ppop_pct),
+         cr(q.provisions_cr), p1(q.gnpa_pct), p1(q.nnpa_pct), p1(q.cet1_ratio), p1(q.roa_pct),
+         cr(q.pat_cr), pct(q.yoy_pat_pct), pct(q.qoq_pat_pct)]
+      : [dt(q.period_ending), cr(q.revenue_cr), pct(q.yoy_revenue_pct), pct(q.qoq_revenue_pct),
+         cr(q.ebitda_cr), p1(q.ebitda_margin_pct), pct(q.yoy_ebitda_pct), pct(q.qoq_ebitda_pct),
+         cr(q.pat_cr), pct(q.yoy_pat_pct), pct(q.qoq_pat_pct), cr(q.deferred_tax_cr), num(q.eps)]));
+  const con = d.quarters.filter(q => q.scope === "consolidated");
+  const std = d.quarters.filter(q => q.scope === "standalone");
+  if (con.length || std.length) {
+    // CSS-only Standalone/Consolidated toggle (separate boxes). Default to
+    // consolidated for non-banks (the group view the market prices), but to
+    // standalone for banks — their NPA/CET1/ROA + deep history live only in the
+    // standalone filing (NSE publishes no older consolidated XBRL).
+    const conFirst = con.length > 0 && (!bank || std.length === 0);
+    out.push(`<h3>Quarterly extractions</h3>
+      <div class="scopetog">
+        <input type="radio" name="qscope" id="qs-con" ${conFirst ? "checked" : ""} ${con.length ? "" : "disabled"}>
+        <label for="qs-con">Consolidated</label>
+        <input type="radio" name="qscope" id="qs-std" ${conFirst ? "" : "checked"} ${std.length ? "" : "disabled"}>
+        <label for="qs-std">Standalone</label>
+        <div class="scopebox" data-scope="con">${qtable(con) || empty("no consolidated results")}</div>
+        <div class="scopebox" data-scope="std">${qtable(std) || empty("no standalone results")}</div>
+      </div>`);
+  } else {
+    out.push(section("Quarterly extractions", empty("no extracted results yet")));
+  }
   const estRows = d.estimates.flatMap(p => p.rows.map(r =>
     [dt(p.period_ending), esc(r.source), cr(r.rev_est_cr), cr(r.pat_est_cr),
      num(r.eps_est), cr(r.nii_est_cr), r.nim_est_pct != null ? num(r.nim_est_pct) + "%" : "—"]));

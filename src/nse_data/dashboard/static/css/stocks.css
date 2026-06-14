@@ -178,3 +178,16 @@ body.terminal .funda.adv-only { display: block !important; }
 .flag { font-size: 11px; background: var(--panel); border: 1px solid var(--line);
         border-radius: 10px; padding: 2px 8px; color: var(--txt2); }
 .news { margin-top: 8px; font-size: 12.5px; color: var(--txt2); }
+
+/* Standalone / Consolidated quarterly toggle (CSS-only, no JS handlers) */
+.scopetog > input { position: absolute; opacity: 0; pointer-events: none; }
+.scopetog > label { display: inline-block; cursor: pointer; font-size: 12px;
+        padding: 4px 12px; margin: 0 6px 8px 0; border: 1px solid var(--line);
+        border-radius: 14px; color: var(--dim); background: var(--panel); }
+.scopetog > input:disabled + label { opacity: .4; cursor: default; }
+.scopetog > #qs-con:checked ~ label[for="qs-con"],
+.scopetog > #qs-std:checked ~ label[for="qs-std"] {
+        color: var(--txt); border-color: var(--accent); background: var(--panel2, var(--panel)); }
+.scopetog > .scopebox { display: none; }
+.scopetog > #qs-con:checked ~ .scopebox[data-scope="con"],
+.scopetog > #qs-std:checked ~ .scopebox[data-scope="std"] { display: block; }

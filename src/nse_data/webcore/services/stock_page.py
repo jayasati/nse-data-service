@@ -24,6 +24,47 @@ def _parse(s: str | None) -> dict | None:
         return None
 
 
+def _num(v):
+    return v if isinstance(v, (int, float)) else None
+
+
+def _nz(v):
+    """0/None → None. For bank ratios (GNPA/NNPA/CET1/ROA) a 0 means 'not in
+    this filing' (consolidated banks omit them), never a real zero."""
+    return v if isinstance(v, (int, float)) and v != 0 else None
+
+
+def _ebitda(row) -> float | None:
+    """True operating EBITDA = PBT(before exceptional) + finance cost +
+    depreciation − other income (migration 072 inputs). Uses PBT-before-
+    exceptional so a one-off doesn't inflate the operating line; falls back to
+    plain PBT when no exceptional split. None unless the core inputs are present."""
+    pbt = _num(row["pbt_before_exceptional_cr"])
+    if pbt is None:
+        pbt = _num(row["pbt_cr"])
+    fin, dep, oi = _num(row["finance_cost_cr"]), _num(row["depreciation_cr"]), _num(row["other_income_cr"])
+    if pbt is None or fin is None or dep is None or oi is None:
+        return None
+    return round(pbt + fin + dep - oi, 2)
+
+
+def _gross_profit(row) -> float | None:
+    """Revenue − cost of goods (materials + purchases + inventory change). None
+    unless revenue and the materials line are present (non-manufacturers omit)."""
+    rev, mat = _num(row["revenue_cr"]), _num(row["cost_of_materials_cr"])
+    if rev is None or mat is None:
+        return None
+    cogs = mat + (_num(row["purchases_of_stock_cr"]) or 0.0) \
+        + (_num(row["change_in_inventory_cr"]) or 0.0)
+    return round(rev - cogs, 2)
+
+
+def _margin(numer, denom) -> float | None:
+    if not isinstance(numer, (int, float)) or not isinstance(denom, (int, float)) or not denom:
+        return None
+    return round(numer / denom * 100.0, 2)
+
+
 class StockPageService:
     def __init__(self, repo: StockPageRepository):
         self.repo = repo
@@ -102,13 +143,34 @@ class StockPageService:
                 "nii_cr": row["net_interest_income_cr"],
                 "ppop_cr": row["operating_profit_cr"],
                 "provisions_cr": row["provisions_cr"],
-                "gnpa_pct": row["gross_npa_pct"], "nnpa_pct": row["net_npa_pct"],
+                # 0 here = not disclosed in this (usually consolidated) filing —
+                # a bank is never truly 0% GNPA/CET1/ROA — so show blank, not "0%".
+                "gnpa_pct": _nz(row["gross_npa_pct"]), "nnpa_pct": _nz(row["net_npa_pct"]),
                 "eps": row["eps_basic"],
                 "yoy_revenue_pct": g.get("yoy_revenue_pct"),
                 "yoy_pat_pct": g.get("yoy_pat_pct"),
                 "yoy_ebitda_pct": g.get("yoy_ebitda_pct"),
                 "yoy_ppop_pct": g.get("yoy_ppop_pct"),
+                "qoq_revenue_pct": g.get("qoq_revenue_pct"),
+                "qoq_pat_pct": g.get("qoq_pat_pct"),
+                "qoq_ebitda_pct": g.get("qoq_ebitda_pct"),
+                "qoq_ppop_pct": g.get("qoq_ppop_pct"),
                 "confidence": row["extract_confidence"], "strategy": row["strategy"],
+                # --- analysis fields (migration 072) + derived margins ---
+                "ebitda_cr": _ebitda(row),
+                "ebitda_margin_pct": _margin(_ebitda(row), row["revenue_cr"]),
+                "gross_margin_pct": _margin(_gross_profit(row), row["revenue_cr"]),
+                "net_margin_pct": _margin(row["pat_cr"], row["revenue_cr"]),
+                "employee_cost_cr": row["employee_cost_cr"],
+                "other_expenses_cr": row["other_expenses_cr"],
+                "exceptional_items_cr": row["exceptional_items_cr"],
+                "current_tax_cr": row["current_tax_cr"],
+                "deferred_tax_cr": row["deferred_tax_cr"],
+                "other_comprehensive_income_cr": row["other_comprehensive_income_cr"],
+                # bank health
+                "operating_expenses_cr": row["operating_expenses_cr"],
+                "gross_npa_cr": _nz(row["gross_npa_cr"]), "net_npa_cr": _nz(row["net_npa_cr"]),
+                "cet1_ratio": _nz(row["cet1_ratio"]), "roa_pct": _nz(row["return_on_assets"]),
             })
         by_period: dict[str, list[dict]] = {}
         for e in self.repo.estimates(symbol):
