@@ -26,3 +26,8 @@ tests/financial_extraction/ground_truth_prerelabel/
 tests/financial_extraction/relabel_review/
 tests/financial_extraction/legacy/
 *.log*
+# Local planning / working docs (not version-controlled)
+plans/
+
+# Playwright bypass artifacts (best-effort metadata enhancer; not committed)
+.playwright-libs/
