@@ -88,3 +88,28 @@ def test_pharma_one_off_propped_quarter_shorts():
     assert v.label == "low"
     assert "low_quality_beat" in v.flags
     assert "other_income_propped" in v.flags
+
+
+def test_pharma_us_sales_decline_shorts():
+    """US is the swing market for Indian pharma: a US-sales contraction with a
+    flat operating line (no offset) → SHORT (FDA actions are a separate binary)."""
+    growth = {"yoy_revenue_pct": 2.0, "yoy_ebitda_pct": 0.5, "yoy_pat_pct": 3.0}
+    v = classify_result("CIPLA", growth, narrative={"us_sales_growth_pct": -8.0})
+    assert v.direction == "short" and v.label == "low"
+    assert "us_sales_weak" in v.flags
+
+
+def test_pharma_us_sales_decline_caps_long():
+    """A clean operating beat undercut by US-market weakness → capped to neutral."""
+    growth = {"yoy_revenue_pct": 6.0, "yoy_ebitda_pct": 7.0, "yoy_pat_pct": 8.0}
+    v = classify_result("CIPLA", growth, narrative={"us_sales_growth_pct": -6.0})
+    assert v.direction is None and v.label == "neutral"
+    assert "us_sales_weak" in v.flags
+
+
+def test_pharma_fda_warning_shorts_regardless_of_pnl():
+    """The §2.6 binary: an FDA warning letter sinks the print whatever the P&L."""
+    growth = {"yoy_revenue_pct": 10.0, "yoy_ebitda_pct": 9.0, "yoy_pat_pct": 12.0}
+    v = classify_result("CIPLA", growth, narrative={"fda_status": "warning_letter"})
+    assert v.direction == "short" and v.label == "low"
+    assert "fda_negative" in v.flags

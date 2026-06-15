@@ -49,6 +49,8 @@ class SectorClass(str, Enum):
     METALS = "metals"         # §2.7  ✅ built
     CAPGOODS = "capgoods"     # §2.8  ✅ built
     REALTY = "realty"         # ✅ built (lumpy quarters — pre-sales KPI is P7)
+    NBFC = "nbfc"             # ✅ built — non-bank lenders (NBFC/HFC/fin-institution)
+    CAPMARKETS = "capmarkets" # ✅ built — fee financials (AMC/broking/exchange/depository)
     GENERIC = "generic"       # long-tail non-financials: the shared operating rule
     UNKNOWN = "unknown"       # out-of-scope → neutral, low confidence (P1)
 
@@ -77,15 +79,24 @@ INDEX_TO_CLASS: dict[str, SectorClass] = {
 # raw_quote_metadata carries (sector, industry) for every symbol NSE quotes —
 # the routing source for stocks outside the sectoral indices. The mapping is
 # deliberately conservative:
-#   * Financial Services → BFSI only for actual banks. NBFCs/brokers/AMCs/
-#     insurers return None (→ UNKNOWN → neutral): for a lender, finance cost
-#     is an OPERATING cost, so the generic EBITDA derivation (which adds it
-#     back) would fabricate a healthy operating line — the one case where a
-#     generic read is actively wrong rather than merely coarse.
+#   * Financial Services → BFSI for actual banks; NBFC/HFC/financial-institution
+#     lenders → NBFC (interest-income operating read, no EBITDA add-back — for a
+#     lender finance cost is operating, so the generic derivation that adds it
+#     back fabricates a healthy operating line); AMC/broking/exchange/depository
+#     (fee businesses, not lenders) → CAPMARKETS. Insurers (premium/VNB not yet
+#     extracted) + holding/investment/fintech (ambiguous) stay None → UNKNOWN.
 #   * Recognised industries map to their specific sector rule.
 #   * Everything else non-financial → GENERIC (the shared operating-quality
 #     rule, flagged `sector_generic`).
 _BANK_INDUSTRY = ("private sector bank", "public sector bank", "other bank")
+# Non-bank lenders: interest income is the top line, finance cost is operating.
+_NBFC_INDUSTRIES = ("non banking financial", "nbfc", "housing finance",
+                    "financial institution")
+# Fee financials (no/immaterial lending book) — revenue+PAT read is correct.
+_CAPMARKETS_INDUSTRIES = ("asset management", "stockbroking", "broking",
+                          "exchange and data", "depositories", "clearing",
+                          "other intermediaries", "registrar", "capital market",
+                          "wealth", "investment banking")
 _METAL_INDUSTRIES = ("aluminium", "zinc", "copper", "iron & steel",
                      "industrial minerals", "diversified metals")
 _AUTO_INDUSTRIES = ("2/3 wheelers", "passenger cars & utility vehicles",
@@ -112,7 +123,15 @@ def class_for_metadata(sector: str | None, industry: str | None) -> SectorClass 
     if not macro:
         return None
     if macro == "financial services":
-        return SectorClass.BFSI if any(b in ind for b in _BANK_INDUSTRY) else None
+        if any(b in ind for b in _BANK_INDUSTRY):
+            return SectorClass.BFSI
+        if any(k in ind for k in _NBFC_INDUSTRIES):
+            return SectorClass.NBFC
+        if any(k in ind for k in _CAPMARKETS_INDUSTRIES):
+            return SectorClass.CAPMARKETS
+        # Insurers (life/general) — premium/APE/VNB not yet extracted; and
+        # holding / investment / fintech — economics too mixed to read. Defer.
+        return None
     if any(k in ind for k in _REALTY_INDUSTRIES):
         return SectorClass.REALTY
     if any(k in ind for k in _AUTO_INDUSTRIES):
@@ -334,6 +353,7 @@ def classify_operating_quality(growth: dict | None, fields: dict | None = None) 
 # negative regardless of P&L").
 _FDA_NEGATIVE = ("warning_letter", "import_alert")
 _VOLUME_DECLINE = -1.0      # FMCG underlying-volume contraction worse than this = demand red flag
+_US_SALES_DECLINE = -3.0    # pharma US-sales (the swing market) contraction worse than this = weak
 
 # Commodity-guard thresholds (percentage points of revenue) for input-buying
 # sectors (auto, FMCG): a margin move this large attributable to raw materials
@@ -442,6 +462,21 @@ def apply_narrative(
             if not price_led:
                 verdict.flags.append("volume_decline")
                 verdict.reasons.append(f"underlying volumes contracted {vol:+.1f}% — demand weakness")
+            op, _ = operating_line(growth)
+            if verdict.direction == "long":
+                verdict.label, verdict.direction = "neutral", None
+            elif verdict.direction is None and op is not None and op <= _OP_BEAT:
+                verdict.label, verdict.direction = "low", "short"
+
+    if sector_class == SectorClass.PHARMA:
+        # US is the swing market for Indian pharma — US price erosion / a base-
+        # business decline is the classic bearish driver even when the consolidated
+        # P&L holds (other geographies / one-off launches masking it). FDA actions
+        # are handled above (binary, regardless of P&L).
+        us = narrative.get("us_sales_growth_pct")
+        if us is not None and us < _US_SALES_DECLINE:
+            verdict.flags.append("us_sales_weak")
+            verdict.reasons.append(f"US sales {us:+.1f}% — the swing market is contracting")
             op, _ = operating_line(growth)
             if verdict.direction == "long":
                 verdict.label, verdict.direction = "neutral", None
@@ -568,7 +603,9 @@ def enrich_signal(
     verdict.kpi_signals = [f"{k}={narrative[k]}" for k in present] if narrative else []
     verdict.metrics = signal_metrics(growth, narrative)
 
-    if "sector_out_of_scope" in verdict.flags:
+    if "sector_out_of_scope" in verdict.flags or sector_class == SectorClass.REALTY:
+        # Realty: the P&L is POCS-lumpy (Ind AS 115) — never tradable on its own,
+        # only when pre-sales / bookings confirm (§2.9). Pin to LOW until then.
         verdict.confidence = "low"
     else:
         verdict.confidence = assess_confidence(

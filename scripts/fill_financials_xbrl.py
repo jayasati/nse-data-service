@@ -61,22 +61,25 @@ def main() -> int:
     from nse_data.fundamentals.from_results import persist_extraction, quarter_growth
 
     conn = open_db(args.db)
-    session = SessionManager()
+    # Disable the circuit breaker for the bulk backfill: it exists to protect the
+    # LIVE collector, but in a long one-shot fill a single throttled patch trips it
+    # and then its cooldown DOUBLES (60→120→…→1800s), stalling the whole run. We
+    # pace gently and retry per request instead.
+    session = SessionManager(circuit_failure_threshold=10**9)
 
     def get_json(path: str, ref: str):
-        """get_json that survives the circuit breaker: a few timeouts trip the
-        nextapi circuit (deep-feed is call-heavy), after which every symbol fails
-        instantly for the 60s cooldown — so on CircuitOpenError WAIT for recovery
-        and retry the same symbol instead of burning through ~300 of them."""
+        """get_json with gentle per-request retry/backoff for transient timeouts
+        (the deep-feed is call-heavy and NSE throttles). The circuit is disabled
+        above, so CircuitOpenError shouldn't occur; handled defensively anyway."""
         for attempt in range(4):
             try:
                 return session.get_json("nextapi", path, referer=ref)
             except CircuitOpenError:
-                time.sleep(65)          # let the cooldown lapse → half-open probe
+                time.sleep(20)
             except Exception:           # noqa: BLE001 — timeout / transient
                 if attempt == 3:
                     raise
-                time.sleep(3 * (attempt + 1))
+                time.sleep(2 * (attempt + 1))
         return session.get_json("nextapi", path, referer=ref)
 
     if args.symbols:

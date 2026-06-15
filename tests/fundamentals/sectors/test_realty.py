@@ -89,3 +89,12 @@ def test_realty_oi_propped_timing_quarter_shorts():
     assert v.label == "low"
     assert "low_quality_beat" in v.flags
     assert "other_income_propped" in v.flags
+
+def test_realty_pnl_read_never_tradable():
+    """Realty's P&L is POCS-lumpy — even a clean operating beat is pinned to LOW
+    confidence (not tradable) until pre-sales / bookings confirm it."""
+    growth = {"yoy_revenue_pct": 20.0, "yoy_ebitda_pct": 26.0, "yoy_pat_pct": 29.0}
+    v = classify_result("DLF", growth)
+    assert v.direction == "long" and v.label == "high"   # the operating read stands
+    assert v.confidence == "low" and v.tradable is False  # but not actionable on P&L
+    assert "realty_pocs_lumpy" in v.flags

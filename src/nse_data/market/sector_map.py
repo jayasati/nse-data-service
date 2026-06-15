@@ -79,6 +79,32 @@ def index_class_for(symbol: str, path: str = INDEX_CLASS_PATH) -> str | None:
     return load_index_class_map(path).get(symbol.upper())
 
 
+CURATED_SECTORS_PATH = "config/curated_sectors.yaml"
+
+
+@lru_cache(maxsize=2)
+def load_curated_sector_map(path: str = CURATED_SECTORS_PATH) -> dict[str, str]:
+    """{symbol: sector-class value} hand-maintained sector routing.
+
+    NSE's /api/quote-equity (the per-symbol industry source) went behind Akamai
+    (~2026-05-20), so symbols outside the sectoral-index constituents can't be
+    auto-classified. This map — generated/maintained by
+    scripts/build_curated_sectors.py — routes financials AND the tradeable
+    non-financial tail deterministically (lender guard applied at build time).
+    Empty dict if absent."""
+    p = Path(path)
+    if not p.exists():
+        return {}
+    data = yaml.safe_load(p.read_text()) or {}
+    if isinstance(data, dict) and "curated_sector_by_symbol" in data:
+        data = data["curated_sector_by_symbol"]
+    return {str(k).upper(): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
+
+
+def curated_sector_for(symbol: str, path: str = CURATED_SECTORS_PATH) -> str | None:
+    return load_curated_sector_map(path).get(symbol.upper())
+
+
 def is_bfsi(symbol: str, path: str = DEFAULT_PATH) -> bool:
     """True if the symbol is a bank that files a BFSI-shaped P&L.
 

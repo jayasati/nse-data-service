@@ -17,6 +17,7 @@ tests/fundamentals/sectors/test_realty.py.
 """
 from __future__ import annotations
 
+from ..earnings_quality import QualityVerdict
 from .base import (
     SectorClass,
     SectorSpec,
@@ -24,10 +25,26 @@ from .base import (
     generic_operating_growth,
 )
 
+
+def _classify(growth: dict | None, fields: dict | None = None) -> QualityVerdict:
+    """Operating-quality read, but flagged POCS-lumpy. The P&L direction is kept
+    for context, yet ``base.enrich_signal`` pins realty to LOW confidence so the
+    read is never *tradable* on the P&L alone (Ind AS 115 makes a quarter's
+    revenue/EBITDA swing on handover timing). It becomes tradable only when
+    pre-sales / bookings (the number the market prices) land from the deck (P7)."""
+    v = classify_operating_quality(growth, fields)
+    if v.direction is not None:
+        v.flags.append("realty_pocs_lumpy")
+        v.reasons.append(
+            "realty revenue is POCS-lumpy (Ind AS 115) — P&L read not tradable "
+            "without pre-sales / bookings")
+    return v
+
+
 SPEC = SectorSpec(
     sector_class=SectorClass.REALTY,
     operating_line=generic_operating_growth,
-    classify=classify_operating_quality,
+    classify=_classify,
     built=True,   # validated against a real realty filing
     kpis=("pre-sales/bookings", "collections", "EBITDA", "net debt", "launches"),
 )

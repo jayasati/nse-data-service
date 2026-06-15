@@ -30,14 +30,14 @@ def test_bfsi_built_and_still_shorts_sbi():
 
 def test_unbuilt_sector_routes_to_out_of_scope():
     """A symbol with no routable class is downgraded to an explicit neutral,
-    so the engine never emits a confident verdict for it. With realty +
-    GENERIC built, the guard's remaining (and intentional) population is
-    non-bank financials — the lender guard keeps them unrouted because the
-    generic EBITDA derivation is wrong for a lender."""
-    spec = spec_for("ANGELONE")            # broker — lender guard → UNKNOWN
+    so the engine never emits a confident verdict for it. With NBFC + CAPMARKETS
+    now built (lenders + fee financials routed), the guard's remaining
+    (intentional) population is insurers — deferred until premium/APE/VNB are
+    extracted, since total_income + PAT alone can't read an insurer."""
+    spec = spec_for("HDFCLIFE")            # life insurer — deferred → UNKNOWN
     assert spec.sector_class == SectorClass.UNKNOWN
     assert spec.built is False
-    v = classify_result("ANGELONE", {"yoy_pat_pct": 10.0, "yoy_revenue_pct": -8.0})
+    v = classify_result("HDFCLIFE", {"yoy_pat_pct": 10.0, "yoy_revenue_pct": -8.0})
     assert v.label == "neutral"
     assert v.direction is None
     assert "sector_out_of_scope" in v.flags

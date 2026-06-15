@@ -146,6 +146,7 @@ sector_by_symbol:
   YESBANK: NIFTY BANK
   ZYDUSLIFE: NIFTY PHARMA
 metadata_class_by_symbol:
+  360ONE: capmarkets
   ABB: capgoods
   ADANIENSOL: energy
   ADANIENT: generic
@@ -155,6 +156,7 @@ metadata_class_by_symbol:
   ALKEM: pharma
   AMBER: generic
   AMBUJACEM: generic
+  ANGELONE: capmarkets
   APLAPOLLO: metals
   APOLLOHOSP: pharma
   ASHOKLEY: auto
@@ -164,6 +166,7 @@ metadata_class_by_symbol:
   AUROPHARMA: pharma
   AXISBANK: bfsi
   BAJAJ-AUTO: auto
+  BAJFINANCE: nbfc
   BANDHANBNK: bfsi
   BANKBARODA: bfsi
   BANKINDIA: bfsi
@@ -177,8 +180,12 @@ metadata_class_by_symbol:
   BOSCHLTD: auto
   BPCL: energy
   BRITANNIA: fmcg
+  BSE: capmarkets
+  CAMS: capmarkets
   CANBK: bfsi
+  CDSL: capmarkets
   CGPOWER: capgoods
+  CHOLAFIN: nbfc
   CIPLA: pharma
   COALINDIA: energy
   COCHINSHIP: capgoods
@@ -211,6 +218,7 @@ metadata_class_by_symbol:
   HAL: capgoods
   HAVELLS: generic
   HCLTECH: it
+  HDFCAMC: capmarkets
   HDFCBANK: bfsi
   HEROMOTOCO: auto
   HINDALCO: metals
@@ -221,6 +229,7 @@ metadata_class_by_symbol:
   ICICIBANK: bfsi
   IDEA: generic
   IDFCFIRSTB: bfsi
+  IEX: capmarkets
   INDHOTEL: generic
   INDIANB: bfsi
   INDIGO: generic
@@ -229,6 +238,8 @@ metadata_class_by_symbol:
   INFY: it
   INOXWIND: capgoods
   IOC: energy
+  IREDA: nbfc
+  IRFC: nbfc
   ITC: fmcg
   JINDALSTEL: metals
   JSWENERGY: energy
@@ -237,21 +248,28 @@ metadata_class_by_symbol:
   KALYANKJIL: generic
   KAYNES: capgoods
   KEI: generic
+  KFINTECH: capmarkets
   KOTAKBANK: bfsi
   KPITTECH: it
   LAURUSLABS: pharma
+  LICHSGFIN: nbfc
   LODHA: realty
   LT: capgoods
   LTM: it
   LUPIN: pharma
   M&M: auto
+  MANAPPURAM: nbfc
   MANKIND: pharma
   MARICO: fmcg
   MARUTI: auto
   MAXHEALTH: pharma
   MAZDOCK: capgoods
+  MCX: capmarkets
   MOTHERSON: auto
+  MOTILALOFS: capmarkets
   MPHASIS: it
+  MUTHOOTFIN: nbfc
+  NAM-INDIA: capmarkets
   NATIONALUM: metals
   NAUKRI: generic
   NBCC: capgoods
@@ -259,6 +277,7 @@ metadata_class_by_symbol:
   NHPC: energy
   NMDC: metals
   NTPC: energy
+  NUVAMA: capmarkets
   NYKAA: generic
   OBEROIRLTY: realty
   OFSS: it
@@ -268,22 +287,28 @@ metadata_class_by_symbol:
   PATANJALI: fmcg
   PERSISTENT: it
   PETRONET: energy
+  PFC: nbfc
   PGEL: generic
   PHOENIXLTD: realty
   PIDILITIND: generic
   PIIND: generic
   PNB: bfsi
+  PNBHOUSING: nbfc
   POLYCAB: generic
   POWERGRID: energy
   POWERINDIA: capgoods
   PREMIERENE: generic
   PRESTIGE: realty
   RBLBANK: bfsi
+  RECLTD: nbfc
   RELIANCE: energy
   RVNL: capgoods
   SAIL: metals
+  SAMMAANCAP: nbfc
+  SBICARD: nbfc
   SBIN: bfsi
   SHREECEM: generic
+  SHRIRAMFIN: nbfc
   SIEMENS: capgoods
   SOLARINDS: generic
   SONACOMS: auto

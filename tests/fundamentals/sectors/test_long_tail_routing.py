@@ -25,9 +25,18 @@ from nse_data.fundamentals.sectors.base import class_for_metadata
     ("Financial Services", "Private Sector Bank", SectorClass.BFSI),
     ("Financial Services", "Public Sector Bank", SectorClass.BFSI),
     ("Financial Services", "Other Bank", SectorClass.BFSI),
-    # the lender guard — every non-bank financial stays unrouted:
-    ("Financial Services", "Non Banking Financial Company (NBFC)", None),
-    ("Financial Services", "Stockbroking & Allied", None),
+    # non-bank lenders → NBFC (interest-income read, no EBITDA add-back):
+    ("Financial Services", "Non Banking Financial Company (NBFC)", SectorClass.NBFC),
+    ("Financial Services", "Financial Institution", SectorClass.NBFC),
+    ("Financial Services", "Housing Finance Company", SectorClass.NBFC),
+    # fee financials (not lenders) → CAPMARKETS:
+    ("Financial Services", "Stockbroking & Allied", SectorClass.CAPMARKETS),
+    ("Financial Services", "Asset Management Company", SectorClass.CAPMARKETS),
+    ("Financial Services", "Exchange and Data Platform", SectorClass.CAPMARKETS),
+    ("Financial Services", "Depositories Clearing Houses and Other Intermediaries", SectorClass.CAPMARKETS),
+    # insurers (premium/VNB not yet extracted) + holding/investment stay deferred:
+    ("Financial Services", "Life Insurance", None),
+    ("Financial Services", "General Insurance", None),
     ("Financial Services", "Investment Company", None),
     ("Financial Services", "Holding Company", None),
     ("Healthcare", "Pharmaceuticals", SectorClass.PHARMA),
@@ -86,6 +95,18 @@ def test_stale_config_class_value_degrades_to_unknown(monkeypatch):
     monkeypatch.setattr(sector_map, "sector_for", lambda s, path=None: None)
     monkeypatch.setattr(sector_map, "metadata_class_for", lambda s, path=None: "not_a_class")
     assert sector_class_for("X") == SectorClass.UNKNOWN
+
+
+def test_curated_sector_routing():
+    """The hand-maintained map (config/curated_sectors.yaml) routes symbols that
+    NSE's Akamai-walled quote-equity can no longer classify — and wins over NIFTY
+    FINANCIAL SERVICES index membership (which lumps banks/NBFCs together).
+    Insurers/holdings are deliberately omitted → stay UNKNOWN (deferred)."""
+    assert sector_class_for("MAHABANK") == SectorClass.BFSI        # bank
+    assert sector_class_for("SUNDARMFIN") == SectorClass.NBFC      # NBFC
+    assert sector_class_for("UTIAMC") == SectorClass.CAPMARKETS    # AMC
+    assert sector_class_for("INDOCO") == SectorClass.PHARMA        # curated non-financial
+    assert sector_class_for("HDFCLIFE") == SectorClass.UNKNOWN     # insurer → deferred
 
 
 # --- the GENERIC verdict ------------------------------------------------------------
