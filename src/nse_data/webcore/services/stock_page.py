@@ -214,6 +214,23 @@ class StockPageService:
             "backtest": bt,
         }
 
+    def moves(self, symbol: str) -> dict:
+        """Significant intraday moves from the open (gap excluded), constant
+        ones first. Carries the symbol's tradeable-universe grade so the UI can
+        flag liquid (A/B) names and de-emphasise illiquid noise."""
+        symbol = symbol.upper()
+        moves = self.repo.intraday_moves(symbol)
+        by_date: dict = {}
+        for c in self.repo.intraday_move_candidates(symbol):
+            by_date.setdefault(c["date"], []).append(c)
+        for m in moves:
+            m["candidates"] = by_date.get(m["date"], [])
+        return {
+            "symbol": symbol,
+            "grade": self.repo.universe_grade(symbol),
+            "moves": moves,
+        }
+
     def flow(self, symbol: str) -> dict:
         symbol = symbol.upper()
         return {

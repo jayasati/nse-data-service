@@ -236,8 +236,54 @@ function renderFlow(d) {
   return out.join("");
 }
 
+function renderMoves(d) {
+  const out = [];
+  if (d.grade)
+    out.push(`<div class="vcard"><div class="vsum">Universe grade: <b>${esc(d.grade)}</b>
+      &nbsp;·&nbsp; ≥2% intraday moves from the open (overnight gap excluded),
+      <b>constant rises/falls first</b></div></div>`);
+  const candList = cands => `<div class="mcand">${cands.map(c => {
+    const t = `<span class="flag">${esc(c.source)}</span> <span class="dim">${esc(c.event_date || "")}</span> ${esc(c.summary)}`;
+    return `<div class="mcand-row">${c.url ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">${t}</a>` : t}</div>`;
+  }).join("")}</div>`;
+  const cause = m => {
+    const cands = m.candidates || [];
+    const sysTag = m.cause_regime === "systematic"
+      ? `<span class="flag" title="moved with the market/sector — not stock-specific">📉 systematic</span> ` : "";
+    const tag = sysTag + (m.cause_category ? `<span class="flag">${esc(m.cause_category)}</span> ` : "");
+    const when = m.cause_date ? `<span class="dim">(${esc(m.cause_date)})</span> ` : "";
+    const txt = m.cause_summary ? esc(m.cause_summary) : "—";
+    const primary = (m.cause_summary && m.cause_url)
+      ? `<a href="${esc(m.cause_url)}" target="_blank" rel="noopener">${txt}</a>` : txt;
+    const head = tag + when + primary;
+    if (!cands.length) return head;
+    // expandable: primary in the summary, all candidate sources on expand
+    return `<details class="mcause"><summary>${head} <span class="dim">· ${cands.length} source${cands.length > 1 ? "s" : ""}</span></summary>${candList(cands)}</details>`;
+  };
+  const rows = (d.moves || []).map(m => {
+    const cls = m.move_pct > 0 ? "up" : "dn";
+    const mv = `<span class="${cls}">${m.move_pct > 0 ? "+" : ""}${(+m.move_pct).toFixed(2)}%</span>`;
+    const dir = m.direction === "up" ? "🟢" : "🔻";
+    return [
+      dt(m.date),
+      `${dir} <span class="flag">${esc(m.pattern)}</span>`,
+      mv,
+      `${esc(m.move_start)}–${esc(m.move_end)}`,
+      m.leg_minutes != null ? Math.round(m.leg_minutes) + "m" : "—",
+      pct(m.net_pct),
+      m.consistency != null ? (+m.consistency).toFixed(2) : "—",
+      cause(m),
+    ];
+  });
+  out.push(section(
+    "Intraday moves",
+    table(["Date", "Pattern", "Move", "Window", "Dur", "Net", "Consistency", "Why (cause)"], rows)
+    || empty("no significant intraday moves recorded (needs 1-min candles for this symbol)")));
+  return out.join("");
+}
+
 const RENDER = { results: renderResults, events: renderEvents, filings: renderFilings,
-                 activity: renderActivity, flow: renderFlow };
+                 activity: renderActivity, flow: renderFlow, moves: renderMoves };
 
 // ---- wiring -----------------------------------------------------------------
 

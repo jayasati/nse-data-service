@@ -101,3 +101,8 @@ def activity(symbol: str, svc: StockPageService = Depends(get_page_service)) -> 
 @router.get("/{symbol}/flow")
 def flow(symbol: str, svc: StockPageService = Depends(get_page_service)) -> JSONResponse:
     return _run(lambda: svc.flow(symbol))
+
+
+@router.get("/{symbol}/moves")
+def moves(symbol: str, svc: StockPageService = Depends(get_page_service)) -> JSONResponse:
+    return _run(lambda: svc.moves(symbol))

@@ -254,3 +254,39 @@ class StockPageRepository:
             "WHERE symbol=? ORDER BY date DESC",
             (symbol,),
         )
+
+    # ---- intraday moves (research view) ------------------------------------
+    def intraday_moves(self, symbol: str, limit: int = 200) -> list[dict]:
+        """Significant single-day intraday moves from the open (gap excluded),
+        constant/sustained ones first (sort by consistency)."""
+        join = ("LEFT JOIN move_causes c ON c.symbol=e.symbol AND c.date=e.date"
+                if table_exists(self.conn, "move_causes") else "")
+        cause_cols = (", c.category AS cause_category, c.cause_summary, c.source_url AS cause_url, "
+                      "c.source_date AS cause_date, c.confidence AS cause_confidence, "
+                      "c.regime AS cause_regime" if join else "")
+        return self._rows(
+            "intraday_move_events",
+            f"SELECT e.date, e.direction, e.move_pct, e.up_move_pct, e.down_move_pct, "
+            f"e.net_pct, e.gap_pct, e.move_start, e.move_end, e.leg_minutes, e.consistency, "
+            f"e.max_retrace_pct, e.pattern{cause_cols} "
+            f"FROM intraday_move_events e {join} WHERE e.symbol=? "
+            f"ORDER BY e.consistency DESC, ABS(e.move_pct) DESC LIMIT ?",
+            (symbol, limit),
+        )
+
+    def universe_grade(self, symbol: str) -> str | None:
+        row = self._one(
+            "tradeable_universe",
+            "SELECT grade FROM tradeable_universe WHERE symbol=?", (symbol,))
+        return row["grade"] if row else None
+
+    def intraday_move_candidates(self, symbol: str, limit: int = 3000) -> list[dict]:
+        """All candidate causes (every source) for the symbol's moves — the audit
+        trail behind each move, for the UI expand."""
+        return self._rows(
+            "move_cause_candidates",
+            "SELECT date, source, cause_type, event_date, summary, url "
+            "FROM move_cause_candidates WHERE symbol=? "
+            "ORDER BY date DESC, weight DESC, event_date DESC LIMIT ?",
+            (symbol, limit),
+        )
