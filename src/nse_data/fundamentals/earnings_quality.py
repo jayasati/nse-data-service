@@ -173,7 +173,8 @@ def classify_quality(
             v.label, v.direction = "neutral", None
         else:
             v.label, v.direction = "high", "long"
-            v.reasons.append(f"clean beat (PAT {pat_yoy:+.1f}%, {op_label} {op_growth:+.1f}%)")
+            pat_txt = f"{pat_yoy:+.1f}%" if pat_yoy is not None else "n/a"
+            v.reasons.append(f"clean beat (PAT {pat_txt}, {op_label} {op_growth:+.1f}%)")
     else:
         # Operating line flat / weak-but-not-a-miss / unreadable: surface any
         # quality caveat but don't short without a confirmed operating miss.
