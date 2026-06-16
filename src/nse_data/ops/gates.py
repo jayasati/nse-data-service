@@ -168,10 +168,15 @@ def run_auto(conn) -> list[dict]:
 
 
 def build_report(conn) -> dict:
-    """Full ladder for the UI: live auto results + stored manual verdicts, in order."""
-    ensure_table(conn)
-    stored = {r[0]: r for r in conn.execute(
-        "SELECT gate_id, status, detail, checked_at FROM gate_results")}
+    """Full ladder for the UI: live auto results + stored manual verdicts, in order.
+
+    Read-only: the dashboard opens the DB read-only, so this never writes (no
+    ensure_table). If the runner has never persisted results, manual gates just
+    read as 'untested'."""
+    stored = {}
+    if _has(conn, "gate_results"):
+        stored = {r[0]: r for r in conn.execute(
+            "SELECT gate_id, status, detail, checked_at FROM gate_results")}
     rows = []
     for gid, name, mode, check in GATES:
         if mode == "auto" and check is not None:
