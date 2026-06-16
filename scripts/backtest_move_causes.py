@@ -55,7 +55,11 @@ def main() -> int:
                     help="cause lookback window around the move (cause_engine)")
     ap.add_argument("--include-untracked", action="store_true",
                     help="also score illiquid/etf/ungraded names (default: tracked only)")
+    ap.add_argument("--grades", default=",".join(TRACKED),
+                    help="comma list of grades to include (default A core,B tradeable,C "
+                         "volatile). Use 'A core,B tradeable' for the clean core+tradeable set.")
     args = ap.parse_args()
+    grades = tuple(g.strip() for g in args.grades.split(",") if g.strip())
     horizons = [int(x) for x in args.horizons.split(",")]
     ph = args.primary_horizon
 
@@ -86,7 +90,7 @@ def main() -> int:
 
     for symbol, date, direction, grade in rows:
         n_total += 1
-        if not args.include_untracked and grade not in TRACKED:
+        if not args.include_untracked and grade not in grades:
             continue
         n_tracked += 1
 
@@ -139,7 +143,7 @@ def main() -> int:
     conn.close()
 
     print(f"\n=== BIG-MOVE CAUSE CENSUS + DRIFT (|move|≥{args.min_move}%) ===")
-    print(f"window≥{args.since} tracked_only={not args.include_untracked} "
+    print(f"window≥{args.since} grades={'ALL' if args.include_untracked else list(grades)} "
           f"cost={args.cost_pct}%/trade min_n={args.min_n} primary_h={ph}d")
     print(f"big movers in window={n_total} scored={n_scored} "
           f"(tracked={n_tracked}); benches: " + ",".join(f"{b}={avail[b]}" for b in sorted(avail)))
