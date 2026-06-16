@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from ...ops import health
+from ...ops import gates, health
 from ...settings import load_endpoints
 from ...webcore.config import ENDPOINTS_PATH
 from ...webcore.repositories.stocks import StockRepository
@@ -22,6 +22,11 @@ router = APIRouter()
 def api_health(conn=Depends(get_conn)) -> JSONResponse:
     endpoints = load_endpoints(ENDPOINTS_PATH)
     return JSONResponse(health.build_report(conn, endpoints))
+
+
+@router.get("/api/gates")
+def api_gates(conn=Depends(get_conn)) -> JSONResponse:
+    return JSONResponse(gates.build_report(conn))
 
 
 @router.get("/api/table/{name}")

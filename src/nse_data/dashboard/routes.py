@@ -51,3 +51,8 @@ def earnings() -> FileResponse:
 @router.get("/llm", include_in_schema=False)
 def llm() -> FileResponse:
     return FileResponse(PAGES_DIR / "llm.html")
+
+
+@router.get("/gates", include_in_schema=False)
+def gates() -> FileResponse:
+    return FileResponse(PAGES_DIR / "gates.html")
