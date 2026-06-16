@@ -53,6 +53,16 @@ RESULT_QUALITY_HIGH = "result_quality_high"  # fundamental: clean two-sided beat
 RESULT_BEAT = "result_beat"          # 18.4: strong YoY revenue growth + positive tone
 RESULT_MISS = "result_miss"          # 18.5: revenue decline or strongly negative tone
 
+# The four Phase-1 price/volume TA rules are SHELVED: net-negative after costs in
+# CPCV validation (see plans/PLAN.md + the strategy-validation memory). They fired
+# ~540 alerts/day of losing signals. We KEEP the rule code (backtest/research still
+# uses it) but do NOT emit them live — the bot's edge is the event-driven result-day
+# reaction (earnings/quality/beat-miss), not generic TA. To re-enable a rule after a
+# fresh net-of-cost backtest passes, move it out of SHELVED_PRICE_RULES.
+SHELVED_PRICE_RULES = frozenset({LONG_BUILDUP, BREAKOUT_52WH, ORB_BREAKOUT, VWAP_RECLAIM})
+_ALL_PRICE_RULES = (LONG_BUILDUP, BREAKOUT_52WH, ORB_BREAKOUT, VWAP_RECLAIM)
+ACTIVE_PRICE_RULES = tuple(t for t in _ALL_PRICE_RULES if t not in SHELVED_PRICE_RULES)
+
 # Trade horizon per signal type — the single source of truth (the dispatcher,
 # scorer, timing gate, message template and Telegram topic all key off this).
 # 'intraday' = flat by 15:15; 'swing' = hold days–weeks. Default swing.
@@ -134,12 +144,16 @@ def run_detection_pass(
     redis_client=None,
     dedup: SignalDedup | None = None,
     now: datetime | None = None,
+    active_rules: tuple[str, ...] = ACTIVE_PRICE_RULES,
 ) -> dict:
     """One detection sweep. Returns a small report dict.
 
     `redis_client` powers the blacklist read, the dedup guard, and the live
     context enrichment — all degrade gracefully when it is None. `dedup` is
     injectable for tests; otherwise one is built around `redis_client`.
+    `active_rules` is the set of price/volume rules to actually emit; it defaults
+    to ACTIVE_PRICE_RULES (the shelved ones removed) so live runs emit no
+    net-negative TA. Tests pass the full set to exercise the rule mechanics.
     """
     now = now or now_ist()
     if not is_market_open(now):
@@ -174,40 +188,46 @@ def run_detection_pass(
             "result_beat_miss": result_fired,
         }
 
-    symbols = live_universe(conn)
-    blacklist = _load_blacklist(redis_client)
-    price_bands = _load_price_bands(conn)
-    listing_bars = _load_listing_bars(conn)
-    quality_scores = _load_quality_scores(conn)          # task 14.4
-    fresh_52w_highs = _load_today_52w_highs(conn, now)
-
-    fired = {LONG_BUILDUP: 0, BREAKOUT_52WH: 0, ORB_BREAKOUT: 0, VWAP_RECLAIM: 0}
+    fired = {t: 0 for t in _ALL_PRICE_RULES}
     gated = 0
+    symbols: list[str] = []
 
-    for symbol in symbols:
-        series, band = price_bands.get(symbol, (None, None))
-        if _hard_gated(symbol, series, listing_bars, blacklist, quality_scores):
-            gated += 1
-            continue
+    # The Phase-1 price/volume rules are all shelved (net-negative; see
+    # SHELVED_PRICE_RULES) — when none are active, skip the per-symbol scan
+    # entirely. Only the event-driven rules above (earnings/quality/beat-miss)
+    # emit live; that's the bot's validated edge.
+    if active_rules:
+        symbols = live_universe(conn)
+        blacklist = _load_blacklist(redis_client)
+        price_bands = _load_price_bands(conn)
+        listing_bars = _load_listing_bars(conn)
+        quality_scores = _load_quality_scores(conn)          # task 14.4
+        fresh_52w_highs = _load_today_52w_highs(conn, now)
 
-        # Both Phase-1 signals are longs, so the tight-band gate applies to both.
-        band_too_tight = band is not None and band <= MAX_TIGHT_BAND_PCT
-
-        for signal_type in (LONG_BUILDUP, BREAKOUT_52WH, ORB_BREAKOUT, VWAP_RECLAIM):
-            if band_too_tight:
+        for symbol in symbols:
+            series, band = price_bands.get(symbol, (None, None))
+            if _hard_gated(symbol, series, listing_bars, blacklist, quality_scores):
+                gated += 1
                 continue
-            metrics = _evaluate(conn, symbol, signal_type, fresh_52w_highs, now)
-            if metrics is None:
-                continue
-            if not dedup.claim(symbol, signal_type):
-                continue   # already fired this setup within the TTL
-            _emit(
-                conn, redis_client,
-                symbol=symbol, signal_type=signal_type,
-                detected_at=detected_at, metrics=metrics,
-                market_regime=market_regime,
-            )
-            fired[signal_type] += 1
+
+            # Both Phase-1 signals are longs, so the tight-band gate applies to both.
+            band_too_tight = band is not None and band <= MAX_TIGHT_BAND_PCT
+
+            for signal_type in active_rules:
+                if band_too_tight:
+                    continue
+                metrics = _evaluate(conn, symbol, signal_type, fresh_52w_highs, now)
+                if metrics is None:
+                    continue
+                if not dedup.claim(symbol, signal_type):
+                    continue   # already fired this setup within the TTL
+                _emit(
+                    conn, redis_client,
+                    symbol=symbol, signal_type=signal_type,
+                    detected_at=detected_at, metrics=metrics,
+                    market_regime=market_regime,
+                )
+                fired[signal_type] += 1
 
     return {
         "symbols": len(symbols),

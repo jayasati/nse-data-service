@@ -26,7 +26,13 @@ def _seed_long_buildup(conn, symbol="ACME") -> None:
 
 
 def _run(conn, redis=None, dedup=None, now=NOW):
-    return detect.run_detection_pass(conn, redis_client=redis, dedup=dedup, now=now)
+    # Exercise the full price/volume rule set: these tests verify rule MECHANICS.
+    # Live runs default to ACTIVE_PRICE_RULES (the shelved net-negative rules
+    # removed); the shelving policy itself is covered by test_shelved_rules below.
+    return detect.run_detection_pass(
+        conn, redis_client=redis, dedup=dedup, now=now,
+        active_rules=detect._ALL_PRICE_RULES,
+    )
 
 
 # --------------------------------------------------------------- happy path
@@ -45,6 +51,20 @@ def test_long_buildup_fires_and_persists(signals_db):
     assert row[3] == 2.0
     assert row[4] >= detect.VOLUME_RATIO_MIN
     assert row[5] == 0   # undispatched
+
+
+def test_shelved_rules_not_emitted_by_default(signals_db):
+    # A fully-firing long_buildup setup must NOT emit under the live default
+    # (ACTIVE_PRICE_RULES) — the Phase-1 price/volume rules are shelved as
+    # net-negative-after-cost. This is the G9 "stop the bleeding" guarantee.
+    _seed_long_buildup(signals_db)
+    report = detect.run_detection_pass(signals_db, now=NOW)   # default active_rules
+    assert report["fired"]["long_buildup"] == 0
+    assert report["signals"] == 0
+    assert signals_db.execute("SELECT COUNT(*) FROM signals").fetchone()[0] == 0
+    # Policy constants reflect the shelving (all four rules off).
+    assert detect.ACTIVE_PRICE_RULES == ()
+    assert detect.SHELVED_PRICE_RULES == frozenset(detect._ALL_PRICE_RULES)
 
 
 def test_signal_feature_snapshot_written(signals_db):

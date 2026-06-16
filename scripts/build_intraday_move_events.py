@@ -91,6 +91,7 @@ def main() -> int:
     MIN = args.min_move
 
     conn = sqlite3.connect(args.db)
+    conn.execute("PRAGMA busy_timeout=60000")   # coexist with the live collector's writes
     if args.symbols:
         syms = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
     else:

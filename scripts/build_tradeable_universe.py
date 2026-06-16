@@ -58,6 +58,7 @@ def _grade(turnover_cr, ann_vol, traded_days, loss_making) -> str:
 
 def main() -> int:
     conn = sqlite3.connect(DB)
+    conn.execute("PRAGMA busy_timeout=60000")   # coexist with the live collector's writes
 
     fund = {r[0]: r for r in conn.execute(
         "SELECT symbol, market_cap, quality_score, loss_making, roe, debt_equity "
