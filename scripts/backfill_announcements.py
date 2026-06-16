@@ -65,7 +65,13 @@ def main():
                     help=f"Window size in days (default {CHUNK_DAYS})")
     ap.add_argument("--dry-run", action="store_true",
                     help="Fetch & normalize but do not persist")
+    ap.add_argument("--feed-pipeline", action="store_true",
+                    help="Insert as pdf_status='pending' so the PDF/LLM extraction "
+                         "pipeline processes these (COSTS money on historical PDFs). "
+                         "Default OFF: backfill is metadata-only (skipped_low_priority), "
+                         "which is all the cause/move analysis needs.")
     args = ap.parse_args()
+    backfill_status = None if args.feed_pipeline else "skipped_low_priority"
 
     start = parse_iso(args.start)
     end = parse_iso(args.end)
@@ -138,6 +144,8 @@ def main():
             # (or for the persistence helper to compute it). Check the
             # collector's behavior:
             for row in rows:
+                if backfill_status is not None:
+                    row["pdf_status"] = backfill_status   # keep out of the PDF/LLM pipeline
                 if "fingerprint" not in row:
                     row["fingerprint"] = collector.fingerprint(row)
 
