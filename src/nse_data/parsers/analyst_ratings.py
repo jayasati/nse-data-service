@@ -1,16 +1,19 @@
 """Analyst broker-recommendation scraper + tier-1 signals (tasks 18.7 / 18.8).
 
-Source: Moneycontrol's broker-recommendations RSS feed
-(``https://www.moneycontrol.com/rss/brokerrecos.xml``) — the stable public
-endpoint behind their "Broker Research" page. Each item title carries one
-recommendation:
+Source: Trendlyne's research-reports firehose
+(``https://trendlyne.com/research-reports/all/``) — a no-auth, robots-allowed
+HTML table of every broker note across all stocks, newest first. Each row
+carries one recommendation: date, stock (NSE symbol in the link slug), broker,
+target price and call type (Buy/Accumulate/Hold/Sell…).
 
-    "Buy UltraTech Cement; target of Rs 13000: ICICI Securities"
-    "Accumulate Mahindra CIE; target of Rs 280: Dolat Capital"
+(History: the original Moneycontrol RSS feed went permanently Akamai-WAF-blocked
+— 503 — around 2026-06; Moneycontrol exposes no free broker-reco JSON. Trendlyne
+verified as the reliable free replacement 2026-06-16. ``parse_reco_title`` is
+kept for the legacy RSS title format / tests.)
 
 Pipeline (mirrors rating_extractor.py): pure parse functions + a DB-glue pass.
 Every parsed reco lands in ``raw_analyst_ratings`` (idempotent via the item
-fingerprint). The feed only carries the NEW call/target, so old_call /
+fingerprint). The feed carries only the NEW call/target, so old_call /
 old_target come from OUR previous row for the same (symbol, brokerage); an
 upgrade/downgrade is a call-rank change between the two. When the brokerage
 matches Tier-1 in ``config/brokerage_tiers.yaml`` and the call rank moved, an
@@ -29,7 +32,8 @@ import re
 import sqlite3
 import time
 import xml.etree.ElementTree as ET
-from email.utils import parsedate_to_datetime
+from email.utils import format_datetime, parsedate_to_datetime
+from html.parser import HTMLParser
 from pathlib import Path
 
 import structlog
@@ -40,19 +44,24 @@ log = structlog.get_logger()
 
 JOB_ID = "analyst_ratings"
 _INTERVAL_SECONDS = 1800            # 30-min cadence (task 18.7)
-_FEED_URL = "https://www.moneycontrol.com/rss/brokerrecos.xml"
+_FEED_URL = "https://trendlyne.com/research-reports/all/"
+_FEED_PAGES = 2                     # newest-first; ~1-2 pages covers a trading day
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-# Full browser-shaped headers: a bare UA gets 503'd by Moneycontrol's WAF
-# (observed 2026-06-16). A normally-furnished request is served.
-_FEED_HEADERS = {
-    "User-Agent": _UA,
-    "Accept": "application/rss+xml,application/xml;q=0.9,text/xml;q=0.8,*/*;q=0.7",
-    "Accept-Language": "en-IN,en;q=0.9",
-    "Referer": "https://www.moneycontrol.com/markets/stock-ideas/",
-    "Connection": "keep-alive",
-}
-_TIMEOUT = 15.0
+_FEED_HEADERS = {"User-Agent": _UA, "Accept-Language": "en-IN,en;q=0.9"}
+_TIMEOUT = 20.0
+_PAGE_SLEEP = 1.0                   # polite: robots Crawl-delay 1 for normal UAs
+
+# Pseudo-tickers Trendlyne mixes into the feed for non-stock notes (sector /
+# economy / index strategy) — drop them; they're not NSE symbols.
+_NOT_SYMBOLS = frozenset({
+    "INTCOMMOD", "INTWORLDECO", "INTMARKET", "INTGLOBAL", "INTECO",
+    "NIFTY", "BANKNIFTY", "INTWORLD", "INTSTRATEGY",
+})
+_MONTHS = {m: i for i, m in enumerate(
+    ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
+_STOCK_HREF_RE = re.compile(r"/research-reports/stock/\d+/([A-Z0-9&-]+)/")
 
 # Polling window: trading days, 08:30–15:35 IST. Broker notes mostly publish
 # pre-open (~08:30–09:15), so a strict market-hours gate would miss the
@@ -136,6 +145,99 @@ def parse_rss(xml_text: str) -> list[dict]:
             "published_at": (item.findtext("pubDate") or "").strip(),
         })
     return items
+
+
+def _trendlyne_date(text: str) -> str | None:
+    """'16 Jun 2026' → RFC822 string at IST midnight (keeps _published_recent /
+    storage identical to the old RSS pubDate path). None if unparseable."""
+    m = re.search(r"(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})", text or "")
+    if not m:
+        return None
+    day, mon, year = int(m.group(1)), _MONTHS.get(m.group(2).title()), int(m.group(3))
+    if not mon:
+        return None
+    return format_datetime(_dt.datetime(year, mon, day, tzinfo=market_hours.IST))
+
+
+class _TrendlyneTableParser(HTMLParser):
+    """Extract research-report rows from the firehose HTML table. Each <tr> with a
+    /research-reports/stock/<id>/<SYMBOL>/ link is one reco; columns are read by
+    offset from that stock-link cell (date idx-1, broker +1, target +3, call +6)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: list[dict] = []
+        self._in_tr = False
+        self._tds: list[str] = []
+        self._cur: list[str] | None = None
+        self._anchor: int | None = None
+        self._slug: str | None = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "tr":
+            self._in_tr, self._tds, self._anchor, self._slug = True, [], None, None
+        elif tag == "td" and self._in_tr:
+            self._cur = []
+        elif tag == "a" and self._in_tr and self._anchor is None:
+            href = dict(attrs).get("href") or ""
+            m = _STOCK_HREF_RE.search(href)
+            if m:
+                self._anchor, self._slug = len(self._tds), m.group(1).upper()
+
+    def handle_data(self, data):
+        if self._cur is not None and data.strip():
+            self._cur.append(data.strip())
+
+    def handle_endtag(self, tag):
+        if tag == "td" and self._cur is not None:
+            self._tds.append(" ".join(self._cur).strip())
+            self._cur = None
+        elif tag == "tr" and self._in_tr:
+            self._emit()
+            self._in_tr = False
+
+    def _emit(self):
+        a, tds = self._anchor, self._tds
+        if a is None or not self._slug or a + 6 >= len(tds):
+            return
+        company = tds[a]
+        # the broker cell trails responsive labels ("… Reco Target"); keep the name
+        broker = re.split(r"\b(?:Reco|Target)\b", tds[a + 1])[0].strip()
+        target = tds[a + 3]
+        call = tds[a + 6]
+        self.rows.append({
+            "symbol": self._slug, "company": company, "brokerage": broker,
+            "target": target, "call": call, "date": tds[a - 1] if a else "",
+        })
+
+
+def parse_trendlyne(html: str) -> list[dict]:
+    """Firehose HTML → [{symbol, company, call, target, brokerage, published_at,
+    link, title}]. Drops non-stock pseudo-tickers and calls outside CALL_RANKS."""
+    p = _TrendlyneTableParser()
+    p.feed(html)
+    out = []
+    for r in p.rows:
+        sym = r["symbol"]
+        if sym in _NOT_SYMBOLS:
+            continue
+        call = normalize_call(r["call"])
+        if call is None:                      # e.g. 'Not Rated', 'Under Review'
+            continue
+        try:
+            target = float(str(r["target"]).replace(",", "")) if r["target"] else None
+        except ValueError:
+            target = None
+        published_at = _trendlyne_date(r["date"])
+        tgt_s = f"; target of Rs {target:.0f}" if target else ""
+        out.append({
+            "symbol": sym, "company": r["company"], "call": call,
+            "target": target, "brokerage": r["brokerage"],
+            "published_at": published_at,
+            "link": f"https://trendlyne.com/research-reports/stock//{sym}/",
+            "title": f"{call.title()} {r['company']}{tgt_s}: {r['brokerage']}",
+        })
+    return out
 
 
 def _normalize_name(name: str) -> str:
@@ -244,28 +346,30 @@ def _published_recent(published_at: str | None, now: _dt.datetime) -> bool:
     return (now - dt) <= _dt.timedelta(hours=_ALERT_RECENCY_HOURS)
 
 
-def default_feed_fetcher() -> list[dict]:
-    """Pull + parse the live RSS feed (the injectable default)."""
+def default_feed_fetcher(pages: int = _FEED_PAGES) -> list[dict]:
+    """Pull + parse the live Trendlyne firehose (the injectable default). Newest
+    first, so a couple of pages cover a trading day; polite 1s between pages."""
     import time as _time
 
     import httpx
 
-    last_exc = None
-    for attempt in range(3):   # transient 503s on the WAF — brief backoff retry
-        try:
-            resp = httpx.get(_FEED_URL, headers=_FEED_HEADERS,
-                             timeout=_TIMEOUT, follow_redirects=True)
-            resp.raise_for_status()
-            return parse_rss(resp.text)
-        except httpx.HTTPStatusError as e:
-            last_exc = e
-            if e.response.status_code in (429, 500, 502, 503, 504) and attempt < 2:
-                _time.sleep(2 * (attempt + 1))
-                continue
-            raise
-    if last_exc:                       # retries exhausted on a transient status
-        raise last_exc
-    raise RuntimeError("analyst feed: retries exhausted")
+    out: list[dict] = []
+    seen: set[str] = set()
+    for page in range(1, pages + 1):
+        resp = httpx.get(_FEED_URL, params={"page": page}, headers=_FEED_HEADERS,
+                         timeout=_TIMEOUT, follow_redirects=True)
+        resp.raise_for_status()
+        recos = parse_trendlyne(resp.text)
+        if not recos:
+            break                       # empty page → past the end
+        for r in recos:
+            key = item_fingerprint(r["title"], r.get("published_at") or "")
+            if key not in seen:
+                seen.add(key)
+                out.append(r)
+        if page < pages:
+            _time.sleep(_PAGE_SLEEP)
+    return out
 
 
 def run_analyst_ratings_pass(
@@ -292,11 +396,13 @@ def run_analyst_ratings_pass(
     name_map = build_company_symbol_map(conn)
     parsed = inserted = signaled = unresolved = 0
     for item in items:
-        reco = parse_reco_title(item.get("title"))
+        # Trendlyne items already carry structured fields (+ a reliable NSE symbol
+        # from the link slug); legacy RSS items need the title regex + fuzzy match.
+        reco = item if item.get("call") else parse_reco_title(item.get("title"))
         if reco is None:
             continue
         parsed += 1
-        symbol = resolve_symbol(reco["company"], name_map)
+        symbol = item.get("symbol") or resolve_symbol(reco["company"], name_map)
         if symbol is None:
             unresolved += 1
             log.info("analyst_symbol_unresolved", company=reco["company"])
