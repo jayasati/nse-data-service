@@ -296,17 +296,43 @@ def gather_candidates(conn, symbol: str, move_date: str, *, window_days: int = 4
     return cands
 
 
+# Context flags, NOT catalysts: F&O expiry / a market-wide move co-occur with a
+# big move by calendar/beta coincidence. They must never win "primary cause" — a
+# move whose only tags are context has no idiosyncratic catalyst ('none').
+CONTEXT_ONLY = frozenset({"fno_expiry", "market_context"})
+
+
+def primary_catalyst(conn, symbol: str, move_date: str, *, window_days: int = 4) -> str:
+    """Highest-weight internal CATALYST bucket for a move ('none' if no real
+    catalyst). Splits the catch-all 'announcement' into earnings-result vs other
+    (orders/contracts/deals) — the non-earnings half is the multi-factor thesis.
+    Single source of truth for the bucket used by the paper log + move digest."""
+    from ..fundamentals.from_results import is_result_subject   # lazy: avoid import cycle
+    cands = gather_candidates(conn, symbol, move_date, window_days=window_days)
+    catalysts = [c for c in cands if c["cause_type"] not in CONTEXT_ONLY]
+    if not catalysts:
+        return "none"
+    top = max(catalysts, key=lambda c: c["weight"])
+    if top["cause_type"] == "announcement":
+        return "ann:result" if is_result_subject(top["summary"]) else "ann:other"
+    return top["cause_type"]
+
+
 # --- external (best-effort) --------------------------------------------------
 
 def _bse_scrip(conn, symbol: str) -> str | None:
-    """Symbol → BSE numeric scrip code. We don't yet hold BSE codes (the
-    announcement API needs them), so this returns None until a scrip master
-    (config/bse_scrips.yaml or a raw table) is wired. TODO: populate it."""
+    """Symbol → BSE numeric scrip code, via ISIN: our raw_quote_metadata holds the
+    NSE symbol's ISIN; raw_bse_scrip_master (loaded by scripts/load_bse_scrip_master.py
+    from BSE's List_of_companies.csv) maps ISIN → BSE code. Returns None if either
+    side is missing (scrip master not loaded / no ISIN) — bse_announcements then
+    fails soft."""
     try:
         row = conn.execute(
-            "SELECT bse_scrip FROM raw_quote_metadata WHERE symbol=?", (symbol,)).fetchone()
+            "SELECT m.bse_code FROM raw_quote_metadata q "
+            "JOIN raw_bse_scrip_master m ON q.isin = m.isin WHERE q.symbol=?",
+            (symbol,)).fetchone()
         return str(row[0]) if row and row[0] else None
-    except Exception:  # noqa: BLE001 — column not present
+    except Exception:  # noqa: BLE001 — scrip master table not present yet
         return None
 
 
