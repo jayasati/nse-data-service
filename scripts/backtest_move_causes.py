@@ -45,6 +45,7 @@ def main() -> int:
     ap.add_argument("--min-move", type=float, default=10.0,
                     help="abs %% move-from-open threshold for a 'big' mover")
     ap.add_argument("--since", default="2023-06-13")
+    ap.add_argument("--until", default="9999-12-31", help="event-date ceiling (for OOS splits)")
     ap.add_argument("--horizons", default="1,2,3,5,10")
     ap.add_argument("--primary-horizon", type=int, default=3)
     ap.add_argument("--cost-pct", type=float, default=0.20)
@@ -72,9 +73,9 @@ def main() -> int:
         "SELECT e.symbol, e.date, e.direction, "
         "       COALESCE(t.grade,'(ungraded)') grade "
         "FROM intraday_move_events e LEFT JOIN tradeable_universe t ON t.symbol=e.symbol "
-        "WHERE ABS(e.move_pct) >= ? AND e.date >= ? "
+        "WHERE ABS(e.move_pct) >= ? AND e.date >= ? AND e.date <= ? "
         "ORDER BY e.date",
-        (args.min_move, args.since),
+        (args.min_move, args.since, args.until),
     ).fetchall()
 
     # cause type -> horizon -> [net excess returns, direction = move direction]
