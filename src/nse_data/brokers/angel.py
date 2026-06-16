@@ -73,10 +73,16 @@ def _is_rate_limit(e: Exception) -> bool:
 
 
 def _is_auth_error(x) -> bool:
-    """Session-token death (AG8001 'Invalid Token') — Angel sessions expire
-    after a few hours, mid-run on a long backfill. Recoverable by re-login."""
+    """Session-token death — Angel sessions expire after a few hours / overnight.
+    Recoverable by re-login. Match the expiry signatures BROADLY: a too-narrow
+    match (only AG8001 'Invalid Token') left the live collector stuck failing
+    every tick on 2026-06-15/16 when the overnight expiry returned a different
+    code. Relogin-once-and-retry, so an over-match only costs one extra login."""
     s = str(x).lower()
-    return "invalid token" in s or "ag8001" in s or "token expired" in s
+    return any(k in s for k in (
+        "invalid token", "token expired", "ag8001", "ag8002", "ab1010",
+        "ab8050", "ab8051", "invalid refresh token", "session expired",
+        "invalid session", "unauthor"))
 
 
 def _require(name: str) -> str:

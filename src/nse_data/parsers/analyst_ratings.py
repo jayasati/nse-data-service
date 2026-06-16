@@ -43,6 +43,15 @@ _INTERVAL_SECONDS = 1800            # 30-min cadence (task 18.7)
 _FEED_URL = "https://www.moneycontrol.com/rss/brokerrecos.xml"
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+# Full browser-shaped headers: a bare UA gets 503'd by Moneycontrol's WAF
+# (observed 2026-06-16). A normally-furnished request is served.
+_FEED_HEADERS = {
+    "User-Agent": _UA,
+    "Accept": "application/rss+xml,application/xml;q=0.9,text/xml;q=0.8,*/*;q=0.7",
+    "Accept-Language": "en-IN,en;q=0.9",
+    "Referer": "https://www.moneycontrol.com/markets/stock-ideas/",
+    "Connection": "keep-alive",
+}
 _TIMEOUT = 15.0
 
 # Polling window: trading days, 08:30–15:35 IST. Broker notes mostly publish
@@ -237,12 +246,26 @@ def _published_recent(published_at: str | None, now: _dt.datetime) -> bool:
 
 def default_feed_fetcher() -> list[dict]:
     """Pull + parse the live RSS feed (the injectable default)."""
+    import time as _time
+
     import httpx
 
-    resp = httpx.get(_FEED_URL, headers={"User-Agent": _UA},
-                     timeout=_TIMEOUT, follow_redirects=True)
-    resp.raise_for_status()
-    return parse_rss(resp.text)
+    last_exc = None
+    for attempt in range(3):   # transient 503s on the WAF — brief backoff retry
+        try:
+            resp = httpx.get(_FEED_URL, headers=_FEED_HEADERS,
+                             timeout=_TIMEOUT, follow_redirects=True)
+            resp.raise_for_status()
+            return parse_rss(resp.text)
+        except httpx.HTTPStatusError as e:
+            last_exc = e
+            if e.response.status_code in (429, 500, 502, 503, 504) and attempt < 2:
+                _time.sleep(2 * (attempt + 1))
+                continue
+            raise
+    if last_exc:                       # retries exhausted on a transient status
+        raise last_exc
+    raise RuntimeError("analyst feed: retries exhausted")
 
 
 def run_analyst_ratings_pass(
