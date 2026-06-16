@@ -69,6 +69,10 @@ def cmd_run(args) -> int:
     secondary = yfin if broker is not yfin and yfin.credentials_present() else None
 
     conn = open_db(DB_PATH)
+    # Coexist with the live collector's writes: wait up to 60s for the SQLite
+    # write lock instead of failing (open_db's default 5s isn't enough under
+    # market-hours contention). Best run after close, where it's quiet anyway.
+    conn.execute("PRAGMA busy_timeout=60000")
     symbols = _universe(conn, args)
     end = date.today()
     start = end - timedelta(days=args.days)
