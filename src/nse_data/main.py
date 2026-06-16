@@ -11,6 +11,16 @@ from __future__ import annotations
 
 import logging
 import sys
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env via python-dotenv BEFORE any project import reads os.environ.
+# systemd's EnvironmentFile parses .env differently from python-dotenv — it
+# mis-read a malformed ANGEL_TOTP_SECRET line (trailing junk → non-base32 chars)
+# and broke the Angel TOTP login, while dotenv parses just the valid secret.
+# override=True supersedes the systemd-provided (mangled) values.
+load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
 
 import structlog
 
