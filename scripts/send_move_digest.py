@@ -64,8 +64,10 @@ def main() -> int:
 
     from nse_data.storage.db import open_db
     from nse_data.research.cause_engine import primary_catalyst
+    from nse_data.research.move_causes import ensure_table as ensure_causes
 
     conn = open_db(args.db)
+    ensure_causes(conn)   # created lazily by the cause pipeline; may be absent here
     date = args.date or conn.execute("SELECT MAX(date) FROM intraday_move_events").fetchone()[0]
     if not date:
         print("no move events found"); return 0

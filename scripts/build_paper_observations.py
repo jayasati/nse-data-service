@@ -50,10 +50,12 @@ def main() -> int:
 
     from nse_data.storage.db import open_db, apply_migrations
     from nse_data.research.cause_engine import primary_catalyst
+    from nse_data.research.move_causes import ensure_table as ensure_causes
     from nse_data.fundamentals.sectors import sector_class_for
 
     conn = open_db(args.db)
     apply_migrations(conn)
+    ensure_causes(conn)   # LEFT JOIN target; created lazily by the cause pipeline
 
     # Moves on tracked names in window. LEFT JOIN universe for the grade filter;
     # LEFT JOIN move_causes for the LLM "why" (may be absent — capture anyway).
