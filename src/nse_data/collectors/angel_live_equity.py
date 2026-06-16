@@ -100,8 +100,8 @@ def register_angel_live_job(scheduler, db_path: str) -> str:
         conn = open_db(db_path)
         try:
             run_angel_live_pass(conn, symbols)
-        except Exception:
-            log.exception("angel_live_failed")
+        except Exception as e:
+            log.error("angel_live_failed", err=repr(e))   # repr renders in the JSON event (exc_info did not)
         finally:
             conn.close()
 
