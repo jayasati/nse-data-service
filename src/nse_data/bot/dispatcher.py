@@ -31,6 +31,7 @@ from datetime import time as dt_time
 
 import structlog
 
+from .. import universe
 from ..market.regime_job import latest_market_state
 from ..market.sector_map import load_sector_map
 from ..market.sector_radar_job import latest_sector_ranks
@@ -106,6 +107,14 @@ _POST_EVENT_TYPES = ("earnings_direction", *_RESULT_QUALITY_TYPES, *_RESULT_ALER
 # 18.3: suppress longs into a bought rumor this close to the event.
 _BUY_RUMOR_MAX_DAYS = 3
 
+# Universe gate (P2): the heading stamped on every dispatched alert, by grade.
+# Membership (which grades dispatch at all) is universe.TRACKED_GRADES.
+_GRADE_HEADING = {
+    universe.GRADE_CORE: "CORE",
+    universe.GRADE_TRADEABLE: "TRADEABLE",
+    universe.GRADE_VOLATILE: "VOLATILE",
+}
+
 
 # ============================================================================
 # Config (task 5.7)
@@ -164,15 +173,29 @@ def dispatch_pass(
     quality_scores = _load_quality_scores(conn)     # fundamentals (task 14.4/14.5)
     credit_map = latest_credit_by_symbol(conn, now)  # credit ratings (Week 16)
     pre_event_map = _load_pre_event_states(conn)     # buy-rumor gate (task 18.3)
+    tracked_grades = _load_tracked_grades(conn)      # universe gate (P2); {} = fail open
     rule = time_rule(now)                            # time-of-day window (task 9.1)
     threshold = rule.min_confidence or CONFIDENCE_THRESHOLD
 
     counts = {"sent": 0, "gated": 0, "low_confidence": 0,
               "aged_out": 0, "held": 0, "time_suppressed": 0,
-              "buy_rumor_suppressed": 0}
+              "buy_rumor_suppressed": 0, "untracked_suppressed": 0}
 
     for row in rows:
         sig = _row_to_signal(row)
+
+        # Universe gate (P2): only alert on tracked (liquid) names. A symbol that
+        # is graded illiquid/etf — or absent from a populated table — is dropped
+        # (marked dispatched so it never requeues). Fails open: when the table is
+        # missing, tracked_grades is {} and every symbol passes. The grade also
+        # supplies the CORE/TRADEABLE/VOLATILE heading stamped on the alert.
+        grade = tracked_grades.get(sig["symbol"].upper())
+        if tracked_grades and grade not in universe.TRACKED_GRADES:
+            _mark_dispatched(conn, sig["id"], now)
+            counts["untracked_suppressed"] += 1
+            continue
+        head = _GRADE_HEADING.get(grade or "")
+
         series = price_bands.get(sig["symbol"], (None, None))[0]
 
         # Result-quality signals carry a fundamental verdict (no price/volume),
@@ -195,7 +218,7 @@ def dispatch_pass(
                 else:
                     counts["low_confidence"] += 1
                 continue
-            if sender(token, chat_id, text, _topic_for(sig)):
+            if sender(token, chat_id, _stamp_heading(text, head), _topic_for(sig)):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
             else:
@@ -231,7 +254,7 @@ def dispatch_pass(
                 else:
                     counts["low_confidence"] += 1
                 continue
-            if sender(token, chat_id, text, _topic_for(sig)):
+            if sender(token, chat_id, _stamp_heading(text, head), _topic_for(sig)):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
             else:
@@ -260,7 +283,7 @@ def dispatch_pass(
             counts["buy_rumor_suppressed"] += 1
             if _claim_buy_rumor_warning(conn, sig["symbol"], now):
                 sender(token, chat_id,
-                       build_buy_rumor_warning(sig, pre_days, pre_run10),
+                       _stamp_heading(build_buy_rumor_warning(sig, pre_days, pre_run10), head),
                        _topic_for(sig))
             continue
 
@@ -315,7 +338,7 @@ def dispatch_pass(
                 )
                 if surprise:
                     text += "\n" + surprise
-            if sender(token, chat_id, text, _topic_for(sig)):
+            if sender(token, chat_id, _stamp_heading(text, head), _topic_for(sig)):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
             else:
@@ -328,6 +351,25 @@ def dispatch_pass(
 
     conn.commit()
     return counts
+
+
+def _load_tracked_grades(conn: sqlite3.Connection) -> dict[str, str]:
+    """{SYMBOL: grade} from tradeable_universe (the universe gate, P2).
+
+    Returns {} when the table is absent → the gate FAILS OPEN (every symbol
+    dispatches), matching universe.is_tracked's contract. Read from the dispatch
+    connection so it's always the same DB the signals came from."""
+    try:
+        rows = conn.execute("SELECT symbol, grade FROM tradeable_universe").fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    return {s.upper(): g for s, g in rows}
+
+
+def _stamp_heading(text: str, head: str | None) -> str:
+    """Prefix the grade heading (CORE/TRADEABLE/VOLATILE) onto an alert. No-op
+    when head is None (fail-open / unknown grade)."""
+    return f"[{head}] {text}" if head else text
 
 
 def _load_pre_event_states(conn: sqlite3.Connection) -> dict:

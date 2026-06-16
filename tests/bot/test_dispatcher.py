@@ -91,6 +91,59 @@ def test_send_failure_not_marked(bot_db):
     assert _dispatched(bot_db, sid)[0] == 0       # retried next pass
 
 
+def _seed_universe(conn, grades: dict[str, str]) -> None:
+    """Populate tradeable_universe with {symbol: grade} so the gate is active."""
+    conn.execute("CREATE TABLE IF NOT EXISTS tradeable_universe "
+                 "(symbol TEXT PRIMARY KEY, grade TEXT)")
+    conn.executemany("INSERT OR REPLACE INTO tradeable_universe (symbol, grade) "
+                     "VALUES (?, ?)", list(grades.items()))
+    conn.commit()
+
+
+def test_tracked_symbol_sends_with_grade_heading(bot_db):
+    _seed_universe(bot_db, {"ACME": "A core"})
+    sid = seed_signal(bot_db, volume_ratio=4.0)
+    r = FakeRedis()
+    set_high_confidence(r)
+    sent, sender = _collecting_sender()
+
+    report = d.dispatch_pass(bot_db, token="tok", chat_id="chat",
+                             redis_client=r, now=NOW, sender=sender)
+    assert report["sent"] == 1
+    assert sent[0][2].startswith("[CORE] ")          # heading stamped
+    assert _dispatched(bot_db, sid)[0] == 1
+
+
+def test_untracked_grade_suppressed(bot_db):
+    # Table populated but ACME is illiquid → not in TRACKED_GRADES → dropped.
+    _seed_universe(bot_db, {"ACME": "illiquid"})
+    sid = seed_signal(bot_db, volume_ratio=4.0)
+    r = FakeRedis()
+    set_high_confidence(r)
+    sent, sender = _collecting_sender()
+
+    report = d.dispatch_pass(bot_db, token="tok", chat_id="chat",
+                             redis_client=r, now=NOW, sender=sender)
+    assert report["untracked_suppressed"] == 1
+    assert sent == []                                 # never sent
+    assert _dispatched(bot_db, sid)[0] == 1           # marked, won't requeue
+
+
+def test_absent_from_populated_universe_suppressed(bot_db):
+    # A populated table that simply omits ACME also means "not tracked".
+    _seed_universe(bot_db, {"OTHER": "A core"})
+    sid = seed_signal(bot_db, volume_ratio=4.0)
+    r = FakeRedis()
+    set_high_confidence(r)
+    sent, sender = _collecting_sender()
+
+    report = d.dispatch_pass(bot_db, token="tok", chat_id="chat",
+                             redis_client=r, now=NOW, sender=sender)
+    assert report["untracked_suppressed"] == 1
+    assert sent == []
+    assert _dispatched(bot_db, sid)[0] == 1
+
+
 def test_send_telegram_unconfigured_returns_false():
     assert d.send_telegram(None, None, "hi") is False
     assert d.send_telegram("tok", None, "hi") is False
