@@ -54,6 +54,7 @@ def main() -> int:
     from nse_data.fundamentals.sectors import sector_class_for
 
     conn = open_db(args.db)
+    conn.execute("PRAGMA busy_timeout=60000")   # coexist with live-collector writes
     apply_migrations(conn)
     ensure_causes(conn)   # LEFT JOIN target; created lazily by the cause pipeline
 

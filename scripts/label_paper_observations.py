@@ -31,6 +31,7 @@ def main() -> int:
     from nse_data.research import edge_stats
 
     conn = open_db(args.db)
+    conn.execute("PRAGMA busy_timeout=60000")   # coexist with live-collector writes
     bench_for, series, avail = edge_stats.bench_resolver(conn)
 
     rows = conn.execute(

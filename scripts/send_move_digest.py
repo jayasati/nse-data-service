@@ -67,6 +67,7 @@ def main() -> int:
     from nse_data.research.move_causes import ensure_table as ensure_causes
 
     conn = open_db(args.db)
+    conn.execute("PRAGMA busy_timeout=60000")   # coexist with live-collector writes
     ensure_causes(conn)   # created lazily by the cause pipeline; may be absent here
     date = args.date or conn.execute("SELECT MAX(date) FROM intraday_move_events").fetchone()[0]
     if not date:

@@ -57,6 +57,7 @@ def main() -> int:
         rows.append((isin, code, name, now))
 
     conn = open_db(args.db)
+    conn.execute("PRAGMA busy_timeout=60000")   # coexist with live-collector writes
     apply_migrations(conn)
     conn.executemany(
         "INSERT OR REPLACE INTO raw_bse_scrip_master (isin, bse_code, security_name, fetched_at) "
