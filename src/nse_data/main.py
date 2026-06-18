@@ -127,18 +127,14 @@ def main() -> int:
     # previous session's values and publishes the blacklist + quality flags to
     # Redis before the 09:15 open.
     registered.append(register_pre_market_loader(scheduler, db_path))
-    # Signal detector: every minute during market hours, sweeps the same
-    # FNO + Nifty 500 universe, applies hard gates + the Phase-1 rules, and
-    # writes fresh signals (+ their feature snapshot). Gated internally on
-    # is_market_open(); reads the indicator_live snapshot the live job just wrote.
-    registered.append(register_signal_job(scheduler, db_path))
-    # Paper-trade tracker: every minute during market hours, opens a paper trade
-    # per new signal (ATR bracket) and closes any that hit T1/SL, force-flatting
-    # the rest at 15:20. Internally gated on is_market_open().
-    registered.append(register_paper_tracker(scheduler, db_path))
-    # Outcome labeler: nightly at 19:30 IST (trading days), fills signal_outcomes
-    # with forward returns + MAE/MFE — the label side of the ML dataset.
-    registered.append(register_outcome_labeler(scheduler, db_path))
+    # DISABLED 2026-06-18: the intraday TA/event signal system (detector +
+    # paper-trade tracker + outcome labeler) is retired — its rules were shelved
+    # net-negative, and it's superseded by the validated Q+V+Momentum daily
+    # swing strategy (scripts/paper_trade.py → paper_book). Re-enable by
+    # uncommenting if the intraday research dataset is needed again.
+    # registered.append(register_signal_job(scheduler, db_path))
+    # registered.append(register_paper_tracker(scheduler, db_path))
+    # registered.append(register_outcome_labeler(scheduler, db_path))
     # Market regime classifier: every 5 minutes during market hours, snapshots
     # VIX/Nifty/breadth/GIFT into market_state with an overall_regime tag the
     # confidence scorer reads (Phase 2, Week 7). Internally gated on market hours.
