@@ -2,7 +2,7 @@
 
 > ## ⚡ Daily ops cheat-sheet
 >
-> **Instance:** `i-0a2677d417ab9109c` · `ap-south-1` · public IP `13.200.215.86`
+> **Instance:** `i-0a2677d417ab9109c` · `ap-south-1` · public IP `13.207.114.161`
 >
 > **Connect (preferred — AWS SSM, immune to dynamic-IP changes):**
 > ```bash
@@ -15,7 +15,7 @@
 > Dashboard tunnel (separate terminal): `nse-tunnel` → http://localhost:8000
 >
 > (`nse-shell`/`nse-tunnel` are bash functions in `~/.bashrc`. SSH fallback:
-> `./scripts/allow_ssh.sh && ssh -i ~/nse-data-service/stock-key.pem ubuntu@13.200.215.86`.)
+> `./scripts/allow_ssh.sh && ssh -i ~/nse-data-service/stock-key.pem ubuntu@13.207.114.161`.)
 >
 > **Update the server after pushing from the laptop** (laptop → GitHub → server):
 > ```bash
@@ -148,7 +148,7 @@ aws ssm start-session --target i-0a2677d417ab9109c --region ap-south-1 \
 ```bash
 chmod 400 /home/jay/nse-data-service/stock-key.pem
 ./scripts/allow_ssh.sh    # updates the SG to your current public IP (dynamic-IP fix)
-ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.200.215.86
+ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.207.114.161
 ```
 
 ---
@@ -225,7 +225,7 @@ everything collected so far. Migrations are applied automatically against the
 Run this **from the laptop** (repo root), pointing at the VPS:
 
 ```bash
-./scripts/transfer_db.sh ubuntu@13.200.215.86 \
+./scripts/transfer_db.sh ubuntu@13.207.114.161 \
     /opt/nse-data-service/data \
     /home/jay/nse-data-service/stock-key.pem
 ```
@@ -239,7 +239,7 @@ it resume.
 Verify on the server once it finishes:
 
 ```bash
-ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.200.215.86 \
+ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.207.114.161 \
   "sqlite3 /opt/nse-data-service/data/nse.db 'PRAGMA integrity_check;'"   # expect: ok
 ```
 
@@ -342,7 +342,7 @@ dependency, data spot-checked. Only then start Week 2.
 The dashboard has no auth — never expose port 8000. Tunnel from the laptop:
 
 ```bash
-ssh -i /home/jay/nse-data-service/stock-key.pem -L 8000:localhost:8000 ubuntu@13.200.215.86
+ssh -i /home/jay/nse-data-service/stock-key.pem -L 8000:localhost:8000 ubuntu@13.207.114.161
 # then open http://localhost:8000
 ```
 
@@ -351,7 +351,7 @@ ssh -i /home/jay/nse-data-service/stock-key.pem -L 8000:localhost:8000 ubuntu@13
 ## 11. Checking server status (quick reference)
 
 Day-to-day "is it alive and collecting?" checks. The SSH key lives at
-`/home/jay/nse-data-service/stock-key.pem` and the instance is `ubuntu@13.200.215.86`
+`/home/jay/nse-data-service/stock-key.pem` and the instance is `ubuntu@13.207.114.161`
 (ap-south-1, Mumbai).
 
 > First time only: `chmod 400 /home/jay/nse-data-service/stock-key.pem`
@@ -371,7 +371,7 @@ Day-to-day "is it alive and collecting?" checks. The SSH key lives at
 **Fastest check — liveness from the laptop, no full login:**
 
 ```bash
-ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.200.215.86 \
+ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.207.114.161 \
   "systemctl is-active nse-collector@ubuntu; redis-cli ping"
 # expect: active   /   PONG
 ```
@@ -379,7 +379,7 @@ ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.200.215.86 \
 **Full session — SSH in, then inspect:**
 
 ```bash
-ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.200.215.86
+ssh -i /home/jay/nse-data-service/stock-key.pem ubuntu@13.207.114.161
 ```
 
 Once on the server:
@@ -407,7 +407,7 @@ sqlite3 /opt/nse-data-service/data/nse.db \
 **View the dashboard (no auth — tunnel from the laptop):**
 
 ```bash
-ssh -i /home/jay/nse-data-service/stock-key.pem -L 8000:localhost:8000 ubuntu@13.200.215.86
+ssh -i /home/jay/nse-data-service/stock-key.pem -L 8000:localhost:8000 ubuntu@13.207.114.161
 # then open http://localhost:8000
 ```
 

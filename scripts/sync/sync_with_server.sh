@@ -20,13 +20,13 @@
 #      the signals/ML-archive cluster is id-remapped so its joins survive)
 #
 # Defaults match docs/DEPLOY.md; override via env:
-#   EC2=ubuntu@13.200.215.86  SSH_KEY=stock-key.pem  REMOTE_DIR=/opt/nse-data-service  UNIT=ubuntu
+#   EC2=ubuntu@13.207.114.161  SSH_KEY=stock-key.pem  REMOTE_DIR=/opt/nse-data-service  UNIT=ubuntu
 #
 # If ssh hangs: your home IP changed — run ./scripts/allow_ssh.sh first.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-EC2="${EC2:-ubuntu@13.200.215.86}"
+EC2="${EC2:-ubuntu@13.207.114.161}"
 SSH_KEY="${SSH_KEY:-stock-key.pem}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/nse-data-service}"
 UNIT="${UNIT:-ubuntu}"

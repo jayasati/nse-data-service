@@ -17,7 +17,7 @@
 set -euo pipefail
 
 REGION="${AWS_REGION:-ap-south-1}"
-EC2_IP="${EC2_IP:-13.200.215.86}"     # the instance's public IP / DNS
+EC2_IP="${EC2_IP:-13.207.114.161}"     # the instance's public IP / DNS
 PORT="${SSH_PORT:-22}"
 DESC="laptop-ssh (managed by allow_ssh.sh)"
 
