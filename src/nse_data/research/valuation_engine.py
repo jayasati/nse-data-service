@@ -66,7 +66,7 @@ def valuation_raw(conn, symbol, as_of_ep):
     pe = price / ttm_eps
     # PAT YoY growth for PEG (latest vs ~4 quarters back)
     peg = None
-    if len(qs) >= 5 and qs[-5][2] and qs[-5][2] > 0:
+    if len(qs) >= 5 and qs[-1][2] is not None and qs[-5][2] and qs[-5][2] > 0:
         g = (qs[-1][2] - qs[-5][2]) / qs[-5][2] * 100.0
         if g > 0:
             peg = pe / g
