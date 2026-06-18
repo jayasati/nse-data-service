@@ -35,6 +35,7 @@ def main() -> int:
     from nse_data.research import move_causes as mc
 
     conn = sqlite3.connect(args.db)
+    conn.execute("PRAGMA busy_timeout=60000")   # coexist with the live collector's writes
     mc.ensure_table(conn)
 
     if args.symbols:
