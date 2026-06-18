@@ -30,7 +30,7 @@ _WEIGHT = {
     "systematic": 10,      # move explained by the market/sector → no stock-specific cause
     "ex_date_artifact": 10,  # split/bonus ex-date → the "move" may be a price adjustment
     "result": 9, "rating_action": 9, "brokerage": 8, "corporate_action": 8,
-    "block_deal": 8, "announcement": 7, "board_meeting": 6, "fno_expiry": 5,
+    "block_deal": 8, "announcement": 7, "board_meeting": 6, "news": 5, "fno_expiry": 5,
     "52w_break": 4, "oi_spurt": 3, "delivery_spike": 3, "fii_dii": 3,
     "market_context": 2,   # market diverged → idiosyncratic; context only, low weight
 }
@@ -82,6 +82,26 @@ def _announcements(conn, sym, lo, hi):
         d = _to_iso(bdt)
         if _in_window(d, lo, hi):
             out.append(_cand("nse_announcement", "announcement", d, subj, url))
+    return out
+
+
+def _news_store(conn, sym, lo, hi):
+    """Stored news corpus (raw_news) in the window — the PERSISTENT news memory,
+    so attribution reads the growing corpus, not only an ephemeral live search.
+    Capped + newest-first so a busy window doesn't flood the candidate set."""
+    try:
+        lo_ep = int(dt.datetime.fromisoformat(lo).replace(tzinfo=IST).timestamp())
+        hi_ep = int((dt.datetime.fromisoformat(hi) + dt.timedelta(days=1))
+                    .replace(tzinfo=IST).timestamp())
+    except ValueError:
+        return []
+    out = []
+    for headline, url, source, ep in conn.execute(
+            "SELECT headline, url, source, published_epoch FROM raw_news "
+            "WHERE symbol=? AND published_epoch >= ? AND published_epoch < ? "
+            "ORDER BY published_epoch DESC LIMIT 15", (sym, lo_ep, hi_ep)):
+        d = dt.datetime.fromtimestamp(ep, IST).date().isoformat() if ep else None
+        out.append(_cand(f"news:{source}", "news", d, headline, url))
     return out
 
 
@@ -277,7 +297,7 @@ def _delivery_spike(conn, sym, lo, hi):
 
 CONNECTORS = (_announcements, _results, _rating_actions, _brokerage,
               _corporate_actions, _board_meetings, _block_deals, _fii_dii,
-              _fno_expiry, _oi_spurt, _high_low_52w, _delivery_spike)
+              _fno_expiry, _oi_spurt, _high_low_52w, _delivery_spike, _news_store)
 
 
 def gather_candidates(conn, symbol: str, move_date: str, *, window_days: int = 4) -> list[dict]:

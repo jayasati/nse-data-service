@@ -38,7 +38,7 @@ _CATALYST_LABEL = {
     "ann:result": "earnings/result", "ann:other": "announcement (order/deal)",
     "result": "earnings/result", "rating_action": "rating change",
     "brokerage": "brokerage call", "corporate_action": "corporate action",
-    "block_deal": "block/bulk deal", "board_meeting": "board meeting",
+    "block_deal": "block/bulk deal", "board_meeting": "board meeting", "news": "news coverage",
     "52w_break": "52-week break", "oi_spurt": "OI spurt",
     "delivery_spike": "delivery spike", "fii_dii": "FII/DII flow",
     "none": "no internal catalyst found",
