@@ -19,6 +19,7 @@ HZ = [30, 60, 90]
 ENGINES = {
     "quality": "nse_data.research.quality_engine",
     "valuation": "nse_data.research.valuation_engine",
+    "momentum": "nse_data.research.momentum_engine",
     "composite": "nse_data.research.composite_engine",
 }
 
