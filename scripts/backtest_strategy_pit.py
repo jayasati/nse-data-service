@@ -71,8 +71,10 @@ def main() -> int:
         return sec_cache[s]
 
     # all symbols with daily candles → per-symbol arrays (chronological)
-    syms_all = [s for (s,) in conn.execute(
-        "SELECT DISTINCT symbol FROM raw_intraday_candles WHERE interval='day'")]
+    # candle symbols come from tradeable_universe (built from ALL candle symbols) —
+    # a 1k-row read, vs a DISTINCT scan of the 30GB/59M-row candle table (which
+    # blocks for minutes behind the live collector's writes).
+    syms_all = [s for (s,) in conn.execute("SELECT symbol FROM tradeable_universe")]
     print(f"[{_el()}] loading candles for {len(syms_all)} symbols...", flush=True)
     cand: dict = {}
     for ix, sym in enumerate(syms_all, 1):
