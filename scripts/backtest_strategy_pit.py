@@ -58,6 +58,8 @@ def main() -> int:
     ap.add_argument("--cost", type=float, default=1.0)
     ap.add_argument("--grid", action="store_true",
                     help="run the T_in x trail robustness grid instead of one base run")
+    ap.add_argument("--risk-veto", type=float, default=0.0,
+                    help="if >0, block entries whose Risk score < this (downside filter)")
     args = ap.parse_args()
 
     from nse_data.storage.db import open_db
@@ -162,6 +164,23 @@ def main() -> int:
     nb0, nb1 = nb_series.get(cdates[0]), nb_series.get(cdates[-1])
     mkt = (100 * ((nb1 / nb0) ** (1 / yrs) - 1)) if (nb0 and nb1 and yrs) else 0
 
+    # Risk veto — computed lazily only for entry candidates (expensive per-symbol),
+    # cached by (symbol, date). Returns True = allowed to buy.
+    from nse_data.research.risk_engine import risk_raw
+    _risk_cache: dict = {}
+    veto_stats = {"checked": 0, "vetoed": 0}
+    def risk_ok(sym, d):
+        if not args.risk_veto:
+            return True
+        key = (sym, d)
+        if key not in _risk_cache:
+            _risk_cache[key] = risk_raw(conn, sym, eps[d])["score"]
+        veto_stats["checked"] += 1
+        ok = _risk_cache[key] >= args.risk_veto
+        if not ok:
+            veto_stats["vetoed"] += 1
+        return ok
+
     def simulate(t_in, t_out, trail):
         """State machine + equal-weight portfolio over the PIT-eligible scores."""
         trades, holders = [], [set() for _ in range(n_int)]
@@ -174,7 +193,7 @@ def main() -> int:
                 if px is None:
                     continue
                 if not held:
-                    if sc is not None and sc >= t_in and sym in elig[d]:
+                    if sc is not None and sc >= t_in and sym in elig[d] and risk_ok(sym, d):
                         held, entry_px, entry_d, entry_k, peak = True, px, d, k, sc
                 else:
                     if sc is not None:
@@ -202,15 +221,18 @@ def main() -> int:
             prs = [price_of(s, cdates[k + 1]) / price_of(s, cdates[k]) - 1
                    for s in holders[k] if price_of(s, cdates[k]) and price_of(s, cdates[k + 1])]
             irets.append(sum(prs) / len(prs) if prs else 0.0)
-        eq = 1.0
+        eq = peak = 1.0
+        maxdd = 0.0
         for r in irets:
             eq *= (1 + r)
+            peak = max(peak, eq)
+            maxdd = min(maxdd, eq / peak - 1)
         ppy = len(irets) / yrs if yrs else 0
         sharpe = (st.mean(irets) / st.pstdev(irets) * (ppy ** 0.5)) if len(irets) > 1 and st.pstdev(irets) else 0
         return {"n": len(trades), "wr": 100 * len(wins) / len(trades) if trades else 0,
                 "exp": sum(nets) / len(nets) if nets else 0, "pf": pf,
                 "cagr": 100 * (eq ** (1 / yrs) - 1) if yrs else 0, "sharpe": sharpe,
-                "total": 100 * (eq - 1), "irets": irets}
+                "total": 100 * (eq - 1), "maxdd": 100 * maxdd, "irets": irets}
 
     if args.grid:
         print("PARAMETER ROBUSTNESS under PIT — CAGR% / Sharpe / PF / n-trades")
@@ -227,8 +249,10 @@ def main() -> int:
         if not r["n"]:
             print("NO TRADES."); conn.close(); return 0
         print("============ SURVIVORSHIP-CORRECTED (point-in-time universe) ============")
+        if args.risk_veto:
+            print(f"  RISK VETO @{args.risk_veto:.0f}: blocked {veto_stats['vetoed']}/{veto_stats['checked']} entry-checks")
         print(f"  trades={r['n']}  win={r['wr']:.0f}%  expectancy={r['exp']:+.2f}%/trade  PF={r['pf']:.2f}")
-        print(f"  portfolio CAGR={r['cagr']:+.1f}%  Sharpe={r['sharpe']:.2f}  "
+        print(f"  portfolio CAGR={r['cagr']:+.1f}%  Sharpe={r['sharpe']:.2f}  maxDD={r['maxdd']:.1f}%  "
               f"total={r['total']:+.1f}%  | market CAGR={mkt:+.1f}%")
         n = n_int - 1
         print("  sub-periods:")
