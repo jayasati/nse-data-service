@@ -46,6 +46,14 @@ class ShareholdingPattern(ReferenceCollector):
             meta={"segment": idx},
         ) for idx in self.indexes]
 
+    def persist(self, db, rows):
+        # equities+sme (and revised filings) can repeat a symbol across the merged
+        # batch → UNIQUE(symbol) fails. Dedup by symbol (last wins) before upsert.
+        seen: dict = {}
+        for r in rows:
+            seen[r["symbol"]] = r
+        return super().persist(db, list(seen.values()))
+
     def normalize(self, data: Any, request: Request) -> list[Row]:
         # Endpoint returns a bare list; tolerate a dict-wrapped variant too.
         if isinstance(data, dict):
