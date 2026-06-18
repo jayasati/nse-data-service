@@ -75,7 +75,7 @@ def ownership_raw(conn, symbol: str, as_of_ep: int) -> dict | None:
 
     def delta(i):
         a, b = latest[i], prior[i]
-        return (a - b) if (a is not None and b is not None) else None
+        return round(a - b, 2) if (a is not None and b is not None) else None
 
     f = {"d_promoter": delta(1), "d_fii": delta(2), "d_dii": delta(3), "d_mf": delta(4)}
     return f if any(v is not None for v in f.values()) else None
