@@ -15,8 +15,11 @@ from __future__ import annotations
 import datetime as _dt
 
 _IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
-# higher-is-better factors averaged into the engine score
-FACTORS = ("rev_yoy", "pat_yoy", "op_yoy", "rev_qoq", "net_margin", "op_margin")
+# higher-is-better factors averaged into the engine score. The BS ratios
+# (roe/roce/current_ratio/asset_turnover) come from the balance sheet (migration
+# 081, half-yearly) — present when extracted, skipped (neutral) when not.
+FACTORS = ("rev_yoy", "pat_yoy", "op_yoy", "rev_qoq", "net_margin", "op_margin",
+           "roe", "roce", "current_ratio", "asset_turnover")
 
 
 def _bdt_epoch(s: str | None) -> int | None:
@@ -44,22 +47,23 @@ def quality_raw(conn, symbol: str, as_of_ep: int) -> dict | None:
     usable history."""
     rows = conn.execute(
         "SELECT period_ending, scope, revenue_cr, pat_cr, total_income_cr, "
-        "operating_profit_cr, broadcast_dt FROM extracted_financials WHERE symbol=?",
-        (symbol,)).fetchall()
+        "operating_profit_cr, pbt_cr, finance_cost_cr, equity_cr, total_assets_cr, "
+        "current_assets_cr, current_liabilities_cr, broadcast_dt "
+        "FROM extracted_financials WHERE symbol=?", (symbol,)).fetchall()
     # keep rows reported by as_of; one per period_ending (prefer consolidated)
-    by_pe: dict[str, tuple] = {}
-    for pe, scope, rev, pat, ti, op, bdt in rows:
+    by_pe: dict[str, dict] = {}
+    for pe, scope, rev, pat, ti, op, pbt, fin, eq, ta, ca, cl, bdt in rows:
         ep = _bdt_epoch(bdt)
         if ep is None or ep > as_of_ep or not pe:
             continue
         cur = by_pe.get(pe)
-        if cur is None or (scope == "consolidated" and cur[0] != "consolidated"):
-            by_pe[pe] = (scope, rev, pat, ti, op)
+        if cur is None or (scope == "consolidated" and cur["scope"] != "consolidated"):
+            by_pe[pe] = {"scope": scope, "rev": rev, "pat": pat, "ti": ti, "op": op,
+                         "pbt": pbt, "fin": fin, "eq": eq, "ta": ta, "ca": ca, "cl": cl}
     if len(by_pe) < 2:
         return None
     pes = sorted(by_pe)                       # oldest→newest period_ending
-    latest = by_pe[pes[-1]]
-    qoq = by_pe[pes[-2]]
+    latest, qoq = by_pe[pes[-1]], by_pe[pes[-2]]
     # YoY: the period ~4 quarters back (closest period_ending ~365d earlier)
     yoy = None
     try:
@@ -70,15 +74,34 @@ def quality_raw(conn, symbol: str, as_of_ep: int) -> dict | None:
             yoy = by_pe[yp]
     except ValueError:
         pass
-    _, rev, pat, ti, op = latest
     f = {
-        "rev_yoy": _growth(rev, yoy[1]) if yoy else None,
-        "pat_yoy": _growth(pat, yoy[2]) if yoy else None,
-        "op_yoy": _growth(op, yoy[4]) if yoy else None,
-        "rev_qoq": _growth(rev, qoq[1]),
-        "net_margin": (pat / ti * 100.0) if (ti and ti > 0) else None,
-        "op_margin": (op / rev * 100.0) if (rev and rev > 0 and op is not None) else None,
+        "rev_yoy": _growth(latest["rev"], yoy["rev"]) if yoy else None,
+        "pat_yoy": _growth(latest["pat"], yoy["pat"]) if yoy else None,
+        "op_yoy": _growth(latest["op"], yoy["op"]) if yoy else None,
+        "rev_qoq": _growth(latest["rev"], qoq["rev"]),
+        "net_margin": (latest["pat"] / latest["ti"] * 100.0) if (latest["ti"] and latest["ti"] > 0) else None,
+        "op_margin": (latest["op"] / latest["rev"] * 100.0)
+                     if (latest["rev"] and latest["rev"] > 0 and latest["op"] is not None) else None,
     }
+    # --- balance-sheet ratios (point-in-time): TTM flows / latest-reported BS ---
+    def ttm(key):
+        vals = [by_pe[p][key] for p in pes[-4:] if by_pe[p][key] is not None]
+        if len(vals) == 4:
+            return sum(vals)
+        return sum(vals) / len(vals) * 4.0 if vals else None      # annualise if <4q
+
+    bs = next((by_pe[p] for p in reversed(pes) if by_pe[p]["eq"] is not None), None)
+    if bs:
+        t_pat, t_rev, t_pbt, t_fin = ttm("pat"), ttm("rev"), ttm("pbt"), ttm("fin")
+        eq, ta, ca, cl = bs["eq"], bs["ta"], bs["ca"], bs["cl"]
+        if t_pat is not None and eq and eq > 0:
+            f["roe"] = t_pat / eq * 100.0
+        if t_pbt is not None and ta and cl is not None and (ta - cl) > 0:
+            f["roce"] = (t_pbt + (t_fin or 0.0)) / (ta - cl) * 100.0      # EBIT/capital-employed
+        if ca is not None and cl and cl > 0:
+            f["current_ratio"] = ca / cl
+        if t_rev is not None and ta and ta > 0:
+            f["asset_turnover"] = t_rev / ta
     return f if any(v is not None for v in f.values()) else None
 
 
