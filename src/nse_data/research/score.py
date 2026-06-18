@@ -33,8 +33,11 @@ _NEG = {"falls", "fall", "crash", "crashes", "drop", "drops", "slump", "slumps",
         "misses", "downgrade", "downgrades", "loss", "losses", "probe", "fraud", "halt",
         "halts", "ban", "banned", "decline", "declines", "weak", "cut", "cuts", "concern",
         "concerns", "plunge", "plunges", "sell", "warning", "lawsuit", "default"}
-_REG_HINTS = ("sebi", "penalt", "show cause", "investigat", "non-compliance", "freezing",
-              "order passed", "action taken")
+# ADVERSE regulatory actions only — NOT benign SEBI disclosures (e.g. a takeover-
+# regulation stake disclosure is often a buyer accumulating, i.e. bullish). Bare
+# 'sebi' is too broad, so require an adverse term.
+_REG_HINTS = ("penalt", "show cause", "investigat", "non-compliance", "freezing of",
+              "order passed against", "action taken against", "fraud", "fine imposed")
 
 
 def _decay(age_days: float) -> float:
