@@ -3,37 +3,26 @@
 # repo directory:  ./scripts/deploy.sh [systemd-instance-user]
 #
 # Code comes from git; data/nse.db and .env are gitignored and never touched —
-# the DB persists across every deploy. Migrations are forward-only, so the DB is
-# backed up first (rollback = restore that backup + git checkout the old tag).
+# the DB persists across every deploy. Migrations are forward-only. NOTE: no DB
+# backup is taken (backups disabled 2026-06-18) — a bad migration is not
+# recoverable, so review migrations before deploying.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 UNIT="${1:-$USER}"          # systemd instance suffix, e.g. ./scripts/deploy.sh jay
-BK="data/archive/db_backups"
 
-echo "==> [1/5] backing up DB (schema changes are forward-only)"
-if [ -f data/nse.db ]; then
-  mkdir -p "$BK"
-  cp -a data/nse.db "$BK/nse.db.$(date +%Y%m%d-%H%M%S)"
-  # Keep only the single most recent raw pre-deploy snapshot (rollback for the
-  # last deploy). At ~6 GB each these are huge, so we don't retain history here.
-  ls -1t "$BK"/nse.db.* | tail -n +2 | xargs -r rm -f   # keep last 1
-else
-  echo "    (no DB yet — skipping)"
-fi
-
-echo "==> [2/5] pulling latest code"
+echo "==> [1/4] pulling latest code"
 git fetch --all --tags --quiet
 git pull --ff-only
 
-echo "==> [3/5] syncing dependencies"
+echo "==> [2/4] syncing dependencies"
 .venv/bin/pip install -q -e ".[dashboard,broker]"
 
-echo "==> [4/5] applying pending migrations"
+echo "==> [3/4] applying pending migrations"
 .venv/bin/python scripts/migrate.py --status
 .venv/bin/python scripts/migrate.py
 
-echo "==> [5/5] restarting services (on-boot catch-up recovers the brief gap)"
+echo "==> [4/4] restarting services (on-boot catch-up recovers the brief gap)"
 sudo systemctl restart "nse-collector@${UNIT}"
 sudo systemctl restart "nse-bot@${UNIT}" 2>/dev/null || true
 sudo systemctl restart "nse-dashboard@${UNIT}" 2>/dev/null || true

@@ -420,33 +420,14 @@ it with `timedatectl`. If the box is UTC (AWS default), 02:00 IST = **20:30
 UTC**; either set the host to `Asia/Kolkata` (`sudo timedatectl set-timezone
 Asia/Kolkata`) and use the IST times below, or translate the times to UTC.
 
-### 12a. Nightly DB backup (task 6.2)
+### 12a. DB backups — DISABLED (2026-06-18)
 
-Use `scripts/backup_db.sh` — it takes a consistent `sqlite3 .backup` snapshot
-(safe while the collector is writing, unlike a raw `cp`), gzips it, runs an
-integrity check, and prunes to the last `RETAIN` (default 30) snapshots in
-`data/archive/db_backups/`.
-
-```bash
-# crontab -e   (on the server)
-0 2 * * *  /opt/nse-data-service/scripts/backup_db.sh >> /opt/nse-data-service/logs/backup.log 2>&1
-```
-
-> **Disk math:** `nse.db` is ~5.5 GB and grows. A gzip'd snapshot is a few GB,
-> so 30 of them is **tens of GB**. Check headroom (`df -h`) before enabling, and
-> lower retention if needed: `RETAIN=7 /opt/.../backup_db.sh`. The script aborts
-> if there isn't enough free space for the snapshot.
->
-> **Integrity check is tunable via `CHECK`** (a full check on 5.5 GB takes
-> minutes): `quick` (default, fast), `full` (exhaustive, for the nightly cron if
-> you want it), or `skip`. For a quick manual test: `CHECK=skip ./scripts/backup_db.sh`.
-
-For off-box durability, also copy to S3 (attach an IAM role with write access to
-the bucket, install `awscli`):
-
-```bash
-30 2 * * *  aws s3 cp /opt/nse-data-service/data/nse.db s3://<your-bucket>/nse.db.$(date +\%F)
-```
+DB backups have been **removed entirely** by choice (`backup_db.sh` deleted, the
+nightly cron removed, and the pre-deploy snapshot dropped from `deploy.sh`). There
+is **no DB backup of any kind**. The live `data/nse.db` relies solely on EBS
+hardware durability; a bad migration, accidental delete, or logical corruption is
+**not recoverable**. If you want backups again, restore the script/cron from git
+history (`scripts/backup_db.sh`) — ideally with an off-box S3 copy.
 
 ### 12b. Ops collector health check (task 6.3)
 
