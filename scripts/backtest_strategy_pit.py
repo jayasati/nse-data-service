@@ -56,6 +56,8 @@ def main() -> int:
     ap.add_argument("--max-hold", type=int, default=120)
     ap.add_argument("--stop", type=float, default=-15.0)
     ap.add_argument("--cost", type=float, default=1.0)
+    ap.add_argument("--grid", action="store_true",
+                    help="run the T_in x trail robustness grid instead of one base run")
     args = ap.parse_args()
 
     from nse_data.storage.db import open_db
@@ -150,74 +152,88 @@ def main() -> int:
         if k % 10 == 0:
             print(f"  [{_el()}] scored {k}/{len(cdates)}", flush=True)
 
-    # state machine — entry requires PIT-eligibility at that date
-    trades = []
     n_int = len(cdates)
-    holders = [set() for _ in range(n_int)]
-    for sym in cand:
-        held = False
-        entry_px, entry_d, entry_k, peak = 0.0, "", 0, 0.0
-        for k, d in enumerate(cdates):
-            sc = scores[sym].get(d)
-            px = price_of(sym, d)
-            if px is None:
-                continue
-            if not held:
-                if sc is not None and sc >= args.t_in and sym in elig[d]:
-                    held, entry_px, entry_d, entry_k, peak = True, px, d, k, sc
-            else:
-                if sc is not None:
-                    peak = max(peak, sc)
-                gross = (px / entry_px - 1) * 100
-                hd = (_d(d) - _d(entry_d)).days
-                if (sc is None or sc < args.t_out or (peak - (sc if sc is not None else 0)) >= args.trail
-                        or hd >= args.max_hold or gross <= args.stop):
-                    trades.append((entry_d, d, gross - args.cost))
-                    for j in range(entry_k, k):
-                        holders[j].add(sym)
-                    held = False
-        if held:
-            d = cdates[-1]; px = price_of(sym, d)
-            if px is not None:
-                trades.append((entry_d, d, (px / entry_px - 1) * 100 - args.cost))
-                for j in range(entry_k, n_int - 1):
-                    holders[j].add(sym)
-
-    if not trades:
-        print("NO TRADES."); conn.close(); return 0
-    nets = [t[2] for t in trades]
-    wins = [x for x in nets if x > 0]
-    losses = [x for x in nets if x <= 0]
-    pf = (sum(wins) / abs(sum(losses))) if losses and sum(losses) else float("inf")
-    irets = []
-    for k in range(n_int - 1):
-        prs = [price_of(s, cdates[k + 1]) / price_of(s, cdates[k]) - 1
-               for s in holders[k] if price_of(s, cdates[k]) and price_of(s, cdates[k + 1])]
-        irets.append(sum(prs) / len(prs) if prs else 0.0)
     yrs = (_d(cdates[-1]) - _d(cdates[0])).days / 365.25
-    eq = 1.0
-    for r in irets:
-        eq *= (1 + r)
-    ppy = len(irets) / yrs if yrs else 0
-    sharpe = (st.mean(irets) / st.pstdev(irets) * (ppy ** 0.5)) if len(irets) > 1 and st.pstdev(irets) else 0
     nb0, nb1 = nb_series.get(cdates[0]), nb_series.get(cdates[-1])
     mkt = (100 * ((nb1 / nb0) ** (1 / yrs) - 1)) if (nb0 and nb1 and yrs) else 0
 
-    print("============ SURVIVORSHIP-CORRECTED (point-in-time universe) ============")
-    print(f"  trades={len(trades)}  win={100*len(wins)/len(trades):.0f}%  "
-          f"expectancy={sum(nets)/len(nets):+.2f}%/trade  PF={pf:.2f}")
-    print(f"  portfolio CAGR={100*(eq**(1/yrs)-1):+.1f}%  Sharpe={sharpe:.2f}  "
-          f"total={100*(eq-1):+.1f}%  | market CAGR={mkt:+.1f}%")
-    n = n_int - 1
-    print("  sub-periods:")
-    for label, lo, hi in [("P1", 0, n//3), ("P2", n//3, 2*n//3), ("P3", 2*n//3, n)]:
-        e = 1.0
-        for x in irets[lo:hi]:
-            e *= (1 + x)
-        b0, b1 = nb_series.get(cdates[lo]), nb_series.get(cdates[hi])
-        m = (b1/b0-1)*100 if (b0 and b1) else 0
-        print(f"    {label} {cdates[lo]}..{cdates[hi]}: strat={100*(e-1):+.1f}%  market={m:+.1f}%")
-    print("\n(Compare CAGR to the non-PIT run — the gap is the survivorship inflation.)")
+    def simulate(t_in, t_out, trail):
+        """State machine + equal-weight portfolio over the PIT-eligible scores."""
+        trades, holders = [], [set() for _ in range(n_int)]
+        for sym in cand:
+            held = False
+            entry_px, entry_d, entry_k, peak = 0.0, "", 0, 0.0
+            for k, d in enumerate(cdates):
+                sc = scores[sym].get(d)
+                px = price_of(sym, d)
+                if px is None:
+                    continue
+                if not held:
+                    if sc is not None and sc >= t_in and sym in elig[d]:
+                        held, entry_px, entry_d, entry_k, peak = True, px, d, k, sc
+                else:
+                    if sc is not None:
+                        peak = max(peak, sc)
+                    gross = (px / entry_px - 1) * 100
+                    hd = (_d(d) - _d(entry_d)).days
+                    if (sc is None or sc < t_out or (peak - (sc if sc is not None else 0)) >= trail
+                            or hd >= args.max_hold or gross <= args.stop):
+                        trades.append((entry_d, d, gross - args.cost))
+                        for j in range(entry_k, k):
+                            holders[j].add(sym)
+                        held = False
+            if held:
+                d = cdates[-1]; px = price_of(sym, d)
+                if px is not None:
+                    trades.append((entry_d, d, (px / entry_px - 1) * 100 - args.cost))
+                    for j in range(entry_k, n_int - 1):
+                        holders[j].add(sym)
+        nets = [t[2] for t in trades]
+        wins = [x for x in nets if x > 0]
+        losses = [x for x in nets if x <= 0]
+        pf = (sum(wins) / abs(sum(losses))) if losses and sum(losses) else float("inf")
+        irets = []
+        for k in range(n_int - 1):
+            prs = [price_of(s, cdates[k + 1]) / price_of(s, cdates[k]) - 1
+                   for s in holders[k] if price_of(s, cdates[k]) and price_of(s, cdates[k + 1])]
+            irets.append(sum(prs) / len(prs) if prs else 0.0)
+        eq = 1.0
+        for r in irets:
+            eq *= (1 + r)
+        ppy = len(irets) / yrs if yrs else 0
+        sharpe = (st.mean(irets) / st.pstdev(irets) * (ppy ** 0.5)) if len(irets) > 1 and st.pstdev(irets) else 0
+        return {"n": len(trades), "wr": 100 * len(wins) / len(trades) if trades else 0,
+                "exp": sum(nets) / len(nets) if nets else 0, "pf": pf,
+                "cagr": 100 * (eq ** (1 / yrs) - 1) if yrs else 0, "sharpe": sharpe,
+                "total": 100 * (eq - 1), "irets": irets}
+
+    if args.grid:
+        print("PARAMETER ROBUSTNESS under PIT — CAGR% / Sharpe / PF / n-trades")
+        print(f"{'':7}" + "".join(f"trail{t:<12}" for t in (10, 15, 20, 25)))
+        for t_in in (72, 76, 80, 84):
+            row = f"in{t_in:<5}"
+            for trail in (10, 15, 20, 25):
+                r = simulate(t_in, t_in - 20, trail)
+                row += f"{r['cagr']:+.0f}/{r['sharpe']:.2f}/{r['pf']:.1f}/{r['n']:<4} "
+            print(row, flush=True)
+        print(f"\nmarket CAGR={mkt:+.1f}%  (robust = CAGR positive + Sharpe ≳0.8 across the grid)")
+    else:
+        r = simulate(args.t_in, args.t_out, args.trail)
+        if not r["n"]:
+            print("NO TRADES."); conn.close(); return 0
+        print("============ SURVIVORSHIP-CORRECTED (point-in-time universe) ============")
+        print(f"  trades={r['n']}  win={r['wr']:.0f}%  expectancy={r['exp']:+.2f}%/trade  PF={r['pf']:.2f}")
+        print(f"  portfolio CAGR={r['cagr']:+.1f}%  Sharpe={r['sharpe']:.2f}  "
+              f"total={r['total']:+.1f}%  | market CAGR={mkt:+.1f}%")
+        n = n_int - 1
+        print("  sub-periods:")
+        for label, lo, hi in [("P1", 0, n//3), ("P2", n//3, 2*n//3), ("P3", 2*n//3, n)]:
+            e = 1.0
+            for x in r["irets"][lo:hi]:
+                e *= (1 + x)
+            b0, b1 = nb_series.get(cdates[lo]), nb_series.get(cdates[hi])
+            m = (b1/b0-1)*100 if (b0 and b1) else 0
+            print(f"    {label} {cdates[lo]}..{cdates[hi]}: strat={100*(e-1):+.1f}%  market={m:+.1f}%")
     conn.close()
     return 0
 
