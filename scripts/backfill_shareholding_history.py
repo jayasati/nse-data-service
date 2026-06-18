@@ -26,6 +26,8 @@ import argparse
 import datetime as dt
 import sys
 import time
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -80,10 +82,17 @@ def main() -> int:
     ap.add_argument("--symbols", help="comma list (default: all in the master)")
     ap.add_argument("--quarters", type=int, default=12,
                     help="most-recent quarters per symbol (0 = full history)")
-    ap.add_argument("--sleep", type=float, default=0.4, help="pause between XBRL fetches")
-    ap.add_argument("--pace", type=float, default=0.5,
-                    help="pause per symbol on the master-list call — paces the "
-                         "throttle-sensitive endpoint even when no XBRLs are fetched")
+    ap.add_argument("--sleep", type=float, default=0.0, help="(legacy) per-XBRL pause; "
+                    "0 = none, XBRLs now download in parallel on the CDN")
+    ap.add_argument("--workers", type=int, default=4,
+                    help="parallel XBRL downloads per symbol (CDN, not throttled)")
+    ap.add_argument("--pace", type=float, default=0.6,
+                    help="base pause per symbol on the master-list call")
+    ap.add_argument("--max-cooldown", type=float, default=30.0,
+                    help="cap for the escalating cooldown after master-call errors")
+    ap.add_argument("--skip-covered", type=int, default=0,
+                    help="skip symbols that already have >= N quarters (no master "
+                         "call) — use on a re-run to work only the gaps")
     ap.add_argument("--refresh", action="store_true",
                     help="re-fetch + overwrite rows already in the table (heals "
                          "old scale/taxonomy bugs); default skips existing")
@@ -129,20 +138,31 @@ def main() -> int:
 
     done = {(s, d) for s, d in conn.execute(
         "SELECT symbol, qe_date FROM raw_shareholding_quarterly")}
+    have = Counter(s for (s, _d) in done)           # quarters already stored per symbol
 
     sm = SessionManager()
-    stats = {"ins": 0, "skip": 0, "fail": 0, "empty": 0}
+    stats = {"ins": 0, "skip": 0, "fail": 0, "empty": 0, "covered": 0}
+
+    def _fetch_parse(url):
+        """Download one XBRL (throttle-free CDN) and parse it → fields | None."""
+        try:
+            xml = sm.get_bytes("shp_xbrl_hist", url, referer=SHP_REFERER)
+            return parse_shp(xml.decode("utf-8", "replace"))
+        except Exception:  # noqa: BLE001
+            return None
 
     def process(sym) -> bool:
         """Fetch + store one symbol's history. Returns False only on a master-call
-        ERROR (None) so the caller can retry; True for stored / genuinely empty."""
+        ERROR (None) so the caller can retry; True for stored / genuinely empty.
+        XBRLs download in parallel (CDN), so a symbol's quarters land in ~1 fetch
+        of wall-time instead of N serial ones."""
         recs = _history(sm, sym, seg.get(sym))
-        time.sleep(args.pace)                       # pace the throttle-sensitive endpoint
         if recs is None:
             return False                            # transient block → retryable
         if not recs:
             stats["empty"] += 1
             return True
+        todo = []
         for rec in (recs[:args.quarters] if args.quarters > 0 else recs):
             qe, url = rec.get("date"), rec.get("xbrl")
             if not qe or not url:
@@ -150,40 +170,59 @@ def main() -> int:
             if only_missing and (sym, qe) in done:
                 stats["skip"] += 1
                 continue
-            try:
-                xml = sm.get_bytes("shp_xbrl_hist", url, referer=SHP_REFERER)
-                f = parse_shp(xml.decode("utf-8", "replace"))
-            except Exception:  # noqa: BLE001
-                f = None
-            if not f:
-                stats["fail"] += 1
-                continue
-            conn.execute(
-                "INSERT OR REPLACE INTO raw_shareholding_quarterly (symbol, qe_date, "
-                "promoter_pct, public_pct, fii_pct, dii_pct, mf_pct, xbrl_url, fetched_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
-                (sym, qe, f.get("promoter_pct"), f.get("public_pct"), f.get("fii_pct"),
-                 f.get("dii_pct"), f.get("mf_pct"), url, int(time.time())))
-            done.add((sym, qe))
-            stats["ins"] += 1
-            time.sleep(args.sleep)
+            todo.append((qe, url))
+        if todo:
+            with ThreadPoolExecutor(max_workers=args.workers) as ex:
+                fields = list(ex.map(lambda t: _fetch_parse(t[1]), todo))
+            for (qe, url), f in zip(todo, fields):
+                if not f:
+                    stats["fail"] += 1
+                    continue
+                conn.execute(
+                    "INSERT OR REPLACE INTO raw_shareholding_quarterly (symbol, qe_date, "
+                    "promoter_pct, public_pct, fii_pct, dii_pct, mf_pct, xbrl_url, fetched_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (sym, qe, f.get("promoter_pct"), f.get("public_pct"), f.get("fii_pct"),
+                     f.get("dii_pct"), f.get("mf_pct"), url, int(time.time())))
+                done.add((sym, qe))
+                stats["ins"] += 1
         return True
 
     errored: list[str] = []
+    consec_err = 0
     try:
         for i, sym in enumerate(symbols, 1):
-            if not process(sym):
+            # skip symbols already well-covered — no master call (less throttle exposure)
+            if args.skip_covered and have.get(sym, 0) >= args.skip_covered:
+                stats["covered"] += 1
+                continue
+            ok = process(sym)
+            if not ok:
                 errored.append(sym)
+                consec_err += 1
+                # escalating cooldown lets a throttle WAVE dissipate instead of
+                # hammering through it (the self-reinforcing-error fix)
+                time.sleep(min(args.pace * (2 ** consec_err), args.max_cooldown))
+            else:
+                consec_err = 0
+                time.sleep(args.pace)
             if i % 25 == 0:
                 conn.commit()
                 print(f"  [{i}/{len(symbols)}] {sym} ins={stats['ins']} skip={stats['skip']} "
-                      f"fail={stats['fail']} empty={stats['empty']} err={len(errored)}", flush=True)
+                      f"fail={stats['fail']} empty={stats['empty']} covered={stats['covered']} "
+                      f"err={len(errored)}", flush=True)
         conn.commit()
         # one retry pass for symbols whose master call errored (transient throttle)
         if errored:
             print(f"retrying {len(errored)} errored symbols...", flush=True)
             n_retry = len(errored)
-            still = [s for s in errored if not process(s)]
+            still = []
+            for s in errored:
+                if process(s):
+                    time.sleep(args.pace)
+                else:
+                    still.append(s)
+                    time.sleep(min(args.pace * 4, args.max_cooldown))
             conn.commit()
             errored = still
             print(f"  recovered={n_retry - len(still)} unrecovered={len(still)}"
@@ -195,7 +234,7 @@ def main() -> int:
     qtrs = conn.execute(
         "SELECT COUNT(DISTINCT qe_date) FROM raw_shareholding_quarterly").fetchone()[0]
     print(f"DONE: inserted={stats['ins']} skipped={stats['skip']} parse_fail={stats['fail']} "
-          f"no_history={stats['empty']} unrecovered_err={len(errored)}  "
+          f"no_history={stats['empty']} covered={stats['covered']} unrecovered_err={len(errored)}  "
           f"table_total={tot} distinct_quarters={qtrs}")
     conn.close()
     return 0

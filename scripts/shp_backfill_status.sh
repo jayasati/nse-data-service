@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 
 EC2="${EC2:-ubuntu@13.207.114.161}"
 KEY="${SSH_KEY:-stock-key.pem}"
-LOG="${LOG:-/tmp/shp_backfill2.log}"
+LOG="${LOG:-/tmp/shp_backfill3.log}"
 RD="${REMOTE_DIR:-/opt/nse-data-service}"
 SSH="ssh -i $KEY -o ConnectTimeout=12 -o BatchMode=yes"
 
