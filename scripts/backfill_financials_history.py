@@ -68,8 +68,10 @@ def main() -> int:
     ap.add_argument("--db", default="data/nse.db")
     ap.add_argument("--symbols", help="comma list (default: tracked universe)")
     ap.add_argument("--quarters", type=int, default=12)
-    ap.add_argument("--workers", type=int, default=5, help="parallel XBRL downloads/symbol")
-    ap.add_argument("--pace", type=float, default=0.6, help="pause per symbol (master call)")
+    ap.add_argument("--workers", type=int, default=12, help="parallel XBRL downloads/symbol")
+    ap.add_argument("--concurrency", type=int, default=12,
+                    help="SessionManager global in-flight cap (CDN tolerates >4)")
+    ap.add_argument("--pace", type=float, default=0.05, help="pause per symbol (master call)")
     ap.add_argument("--max-cooldown", type=float, default=30.0)
     ap.add_argument("--skip-covered", type=int, default=0,
                     help="skip symbols already having >=N quarters with equity_cr")
@@ -98,7 +100,7 @@ def main() -> int:
         "SELECT symbol, COUNT(*) FROM extracted_financials WHERE equity_cr IS NOT NULL "
         "GROUP BY symbol"))
 
-    sm = SessionManager()
+    sm = SessionManager(global_concurrency=args.concurrency)
     SET = ", ".join(f"{c}=?" for c in _BS)
     stats = {"upd": 0, "nobs": 0, "nomatch": 0, "fail": 0, "covered": 0}
     errored = []
