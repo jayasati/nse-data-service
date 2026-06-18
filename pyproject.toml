@@ -17,6 +17,7 @@ dependencies = [
     "openai>=1.0",
     "python-dotenv>=1.0",
     "openpyxl>=3.1",          # XLSX feeds (unsolicited-messages watchlist)
+    "beautifulsoup4>=4.12",   # news full-text extraction (news_store)
 ]
 
 [project.optional-dependencies]
