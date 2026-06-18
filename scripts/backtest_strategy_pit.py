@@ -63,7 +63,9 @@ def main() -> int:
     from nse_data.storage.db import open_db
     from nse_data.research import edge_stats
     from nse_data.fundamentals.sectors import sector_class_for
-    engs = [importlib.import_module(ENGINE_MODS[e]) for e in args.engines.split(",")]
+    eng_names = args.engines.split(",")
+    engs = [importlib.import_module(ENGINE_MODS[e]) for e in eng_names]
+    fund_idx = [i for i, n in enumerate(eng_names) if n in ("quality", "valuation")]
 
     conn = open_db(args.db)
     sec_cache: dict = {}
@@ -150,8 +152,8 @@ def main() -> int:
         per = [m.score_universe(conn, elist, eps[d], sector_of) for m in engs]
         for sym in elist:
             vals = [p[sym]["score"] for p in per if sym in p]
-            if vals:
-                scores[sym][d] = sum(vals) / len(vals)
+            if vals and (not fund_idx or any(sym in per[i] for i in fund_idx)):
+                scores[sym][d] = sum(vals) / len(vals)   # require a fundamental score
         if k % 10 == 0:
             print(f"  [{_el()}] scored {k}/{len(cdates)}", flush=True)
 

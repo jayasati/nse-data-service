@@ -91,12 +91,15 @@ def main() -> int:
             continue
         eligible.append(sym)
 
-    # composite = mean of the engine scores (percentile within sector), point-in-time
+    # composite = mean of the engine scores (percentile within sector), point-in-time.
+    # REQUIRE a fundamental (Quality or Valuation) score — a momentum-only name has
+    # no financials (it's a fund/ETF), and a stock strategy must not buy it.
     per = [m.score_universe(conn, eligible, ep, sector_of) for m in engs]
+    fund_idx = [i for i, n in enumerate(ENGINES) if n in ("quality", "valuation")]
     score = {}
     for sym in eligible:
         vals = [p[sym]["score"] for p in per if sym in p]
-        if vals:
+        if vals and any(sym in per[i] for i in fund_idx):
             score[sym] = round(sum(vals) / len(vals), 1)
 
     open_rows = conn.execute(
