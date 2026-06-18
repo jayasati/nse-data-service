@@ -5,9 +5,12 @@ engines join here only after they validate.
 """
 from __future__ import annotations
 
-from . import quality_engine, valuation_engine
+from . import quality_engine, valuation_engine, turnaround_engine
 
-ENGINES = (("quality", quality_engine), ("valuation", valuation_engine))
+# validated engines only (Momentum excluded — failed its gate). Turnaround is on
+# trial: included iff Q+V+T beats Q+V (else it dilutes the equal-weight mean).
+ENGINES = (("quality", quality_engine), ("valuation", valuation_engine),
+           ("turnaround", turnaround_engine))
 
 
 def score_universe(conn, symbols, as_of_ep, sector_of):
