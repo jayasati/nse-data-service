@@ -102,6 +102,19 @@ def main() -> int:
         if vals and any(sym in per[i] for i in fund_idx):
             score[sym] = round(sum(vals) / len(vals), 1)
 
+    # Risk as CONTEXT (not a gate — validated to add no systematic value, but
+    # useful for the human to see a holding's governance/credit/promoter flag).
+    from nse_data.research.risk_engine import risk_raw
+    _rk: dict = {}
+    def risk_tag(sym):
+        if sym not in _rk:
+            _rk[sym] = risk_raw(conn, sym, ep)
+        r = _rk[sym]
+        if r["score"] >= 100 or not r["components"]:
+            return ""
+        top = max(r["components"], key=r["components"].get)
+        return f" ⚠risk{r['score']:.0f}[{top}]"
+
     open_rows = conn.execute(
         "SELECT id, symbol, entry_date, entry_px, peak_score FROM paper_book WHERE status='open'"
     ).fetchall()
@@ -155,7 +168,7 @@ def main() -> int:
     # ---- report ------------------------------------------------------------
     print(f"=== PAPER TRADE (Q+V+Mom)  as-of {today}  eligible={len(eligible)} "
           f"scored={len(score)} {'[DRY-RUN]' if args.dry_run else ''} ===")
-    print(f"\nBUY ({len(buys)}):  " + (", ".join(f"{s}({sc:.0f})" for s, sc, _ in buys[:25]) or "—"))
+    print(f"\nBUY ({len(buys)}):  " + (", ".join(f"{s}({sc:.0f}){risk_tag(s)}" for s, sc, _ in buys[:25]) or "—"))
     print(f"SELL ({len(sells)}): " + (", ".join(f"{s} {net:+.1f}% [{r}]" for s, _h, net, r, _sc in sells) or "—"))
 
     cur = conn.execute(
@@ -165,7 +178,7 @@ def main() -> int:
     for sym, ed, epx, ls in cur[:40]:
         px = price_now(sym)
         unr = ((px / epx - 1) * 100) if (px and epx) else 0.0
-        print(f"  {sym:12s} in {ed} ({(_d(today)-_d(ed)).days:>3}d)  {unr:+6.1f}%  score={ls}")
+        print(f"  {sym:12s} in {ed} ({(_d(today)-_d(ed)).days:>3}d)  {unr:+6.1f}%  score={ls}{risk_tag(sym)}")
 
     closed = conn.execute("SELECT net_pct FROM paper_book WHERE status='closed' AND net_pct IS NOT NULL").fetchall()
     if closed:
