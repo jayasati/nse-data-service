@@ -147,6 +147,10 @@ def build_name_map(conn) -> dict[str, str]:
                 k = _norm(name)
                 if k and len(k) > 3:
                     out.setdefault(k, sym)
+                # also match the ticker itself in a headline ("HFCL jumps 5%"),
+                # but only len>=4 tickers — short ones cause false positives.
+                if sym and len(sym) >= 4 and sym.isalpha():
+                    out.setdefault(sym.lower(), sym)
         except Exception:  # noqa: BLE001
             continue
     return out
