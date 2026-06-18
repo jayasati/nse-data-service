@@ -25,6 +25,8 @@ def main() -> int:
     ap.add_argument("--sleep", type=float, default=0.5)
     ap.add_argument("--only-missing", action="store_true", default=True,
                     help="skip (symbol,qe_date) already parsed (default on)")
+    ap.add_argument("--all-symbols", action="store_true",
+                    help="ignore the tracked-universe gate (default: tracked only)")
     args = ap.parse_args()
 
     import httpx
@@ -40,6 +42,17 @@ def main() -> int:
     if args.symbols:
         want = {s.strip().upper() for s in args.symbols.split(",")}
         rows = [r for r in rows if r[0] in want]
+
+    # THE universe gate — ownership is downstream, so only spend NSE budget on
+    # tracked names (fails open if the table is missing/empty).
+    if not args.all_symbols:
+        from nse_data import universe
+        g = universe.gate(args.db)
+        before = len(rows)
+        rows = [r for r in rows if g.is_tracked(r[0])]
+        print(f"universe gate: {'FAIL-OPEN' if g.loaded_empty else f'{len(rows)}/{before} tracked'}",
+              flush=True)
+
     done = {(s, d) for s, d in conn.execute(
         "SELECT symbol, qe_date FROM raw_shareholding_quarterly")}
 
