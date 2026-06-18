@@ -35,11 +35,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 _SEGMENTS = ("equities", "sme")
 
 
-def _qdate(s: str) -> dt.datetime:
+def _qdate(s: str | None) -> dt.datetime:
     for fmt in ("%d-%b-%Y", "%d-%B-%Y"):
         try:
-            return dt.datetime.strptime(s, fmt)
-        except ValueError:
+            return dt.datetime.strptime(s or "", fmt)
+        except (ValueError, TypeError):
             continue
     return dt.datetime.min
 
