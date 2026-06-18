@@ -73,6 +73,7 @@ def seeded_db(tmp_path: Path) -> sqlite3.Connection:
             subject TEXT,
             attachment_url TEXT,
             broadcast_dt TEXT,
+            broadcast_epoch INTEGER,
             priority TEXT,
             pdf_path TEXT,
             pdf_text TEXT,

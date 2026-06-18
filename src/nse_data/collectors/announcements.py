@@ -9,6 +9,7 @@ Fingerprint = sha256(symbol | subject | broadcast_dt)[:16]
 
 from __future__ import annotations
 
+import datetime as _dt
 import hashlib
 import time
 from typing import Any, Mapping, Sequence
@@ -17,6 +18,22 @@ from .base import EventCollector, Request, Row
 
 
 NSE_BASE = "https://www.nseindia.com"
+_IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
+
+
+def broadcast_epoch(s: str | None) -> int | None:
+    """NSE broadcast_dt string ('21-May-2026 19:40:44') → IST epoch seconds, for
+    correct chronological ordering (the raw string sorts lexically). None if
+    empty/unparseable."""
+    if not s:
+        return None
+    s = s.strip()
+    for fmt in ("%d-%b-%Y %H:%M:%S", "%d-%b-%Y %H:%M", "%d-%b-%Y"):
+        try:
+            return int(_dt.datetime.strptime(s, fmt).replace(tzinfo=_IST).timestamp())
+        except ValueError:
+            continue
+    return None
 
 
 class Announcements(EventCollector):
@@ -73,6 +90,7 @@ class Announcements(EventCollector):
                 "details": item.get("attchmntText"),
                 "attachment_url": _absolute_pdf_url(item.get("attchmntFile")),
                 "broadcast_dt": broadcast_dt,
+                "broadcast_epoch": broadcast_epoch(broadcast_dt),
                 "receipt_dt": item.get("dt"),
                 "dissemination_dt": item.get("dissemDT"),
                 # Layer 3 fills these:

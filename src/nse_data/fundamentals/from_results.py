@@ -407,7 +407,7 @@ def run_extract_pass(
         "AND fingerprint NOT IN ("
         "  SELECT source_fingerprint FROM extracted_financials "
         "  WHERE source_fingerprint IS NOT NULL) "
-        "ORDER BY broadcast_dt DESC",
+        "ORDER BY broadcast_epoch DESC, broadcast_dt DESC",
         (State.TEXT_EXTRACTED,),
     ).fetchall()
 
@@ -706,7 +706,7 @@ def register_fast_result_lane(scheduler, db_path: str, session) -> str:
             rows = conn.execute(
                 "SELECT fingerprint, symbol, subject, attachment_url, broadcast_dt "
                 "FROM raw_announcements WHERE pdf_status IN ('pending', 'classified') "
-                "ORDER BY broadcast_dt DESC LIMIT 50"
+                "ORDER BY broadcast_epoch DESC, broadcast_dt DESC LIMIT 50"
             ).fetchall()
             results = [r for r in rows if is_result_subject(r["subject"])][:FAST_LANE_BATCH]
             processed = stored = 0

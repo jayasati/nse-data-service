@@ -390,7 +390,7 @@ def _fetch_rows_to_process(
             """
             SELECT * FROM raw_announcements
              WHERE pdf_status = ?
-             ORDER BY broadcast_dt DESC
+             ORDER BY broadcast_epoch DESC, broadcast_dt DESC
              LIMIT ?
             """,
             (State.PENDING, limit),

@@ -233,7 +233,7 @@ def _results_filed_today(conn: sqlite3.Connection, now: _dt.datetime) -> set[str
     try:
         rows = conn.execute(
             "SELECT symbol, subject, broadcast_dt FROM raw_announcements "
-            "WHERE broadcast_dt IS NOT NULL ORDER BY broadcast_dt DESC LIMIT 300",
+            "WHERE broadcast_dt IS NOT NULL ORDER BY broadcast_epoch DESC, broadcast_dt DESC LIMIT 300",
         ).fetchall()
     except sqlite3.OperationalError:
         return set()

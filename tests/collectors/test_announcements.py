@@ -33,6 +33,7 @@ MIGRATION_PATH = Path(__file__).parent.parent.parent / "migrations" / "001_initi
 def db():
     conn = sqlite3.connect(":memory:")
     conn.executescript(MIGRATION_PATH.read_text())
+    conn.executescript((MIGRATION_PATH.parent / "076_announcement_broadcast_epoch.sql").read_text())
     yield conn
     conn.close()
 

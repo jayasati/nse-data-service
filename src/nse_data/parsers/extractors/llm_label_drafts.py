@@ -97,7 +97,7 @@ def fetch_candidates(
            AND subject IN ({placeholders})
            AND pdf_text IS NOT NULL
            AND pdf_text_length > 1000
-         ORDER BY broadcast_dt DESC
+         ORDER BY broadcast_epoch DESC, broadcast_dt DESC
          LIMIT ?
         """,
         (*RESULT_SUBJECTS, target_count * 3),  # 3x oversample

@@ -299,7 +299,7 @@ def _load_reaction_contexts(
     cutoff = now.timestamp() - _REACTION_LOOKBACK_SECS
     rows = conn.execute(
         "SELECT symbol, subject, broadcast_dt FROM raw_announcements "
-        "WHERE broadcast_dt IS NOT NULL ORDER BY broadcast_dt DESC LIMIT 200"
+        "WHERE broadcast_dt IS NOT NULL ORDER BY broadcast_epoch DESC, broadcast_dt DESC LIMIT 200"
     ).fetchall()
     out: dict[str, dict] = {}
     for symbol, subject, broadcast_dt in rows:
