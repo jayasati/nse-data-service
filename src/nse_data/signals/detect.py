@@ -52,6 +52,11 @@ RESULT_QUALITY_LOW = "result_quality_low"   # fundamental: low-quality beat (S3/
 RESULT_QUALITY_HIGH = "result_quality_high"  # fundamental: clean two-sided beat
 RESULT_BEAT = "result_beat"          # 18.4: strong YoY revenue growth + positive tone
 RESULT_MISS = "result_miss"          # 18.5: revenue decline or strongly negative tone
+ORDER_WIN = "order_win"              # real-time: company bagged/was awarded an order (bullish)
+# Order wins fire MEASUREMENT-ONLY (dispatched=1, no Telegram) until paper-trading
+# proves they pay net-of-cost — then flip to live alerts. Window: detect filings in
+# the last N min so the alert is near-real-time (subject to the 5-min announce poll).
+ORDER_WIN_LOOKBACK_MIN = 30
 
 # The four Phase-1 price/volume TA rules are SHELVED: net-negative after costs in
 # CPCV validation (see plans/PLAN.md + the strategy-validation memory). They fired
@@ -180,12 +185,16 @@ def run_detection_pass(
     result_fired = _detect_result_beat_miss(
         conn, redis_client, dedup, detected_at, market_regime, now,
     )
+    # Real-time order-win catalyst (event-driven, measurement-only for now).
+    order_fired = _detect_order_wins(
+        conn, redis_client, dedup, detected_at, market_regime, now,
+    )
 
     window = _time_window_skip(now)
     if window is not None:
         return {
             "skipped": window, "earnings": earnings_fired, "quality": quality_fired,
-            "result_beat_miss": result_fired,
+            "result_beat_miss": result_fired, "order_win": order_fired,
         }
 
     fired = {t: 0 for t in _ALL_PRICE_RULES}
@@ -236,7 +245,8 @@ def run_detection_pass(
         "earnings": earnings_fired,
         "quality": quality_fired,
         "result_beat_miss": result_fired,
-        "signals": sum(fired.values()) + earnings_fired + quality_fired + result_fired,
+        "order_win": order_fired,
+        "signals": sum(fired.values()) + earnings_fired + quality_fired + result_fired + order_fired,
     }
 
 
@@ -280,6 +290,65 @@ def _detect_earnings_reactions(
             detected_at=detected_at, metrics=metrics, market_regime=market_regime,
         )
         fired += 1
+    return fired
+
+
+def is_order_win_subject(subject: str | None) -> bool:
+    """True for an order-WIN filing (bullish), False for regulatory 'orders'.
+    NSE positive subjects: 'Bagging/Receiving of orders/contracts',
+    'Awarding of order(s)/contract(s)'. Excludes 'Action(s) ... orders passed'."""
+    s = (subject or "").lower()
+    if "action" in s or "passed" in s:        # regulatory order — not a win
+        return False
+    return ("bagging" in s or "receiving of order" in s or "awarding of order" in s
+            or ("order" in s and "contract" in s))
+
+
+def _detect_order_wins(
+    conn: sqlite3.Connection,
+    redis_client,
+    dedup: SignalDedup,
+    detected_at: str,
+    market_regime: str | None,
+    now: datetime,
+) -> int:
+    """Real-time order-win catalyst: a fresh 'orders/contracts bagged' filing →
+    a long `order_win` signal at the current price. MEASUREMENT-ONLY for now
+    (marked dispatched so it paper-trades + gets labeled but does NOT alert) —
+    we validate net-of-cost (P4) before going live, per G12 discipline."""
+    if not _has_table(conn, "raw_announcements"):
+        return 0
+    cutoff = int(now.timestamp()) - ORDER_WIN_LOOKBACK_MIN * 60
+    rows = conn.execute(
+        "SELECT symbol, subject FROM raw_announcements "
+        "WHERE broadcast_epoch >= ? ORDER BY broadcast_epoch DESC LIMIT 200",
+        (cutoff,),
+    ).fetchall()
+    blacklist = _load_blacklist(redis_client)
+    listing_bars = _load_listing_bars(conn)
+    fired, seen = 0, set()
+    for symbol, subject in rows:
+        if symbol in seen or not is_order_win_subject(subject):
+            continue
+        seen.add(symbol)
+        if symbol in blacklist or listing_bars.get(symbol, 0) < MIN_LISTING_BARS:
+            continue
+        _, price = compute.compute_price_change(conn, symbol)
+        if price is None:
+            continue
+        if not dedup.claim(symbol, ORDER_WIN):
+            continue
+        signal_id = _emit(
+            conn, redis_client, symbol=symbol, signal_type=ORDER_WIN,
+            detected_at=detected_at, market_regime=market_regime,
+            metrics={"price": price, "direction": "long", "price_change_pct": None,
+                     "volume_ratio": compute.compute_volume_ratio(conn, symbol, now=now)},
+        )
+        # measurement-only: suppress Telegram, keep the paper-trade + label
+        conn.execute("UPDATE signals SET dispatched=1, dispatched_at=? WHERE id=?",
+                     (detected_at, signal_id))
+        fired += 1
+    conn.commit()
     return fired
 
 
