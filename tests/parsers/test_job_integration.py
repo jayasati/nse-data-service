@@ -105,7 +105,9 @@ def _seed_row(db, fp, subject, url, broadcast_dt="20-May-2026 10:00:00"):
     db.commit()
 
 
-def test_high_priority_pdf_archived_permanently(tmp_path: Path, seeded_db):
+def test_high_priority_text_kept_pdf_discarded(tmp_path: Path, seeded_db):
+    # 2026-06-18: retention now discards the PDF for EVERY priority (disk policy).
+    # High priority still extracts + keeps text, but persists no file.
     archive_root = tmp_path / "archive"
     pdf = tmp_path / "source.pdf"
     _make_pdf(pdf, "Quarterly results.")
@@ -130,11 +132,11 @@ def test_high_priority_pdf_archived_permanently(tmp_path: Path, seeded_db):
 
     assert d["pdf_status"] == State.TEXT_EXTRACTED
     assert d["priority"] == "high"
-    assert d["pdf_path"] is not None
-    assert "pdfs" in d["pdf_path"] and "pdfs_temp" not in d["pdf_path"]
+    assert d["pdf_path"] is None                 # discarded, not archived
     assert d["pdf_text"] and "Quarterly results" in d["pdf_text"]
     assert d["pdf_sha256"] is not None
-    assert Path(d["pdf_path"]).exists()
+    # nothing left under the archive's pdf dirs
+    assert not list((archive_root).glob("pdfs*/**/*.pdf"))
 
 
 def test_skip_subject_no_download(tmp_path: Path, seeded_db):

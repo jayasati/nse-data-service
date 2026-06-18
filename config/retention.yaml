@@ -1,14 +1,20 @@
 # PDF retention policy by priority bucket.
 # Architecture §6 / 7.1 - PDF retention strategy.
+#
+# 2026-06-18: NEVER persist PDFs (disk policy). Every parsed bucket uses the
+# 'discard' path — the PDF is written to scratch, text is extracted, then the
+# file is deleted (pdf_path stays NULL). pdf_text is still retained forever in
+# the DB and XBRL-first extraction is unaffected. Trade-off: the LLM-vision-on-PDF
+# fallback (which needs the file on disk) no longer triggers.
 
 pdf_retention:
   high:
-    keep_pdf: forever
-    archive_subdir: pdfs
+    keep_pdf: false
+    archive_subdir: null
 
   medium:
-    keep_pdf: 30d
-    archive_subdir: pdfs_temp
+    keep_pdf: false
+    archive_subdir: null
 
   low:
     keep_pdf: false
