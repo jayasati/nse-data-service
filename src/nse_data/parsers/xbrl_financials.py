@@ -265,14 +265,44 @@ def parse_xbrl(data: bytes | str) -> dict | None:
             present = [raw_i[t] for t in tags if t in raw_i]
             return round(sum(present) / _RUPEES_TO_CRORE, 2) if present else None
 
+        def _first_bs(*tags: str) -> float | None:
+            for t in tags:                          # priority order, first present wins
+                if t in raw_i:
+                    return round(raw_i[t] / _RUPEES_TO_CRORE, 2)
+            return None
+
         for canon, tags in (
             ("trade_receivables_cr", ("TradeReceivablesCurrent", "TradeReceivablesNoncurrent")),
             ("inventories_cr", ("Inventories",)),
             ("trade_payables_cr", ("TradePayablesCurrent", "TradePayablesNoncurrent")),
+            # --- balance-sheet (period-end instant): the equity/asset/liability
+            #     base for ROE / ROCE / current-ratio / asset-turnover / P-B.
+            #     SEBI files the balance sheet HALF-YEARLY, so these are present
+            #     ~twice a year (enough for slow-moving quality ratios). ---
+            ("borrowings_cr", ("BorrowingsNoncurrent", "BorrowingsCurrent",
+                               "Borrowings", "NoncurrentBorrowings", "CurrentBorrowings")),
+            ("cash_cr", ("CashAndCashEquivalents", "CashAndCashEquivalentsCashFlowStatement")),
         ):
             v = _sum_bs(*tags)
             if v is not None:
                 fields[canon] = v
+        for canon, tags in (
+            # parent-attributable equity (net worth) for ROE / P-B; bank/standalone
+            # fall back to plain Equity (= EquityShareCapital + OtherEquity).
+            ("equity_cr", ("EquityAttributableToOwnersOfParent", "Equity")),
+            ("total_assets_cr", ("Assets", "EquityAndLiabilities")),
+            ("current_assets_cr", ("CurrentAssets",)),
+            ("current_liabilities_cr", ("CurrentLiabilities",)),
+            ("total_liabilities_cr", ("Liabilities",)),
+        ):
+            v = _first_bs(*tags)
+            if v is not None:
+                fields[canon] = v
+        # total assets fallback = current + non-current when no summary tag present
+        if "total_assets_cr" not in fields:
+            v = _sum_bs("CurrentAssets", "NoncurrentAssets")
+            if v is not None:
+                fields["total_assets_cr"] = v
     return {
         "scope": "consolidated" if scope and "consolid" in scope else "standalone",
         "period_ending": period[:10] if period else None,

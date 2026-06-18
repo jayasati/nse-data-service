@@ -56,6 +56,14 @@ BFSI_FIELDS = (
     "cet1_ratio", "return_on_assets",
 )
 
+# Balance-sheet base (migration 081) — period-end instant from the result XBRL,
+# present ~half-yearly. Feeds the ratio factors (ROE/ROCE/current-ratio/
+# asset-turnover/P-B). borrowings_cr/cash_cr are best-effort. All NULL otherwise.
+BALANCE_SHEET_FIELDS = (
+    "equity_cr", "total_assets_cr", "current_assets_cr", "current_liabilities_cr",
+    "total_liabilities_cr", "borrowings_cr", "cash_cr",
+)
+
 # A result filing's announcement subject. Board-meeting *outcomes* often carry
 # the P&L too; if the extractor finds no table we simply store nothing for them.
 _RESULT_SUBJECT_RE = re.compile(
@@ -103,7 +111,7 @@ def persist_extraction(
     narrative_json = json.dumps(narrative, sort_keys=True) if narrative else None
     cols = (
         "symbol", "period_ending", "scope", "relating_to", "financial_year",
-        *AMOUNT_FIELDS, *BFSI_FIELDS,
+        *AMOUNT_FIELDS, *BFSI_FIELDS, *BALANCE_SHEET_FIELDS,
         "growth_json", "narrative_json",
         "units_phrase", "extract_confidence", "strategy",
         "source_fingerprint", "broadcast_dt", "extracted_at",
@@ -112,6 +120,7 @@ def persist_extraction(
         symbol, period_ending, scope, relating_to, financial_year,
         *[fields.get(f) for f in AMOUNT_FIELDS],
         *[fields.get(f) for f in BFSI_FIELDS],
+        *[fields.get(f) for f in BALANCE_SHEET_FIELDS],
         growth_json, narrative_json,
         units_phrase, confidence, strategy,
         source_fingerprint, broadcast_dt, now,
