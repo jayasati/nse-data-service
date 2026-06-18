@@ -75,8 +75,11 @@ def main() -> int:
                 b1 = edge_stats.close_on_or_before(bser, bdates, xd)
                 bench = (b1 / b0 - 1) * 100 if (b0 and b1) else 0.0
                 net = (s[xd] / entry - 1) * 100 - bench - args.cost
+                g = grade_of.get(sym)
                 samples[("ALL", h)].append((r["score"], net))
-                if grade_of.get(sym) in ("A core", "B tradeable"):
+                if g:
+                    samples[(g, h)].append((r["score"], net))   # per-grade A / B / C
+                if g in ("A core", "B tradeable"):
                     samples[("A+B", h)].append((r["score"], net))
 
     def report(tier):
@@ -98,11 +101,11 @@ def main() -> int:
             print(f"  {h}d (n={len(data)}): " + "  ".join(cells)
                   + f"   spread(Q5-Q1)={means[-1]-means[0]:+.1f}%  monotonic={mono}")
 
-    report("ALL")
-    print()
-    report("A+B")
-    print("\n(Quality earns weight only if higher buckets show higher forward sector-excess "
-          "on A+B, monotonic + positive spread, at this cost.)")
+    for tier in ("ALL", "A+B", "A core", "B tradeable", "C volatile"):
+        report(tier)
+        print()
+    print("(Quality earns weight only if higher buckets show higher forward sector-excess, "
+          "monotonic + positive spread, at this cost. A+B is the executable bar.)")
     conn.close()
     return 0
 
