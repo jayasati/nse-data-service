@@ -44,25 +44,34 @@ def _qdate(s: str | None) -> dt.datetime:
     return dt.datetime.min
 
 
-def _history(sm, sym: str, segment: str | None):
+def _history(sm, sym: str, segment: str | None, attempts: int = 4):
     """The symbol's quarterly filing records, newest first. Tries the known
-    segment, then the other, so a mis-tagged symbol still resolves."""
+    segment then the other (mis-tagged symbols still resolve). Retries with
+    backoff on FETCH FAILURE (NSE throttle / open circuit) so a transient block
+    is never mistaken for 'no history' — that exact confusion zeroed 706/755
+    symbols on the first run. Returns [] for a genuine empty response, None if
+    every attempt errored (caller treats None as retryable, [] as no-data)."""
     from nse_data.collectors.shareholding import SHP_REFERER
 
-    order = [segment] + [s for s in _SEGMENTS if s != segment] if segment else list(_SEGMENTS)
+    order = ([segment] + [s for s in _SEGMENTS if s != segment]) if segment else list(_SEGMENTS)
+    errored = False
     for idx in order:
-        try:
-            data = sm.get_json(
-                "shp_history", "/api/corporate-share-holdings-master",
-                referer=SHP_REFERER, params={"index": idx, "symbol": sym})
-        except Exception:  # noqa: BLE001 — NSE hiccup; try next segment / skip
-            data = None
-        if isinstance(data, dict):
-            data = data.get("data") or data.get("rows") or []
-        if data:
-            data.sort(key=lambda r: _qdate(r.get("date", "")), reverse=True)
-            return data
-    return []
+        for a in range(attempts):
+            try:
+                data = sm.get_json(
+                    "shp_history", "/api/corporate-share-holdings-master",
+                    referer=SHP_REFERER, params={"index": idx, "symbol": sym})
+            except Exception:  # noqa: BLE001 — throttle / open circuit → back off, retry
+                errored = True
+                time.sleep(1.5 * (a + 1))
+                continue
+            if isinstance(data, dict):
+                data = data.get("data") or data.get("rows") or []
+            if data:
+                data.sort(key=lambda r: _qdate(r.get("date", "")), reverse=True)
+                return data
+            break                       # genuine empty for this segment → try the other
+    return None if errored else []
 
 
 def main() -> int:
@@ -72,6 +81,9 @@ def main() -> int:
     ap.add_argument("--quarters", type=int, default=12,
                     help="most-recent quarters per symbol (0 = full history)")
     ap.add_argument("--sleep", type=float, default=0.4, help="pause between XBRL fetches")
+    ap.add_argument("--pace", type=float, default=0.5,
+                    help="pause per symbol on the master-list call — paces the "
+                         "throttle-sensitive endpoint even when no XBRLs are fetched")
     ap.add_argument("--refresh", action="store_true",
                     help="re-fetch + overwrite rows already in the table (heals "
                          "old scale/taxonomy bugs); default skips existing")
@@ -119,51 +131,72 @@ def main() -> int:
         "SELECT symbol, qe_date FROM raw_shareholding_quarterly")}
 
     sm = SessionManager()
-    n_ins = n_skip = n_fail = n_empty = 0
+    stats = {"ins": 0, "skip": 0, "fail": 0, "empty": 0}
+
+    def process(sym) -> bool:
+        """Fetch + store one symbol's history. Returns False only on a master-call
+        ERROR (None) so the caller can retry; True for stored / genuinely empty."""
+        recs = _history(sm, sym, seg.get(sym))
+        time.sleep(args.pace)                       # pace the throttle-sensitive endpoint
+        if recs is None:
+            return False                            # transient block → retryable
+        if not recs:
+            stats["empty"] += 1
+            return True
+        for rec in (recs[:args.quarters] if args.quarters > 0 else recs):
+            qe, url = rec.get("date"), rec.get("xbrl")
+            if not qe or not url:
+                continue
+            if only_missing and (sym, qe) in done:
+                stats["skip"] += 1
+                continue
+            try:
+                xml = sm.get_bytes("shp_xbrl_hist", url, referer=SHP_REFERER)
+                f = parse_shp(xml.decode("utf-8", "replace"))
+            except Exception:  # noqa: BLE001
+                f = None
+            if not f:
+                stats["fail"] += 1
+                continue
+            conn.execute(
+                "INSERT OR REPLACE INTO raw_shareholding_quarterly (symbol, qe_date, "
+                "promoter_pct, public_pct, fii_pct, dii_pct, mf_pct, xbrl_url, fetched_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (sym, qe, f.get("promoter_pct"), f.get("public_pct"), f.get("fii_pct"),
+                 f.get("dii_pct"), f.get("mf_pct"), url, int(time.time())))
+            done.add((sym, qe))
+            stats["ins"] += 1
+            time.sleep(args.sleep)
+        return True
+
+    errored: list[str] = []
     try:
         for i, sym in enumerate(symbols, 1):
-            recs = _history(sm, sym, seg.get(sym))
-            if not recs:
-                n_empty += 1
-            if args.quarters > 0:
-                recs = recs[:args.quarters]
-            for rec in recs:
-                qe, url = rec.get("date"), rec.get("xbrl")
-                if not qe or not url:
-                    continue
-                if only_missing and (sym, qe) in done:
-                    n_skip += 1
-                    continue
-                try:
-                    xml = sm.get_bytes("shp_xbrl_hist", url, referer=SHP_REFERER)
-                    f = parse_shp(xml.decode("utf-8", "replace"))
-                except Exception:  # noqa: BLE001
-                    f = None
-                if not f:
-                    n_fail += 1
-                    continue
-                conn.execute(
-                    "INSERT OR REPLACE INTO raw_shareholding_quarterly (symbol, qe_date, "
-                    "promoter_pct, public_pct, fii_pct, dii_pct, mf_pct, xbrl_url, fetched_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
-                    (sym, qe, f.get("promoter_pct"), f.get("public_pct"), f.get("fii_pct"),
-                     f.get("dii_pct"), f.get("mf_pct"), url, int(time.time())))
-                done.add((sym, qe))
-                n_ins += 1
-                time.sleep(args.sleep)
+            if not process(sym):
+                errored.append(sym)
             if i % 25 == 0:
                 conn.commit()
-                print(f"  [{i}/{len(symbols)}] {sym} ins={n_ins} skip={n_skip} "
-                      f"fail={n_fail} empty={n_empty}", flush=True)
+                print(f"  [{i}/{len(symbols)}] {sym} ins={stats['ins']} skip={stats['skip']} "
+                      f"fail={stats['fail']} empty={stats['empty']} err={len(errored)}", flush=True)
         conn.commit()
+        # one retry pass for symbols whose master call errored (transient throttle)
+        if errored:
+            print(f"retrying {len(errored)} errored symbols...", flush=True)
+            n_retry = len(errored)
+            still = [s for s in errored if not process(s)]
+            conn.commit()
+            errored = still
+            print(f"  recovered={n_retry - len(still)} unrecovered={len(still)}"
+                  + (f" ({', '.join(still[:12])})" if still else ""), flush=True)
     finally:
         sm.close()
 
     tot = conn.execute("SELECT COUNT(*) FROM raw_shareholding_quarterly").fetchone()[0]
     qtrs = conn.execute(
         "SELECT COUNT(DISTINCT qe_date) FROM raw_shareholding_quarterly").fetchone()[0]
-    print(f"DONE: inserted={n_ins} skipped={n_skip} parse_fail={n_fail} "
-          f"no_history={n_empty}  table_total={tot} distinct_quarters={qtrs}")
+    print(f"DONE: inserted={stats['ins']} skipped={stats['skip']} parse_fail={stats['fail']} "
+          f"no_history={stats['empty']} unrecovered_err={len(errored)}  "
+          f"table_total={tot} distinct_quarters={qtrs}")
     conn.close()
     return 0
 
