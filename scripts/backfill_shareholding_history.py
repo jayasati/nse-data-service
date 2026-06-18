@@ -75,6 +75,9 @@ def main() -> int:
     ap.add_argument("--refresh", action="store_true",
                     help="re-fetch + overwrite rows already in the table (heals "
                          "old scale/taxonomy bugs); default skips existing")
+    ap.add_argument("--all-symbols", action="store_true",
+                    help="ignore the tracked-universe gate and backfill every SHP "
+                         "master symbol (default: tracked universe only)")
     args = ap.parse_args()
     only_missing = not args.refresh
 
@@ -99,6 +102,18 @@ def main() -> int:
     if args.symbols:
         want = {s.strip().upper() for s in args.symbols.split(",")}
         symbols = [s for s in symbols if s in want]
+
+    # THE universe gate — every downstream consumer passes through it. Ownership
+    # is downstream, so we only spend NSE budget on tracked names (drops SME /
+    # illiquid / ETF). filter_tracked fails open if the table is missing/empty.
+    if not args.all_symbols:
+        from nse_data import universe
+        g = universe.gate(args.db)          # bind the singleton to our db first
+        before = len(symbols)
+        symbols = g.filter_tracked(symbols)
+        gated = "FAIL-OPEN (no universe table)" if g.loaded_empty \
+            else f"{len(symbols)}/{before} tracked"
+        print(f"universe gate: {gated}", flush=True)
 
     done = {(s, d) for s, d in conn.execute(
         "SELECT symbol, qe_date FROM raw_shareholding_quarterly")}
