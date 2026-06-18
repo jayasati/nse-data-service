@@ -47,7 +47,6 @@ def main() -> int:
 
     import importlib
     from nse_data.storage.db import open_db, apply_migrations
-    from nse_data.research import edge_stats
     from nse_data.fundamentals.sectors import sector_class_for
     engs = [importlib.import_module(f"nse_data.research.{e}_engine") for e in ENGINES]
 
@@ -72,8 +71,10 @@ def main() -> int:
             "AND close IS NOT NULL ORDER BY ts DESC LIMIT 1", (sym,)).fetchone()
         return r[0] if r else None
 
-    # point-in-time eligible universe AS OF today (trailing liquidity + vol)
-    universe = [s for (s,) in conn.execute("SELECT symbol FROM tradeable_universe")]
+    # point-in-time eligible universe AS OF today (trailing liquidity + vol).
+    # Exclude ETFs — no financials → momentum-only composite would leak them in.
+    universe = [s for (s,) in conn.execute(
+        "SELECT symbol FROM tradeable_universe WHERE grade != 'etf'")]
     eligible = []
     for sym in universe:
         bars = conn.execute(

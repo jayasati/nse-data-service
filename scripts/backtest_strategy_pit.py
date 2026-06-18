@@ -75,8 +75,11 @@ def main() -> int:
     # all symbols with daily candles → per-symbol arrays (chronological)
     # candle symbols come from tradeable_universe (built from ALL candle symbols) —
     # a 1k-row read, vs a DISTINCT scan of the 30GB/59M-row candle table (which
-    # blocks for minutes behind the live collector's writes).
-    syms_all = [s for (s,) in conn.execute("SELECT symbol FROM tradeable_universe")]
+    # blocks for minutes). EXCLUDE ETFs: they have no financials, so Quality/Value
+    # score None and their composite is momentum-only → high-momentum index ETFs
+    # (MON100 etc.) would leak into a STOCK strategy.
+    syms_all = [s for (s,) in conn.execute(
+        "SELECT symbol FROM tradeable_universe WHERE grade != 'etf'")]
     print(f"[{_el()}] loading candles for {len(syms_all)} symbols...", flush=True)
     cand: dict = {}
     for ix, sym in enumerate(syms_all, 1):
