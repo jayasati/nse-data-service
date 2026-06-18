@@ -20,7 +20,14 @@ import datetime as _dt
 import importlib
 import statistics as st
 import sys
+import time
 from pathlib import Path
+
+_T0 = time.time()
+
+
+def _el():
+    return f"{int(time.time() - _T0)}s"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -64,11 +71,11 @@ def main() -> int:
         return sec_cache[s]
 
     # all symbols with daily candles → per-symbol arrays (chronological)
-    print("loading candles for point-in-time eligibility...", flush=True)
-    cand: dict = {}
     syms_all = [s for (s,) in conn.execute(
         "SELECT DISTINCT symbol FROM raw_intraday_candles WHERE interval='day'")]
-    for sym in syms_all:
+    print(f"[{_el()}] loading candles for {len(syms_all)} symbols...", flush=True)
+    cand: dict = {}
+    for ix, sym in enumerate(syms_all, 1):
         rows = conn.execute(
             "SELECT date(ts,'unixepoch','+05:30') d, close, volume FROM raw_intraday_candles "
             "WHERE symbol=? AND interval='day' ORDER BY ts", (sym,)).fetchall()
@@ -77,6 +84,8 @@ def main() -> int:
         tov = [(r[1] * r[2] / 1e7) if (r[1] and r[2]) else 0.0 for r in rows]
         if len(dts) >= 30:
             cand[sym] = (dts, cls, tov)
+        if ix % 400 == 0:
+            print(f"  [{_el()}] loaded {ix}/{len(syms_all)} symbols", flush=True)
 
     cal = [r[0] for r in conn.execute(
         "SELECT date(ts,'unixepoch','+05:30') d FROM raw_intraday_candles "
@@ -103,11 +112,22 @@ def main() -> int:
             out.add(sym)
         return out
 
-    elig = {d: eligible_at(d) for d in cdates}
+    # recompute eligibility ~monthly (every 4 cadence dates); liquidity is slow,
+    # and this cuts the heavy trailing-window scan ~4x. Each cadence date uses the
+    # most recent prior eligibility snapshot.
+    REBAL = 4
+    rebal_idx = list(range(0, len(cdates), REBAL))
+    print(f"[{_el()}] computing PIT eligibility at {len(rebal_idx)} rebal dates "
+          f"over {len(cand)} symbols...", flush=True)
+    elig_r: dict = {}
+    for ri, ki in enumerate(rebal_idx, 1):
+        elig_r[ki] = eligible_at(cdates[ki])
+        if ri % 5 == 0 or ri == len(rebal_idx):
+            print(f"  [{_el()}] eligibility {ri}/{len(rebal_idx)} ({len(elig_r[ki])} names)", flush=True)
+    elig = {cdates[k]: elig_r[max(i for i in rebal_idx if i <= k)] for k in range(len(cdates))}
     sizes = [len(elig[d]) for d in cdates]
-    print(f"engines={args.engines}  PIT-eligible universe: {min(sizes)}–{max(sizes)} names/date "
-          f"(today's A+B for comparison is fixed)  score-dates={len(cdates)} "
-          f"({cdates[0]}..{cdates[-1]})\n", flush=True)
+    print(f"[{_el()}] engines={args.engines}  PIT-eligible universe: {min(sizes)}-{max(sizes)} "
+          f"names/date  score-dates={len(cdates)} ({cdates[0]}..{cdates[-1]})\n", flush=True)
 
     price_cache: dict = {}
     def price_of(sym, d):
@@ -125,8 +145,8 @@ def main() -> int:
             vals = [p[sym]["score"] for p in per if sym in p]
             if vals:
                 scores[sym][d] = sum(vals) / len(vals)
-        if k % 15 == 0:
-            print(f"  scored {k}/{len(cdates)}", flush=True)
+        if k % 10 == 0:
+            print(f"  [{_el()}] scored {k}/{len(cdates)}", flush=True)
 
     # state machine — entry requires PIT-eligibility at that date
     trades = []

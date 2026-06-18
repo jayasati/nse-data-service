@@ -16,14 +16,19 @@ INTERVAL="${INTERVAL:-15}"
 MAX_TICKS="${MAX_TICKS:-60}"          # safety cap (~15 min at 15s)
 SSH="ssh -i $KEY -o ConnectTimeout=12 -o BatchMode=yes"
 
-# remote: count running backtest procs + one clean line per recent bt log
-# (result headline if finished, else the live progress line)
+# remote: running backtest procs with ELAPSED, + one clean line per recent bt log
 read -r -d '' REMOTE <<'EOF' || true
-n=$(ps -eo args | grep -E '\.venv/bin/python.*(backtest_|strategy_sweep|strategy_pit)' | grep -v grep | wc -l)
+pat='\.venv/bin/python.*(backtest_|strategy_sweep|strategy_pit)'
+n=$(ps -eo args | grep -E "$pat" | grep -v grep | wc -l)
 echo "RUNNING=$n"
+ps -eo etimes,args | grep -E "$pat" | grep -v grep | while read -r et rest; do
+  tag=$(echo "$rest" | grep -oE '(backtest_[a-z_]+|strategy_(sweep|pit))' | head -1)
+  eng=$(echo "$rest" | grep -oE 'engines [a-z,]+' | head -1)
+  printf '  RUN %-18s %-28s elapsed=%dm%02ds\n' "$tag" "$eng" $((et/60)) $((et%60))
+done
 for f in $(ls -t /tmp/bt_*.log 2>/dev/null | head -5); do
   res=$(grep -E 'CAGR=|^  trades=' "$f" 2>/dev/null | tail -1 | sed 's/^ *//')
-  prog=$(grep -E 'scored [0-9]+/|loading candles|universe gate' "$f" 2>/dev/null | tail -1 | sed 's/^ *//')
+  prog=$(grep -E 'scored [0-9]+/|loaded [0-9]+/|eligibility [0-9]+/|loading candles|universe gate' "$f" 2>/dev/null | tail -1 | sed 's/^ *//')
   printf '%-20s %s\n' "$(basename "$f")" "${res:-${prog:-starting...}}"
 done
 EOF
