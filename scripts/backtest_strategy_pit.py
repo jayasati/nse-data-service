@@ -36,6 +36,10 @@ ENGINE_MODS = {
     "valuation": "nse_data.research.valuation_engine",
     "momentum": "nse_data.research.momentum_engine",
     "ownership": "nse_data.research.ownership_engine",
+    "turnaround": "nse_data.research.turnaround_engine",
+    "surprise": "nse_data.research.surprise_engine",
+    "liquidity": "nse_data.research.liquidity_engine",
+    "buyscore": "nse_data.research.buy_score_engine",
 }
 WIN, MIN_DAYS, MIN_TURN_CR, MAX_VOL = 252, 200, 5.0, 50.0
 

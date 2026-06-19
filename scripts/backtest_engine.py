@@ -24,6 +24,7 @@ ENGINES = {
     "liquidity": "nse_data.research.liquidity_engine",
     "surprise": "nse_data.research.surprise_engine",
     "composite": "nse_data.research.composite_engine",
+    "buyscore": "nse_data.research.buy_score_engine",
 }
 
 
