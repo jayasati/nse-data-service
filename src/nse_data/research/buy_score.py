@@ -195,6 +195,14 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
     if news["top_neg"] and news["news_risk"] < 75:        # only surface a material bad-news flag
         neg = neg + [f"news:{news['top_neg'][0]}"]
 
+    # Engine-12 Management Credibility — display/context (in Final Output, not a Buy
+    # Score input). Distinct from Quality: does management RELIABLY deliver / convert
+    # claims? Low credibility is a real red flag even on a cheap, high-quality name.
+    from . import credibility_engine
+    cred = credibility_engine.credibility_raw(conn, symbol, _eod_ep(as_of_date))
+    if cred and cred["score"] < 40:
+        neg = neg + [f"low credibility {cred['score']:.0f}"]
+
     annv = (vol_ann_pct if vol_ann_pct else 30.0) / 100.0
     sig = annv * (horizon / 252.0) ** 0.5 * 100                # ~1σ move over horizon (%)
     edge = ((buy or 50) - 50) / 50.0
@@ -212,6 +220,7 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
                  "n_events": news["n_events"],
                  "top_pos": news["top_pos"][0] if news["top_pos"] else None,
                  "top_neg": news["top_neg"][0] if news["top_neg"] else None},
+        "credibility": ({"score": cred["score"], **cred["components"]} if cred else None),
         "factors": {k: f.get(k) for k in ("quality", "valuation", "momentum", "surprise",
                     "catalyst", "turnaround", "liquidity", "risk", "confidence", "sector_flow")},
         "sector_rank": f.get("sector_rank"), "sector_n": f.get("sector_n"),
