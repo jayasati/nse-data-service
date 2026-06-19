@@ -80,11 +80,12 @@ async function renderScoreBadge() {
     body = await r.json();
   } catch (e) { return; }
   const l = body.latest;
-  if (!l || l.composite == null) return;
-  const cls = l.composite >= 66 ? "good" : l.composite < 34 ? "bad" : "";
+  const v = l && l.buy_score != null ? l.buy_score : (l ? l.composite : null);
+  if (v == null) return;
+  const cls = v >= 60 ? "good" : v < 45 ? "bad" : "";
   const rank = (l.sector_rank != null && l.sector_n != null)
     ? ` · #${l.sector_rank}/${l.sector_n} ${esc(l.sector || "")}` : "";
-  const badge = chip("Score", `<b>${(+l.composite).toFixed(0)}</b>${rank}`, cls);
+  const badge = chip("Score", `<b>${(+v).toFixed(0)}</b>${rank}`, cls);
   const strip = $("ovwStrip");
   // prepend; if the strip is showing only the empty-state, replace it
   if (strip.querySelector(".cempty")) strip.innerHTML = badge;

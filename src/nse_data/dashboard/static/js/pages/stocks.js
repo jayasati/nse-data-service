@@ -279,9 +279,11 @@ async function loadScore() {
     catch (e) { score.data = null; }
   }
   const candleTimes = new Set(lastBars.map(b => b.time));
+  // Plot the trend-aware Buy Score (falls when a name's trend breaks), NOT the
+  // price-blind composite which rises as a falling stock gets "cheaper".
   const pts = (score.data?.points || [])
-    .filter(p => p.composite != null && isFinite(p.composite) && candleTimes.has(p.date))
-    .map(p => ({ time: p.date, value: p.composite }));
+    .filter(p => p.buy_score != null && isFinite(p.buy_score) && candleTimes.has(p.date))
+    .map(p => ({ time: p.date, value: p.buy_score }));
   if (!pts.length) { chart.hideServerOscillator("score"); return; }
   chart.showServerOscillator("score", ["composite"], { composite: pts }, SCORE_COLOR);
 }

@@ -152,14 +152,20 @@ class StockService:
         per-engine factor scores + sector rank, oldest-first. `latest` is the most
         recent row (for the score badge); empty points = no snapshots yet."""
         symbol = symbol.upper()
+        from ...research import buy_score as bs
+        W = bs.REGIME_WEIGHTS["neutral"]
         rows = self.repo.score_history(symbol, days)
-        points = [{
-            "date": r["snapshot_date"], "composite": r["composite"],
-            "sector": r["sector"], "sector_rank": r["sector_rank"],
-            "sector_n": r["sector_n"], "regime": r["regime"],
-            "factors": {k: r[k] for k in ("quality", "valuation", "momentum",
-                        "turnaround", "surprise", "liquidity", "risk", "confidence")},
-        } for r in rows]
+        points = []
+        for r in rows:
+            facs = {k: r[k] for k in ("quality", "valuation", "momentum",
+                    "turnaround", "surprise", "liquidity", "risk", "confidence")}
+            # the trend-aware Buy Score (gates on momentum) — unlike the price-blind
+            # composite, it FALLS when a name's trend breaks (no value-trap illusion).
+            buy, _ = bs.buy_raw(facs, W)
+            points.append({
+                "date": r["snapshot_date"], "buy_score": buy, "composite": r["composite"],
+                "sector": r["sector"], "sector_rank": r["sector_rank"],
+                "sector_n": r["sector_n"], "regime": r["regime"], "factors": facs})
         return {"symbol": symbol, "type": "scores", "count": len(points),
                 "points": points, "latest": points[-1] if points else None}
 
