@@ -35,6 +35,9 @@ broker = ["growwapi>=0.1", "pyotp>=2.9", "kiteconnect>=4.2", "smartapi-python>=1
 # Optional: technical indicators nightly compute (indicators/*). pandas-ta-classic
 # is the maintained pandas-ta fork that's compatible with numpy 2.x.
 indicators = ["pandas>=2.0,<3", "pandas-ta-classic>=0.6"]
+# Optional: macro feeds (scripts/load_macro_market.py) — yfinance USDINR/Brent + the
+# Caldara-Iacoviello GPR daily .xls (xlrd reads the legacy .xls).
+macro = ["yfinance>=0.2", "xlrd>=2.0.1", "pandas>=2.0,<3"]
 # Optional: gradient-boosted models for the P7 ML probability layer (ml/scorer.py
 # make_model('hgb'|'lgbm')). Without it the numpy-only logistic baseline runs
 # everywhere; this only unlocks the GBM upgrade path once history justifies it.
