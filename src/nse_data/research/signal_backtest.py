@@ -24,18 +24,21 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
     score falls `trail` from its in-trade peak, −`stop`% stop-loss, or `max_hold` days."""
     sym = symbol.upper()
     W = bs.REGIME_WEIGHTS["neutral"]
-    rows = conn.execute(
-        "SELECT snapshot_date, quality, valuation, momentum, surprise, catalyst, turnaround, "
-        "liquidity, risk FROM factor_snapshot WHERE symbol=? ORDER BY snapshot_date", (sym,)).fetchall()
+    try:
+        rows = conn.execute(
+            "SELECT snapshot_date, quality, valuation, momentum, surprise, catalyst, turnaround, "
+            "liquidity, risk FROM factor_snapshot WHERE symbol=? ORDER BY snapshot_date", (sym,)).fetchall()
+        px = {dd: c for dd, c in conn.execute(
+            "SELECT date(ts,'unixepoch','+05:30'), close FROM raw_intraday_candles "
+            "WHERE symbol=? AND interval='day' AND close IS NOT NULL", (sym,))}
+    except Exception:  # noqa: BLE001 — tables optional (tableless/fresh DB)
+        return []
     if not rows:
         return []
     series = []                                              # (date, score, contrib)
     for r in rows:
         sc, contrib = bs.buy_raw(dict(zip(_KEYS, r[1:])), W)
         series.append((r[0], sc, contrib))
-    px = {dd: c for dd, c in conn.execute(
-        "SELECT date(ts,'unixepoch','+05:30'), close FROM raw_intraday_candles "
-        "WHERE symbol=? AND interval='day' AND close IS NOT NULL", (sym,))}
 
     def reason_in(contrib, sc):
         top = sorted(((k, v) for k, v in contrib.items() if k != "risk" and v is not None),
@@ -81,7 +84,7 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
                     "entry_reason": e_reason, "exit_reason": reason})
                 held = False
     if held:                                                 # still open at series end
-        d, sc, _c = series[-1]
+        d, sc, _ = series[-1]
         p = px.get(d)
         if p is not None:
             gross = (p / e_px - 1) * 100

@@ -209,6 +209,7 @@ class StockPageService:
             bt = None
         return {
             "symbol": symbol,
+            "signal_backtest": self.repo.signal_backtest(symbol),
             "signals": self.repo.signals(symbol),
             "paper_trades": self.repo.paper_trades(symbol),
             "backtest": bt,

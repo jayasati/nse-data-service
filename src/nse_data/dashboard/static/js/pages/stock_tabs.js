@@ -238,6 +238,22 @@ function renderFilings(d) {
 
 function renderActivity(d) {
   const out = [];
+  // Explainable Buy-Score backtest — every entry/exit with the reason it fired, so the
+  // strategy's decisions on this stock can be assessed (Buy Score ≥70, sell-on-decline).
+  const sb = d.signal_backtest || {}, ss = sb.summary || {};
+  if (ss.trades)
+    out.push(`<div class="vcard"><div class="vsum">Buy-Score strategy backtest
+      (score ≥70 · buy-high / sell-on-decline): <b>${ss.trades}</b> trades ·
+      win <b>${num(ss.win_rate)}%</b> · avg net ${pct(ss.avg_net_pct)} ·
+      total ${pct(ss.total_net_pct)} · avg hold <b>${ss.avg_hold_days}d</b></div></div>`);
+  out.push(section("Strategy backtest — every entry, exit & why", table(
+    ["Entry", "Exit", "Days", "In ₹", "Out ₹", "Net", "Why bought", "Why sold"],
+    (sb.trades || []).map(t => [
+      esc(t.entry_date),
+      esc(t.exit_date) + (t.open ? ' <span class="up">· open</span>' : ""),
+      t.holding_days, num(t.entry_px), num(t.exit_px), pct(t.net_pct),
+      esc(t.entry_reason), esc(t.exit_reason),
+    ])) || empty("the Buy Score never crossed the buy threshold here — the strategy never bought this stock in the backtest window")));
   if (d.backtest)
     out.push(`<div class="vcard"><div class="vsum">Backtests: ${d.backtest.trades} trades ·
       win rate ${num(d.backtest.win_rate)}% · net P&L ₹${num(d.backtest.pnl_net)}</div></div>`);

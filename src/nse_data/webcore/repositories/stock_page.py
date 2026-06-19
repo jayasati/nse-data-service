@@ -193,6 +193,15 @@ class StockPageRepository:
             (symbol,),
         )
 
+    def signal_backtest(self, symbol: str) -> dict:
+        """Explainable Buy-Score backtest for this stock — entry/exit + reasons + holding
+        period, computed live from factor_snapshot + daily closes. t_in 70 (per-stock
+        signal threshold — the portfolio strategy uses 80; 70 surfaces the weaker names
+        that still occasionally signalled, for assessment)."""
+        from ...research import signal_backtest as sbt
+        trades = sbt.backtest_symbol(self.conn, symbol, t_in=70.0)
+        return {"trades": trades, "summary": sbt.summary(trades)}
+
     # ---- flow --------------------------------------------------------------
     def large_deals(self, symbol: str, limit: int = 12) -> list[dict]:
         return self._rows(
