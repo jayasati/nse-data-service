@@ -84,6 +84,7 @@ def backtest_mr(conn, symbol: str, rsi_buy: float = 35.0, rsi_sell: float = 68.0
     trades = []
     held = False
     e_px = e_d = e_rsi = 0.0
+    e_reason = ""
     for i, d in enumerate(dates):
         p, r, m = closes[i], rs[i], dma[i]
         if r is None or m is None:
