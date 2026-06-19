@@ -66,6 +66,9 @@ def main() -> int:
     m = card["macro"]
     line("Macro (Engine 1)", f"{m['state']}  score={m['score']}  VIX={m['vix']}  "
          f"comps={m['components']}  (missing: {', '.join(m['missing'])})")
+    nw = card["news"]
+    line("News (Engine 6)", f"score={nw['score']} risk={nw['risk']} events={nw['n_events']}  "
+         f"top+={nw['top_pos'] or '-'}  top-={nw['top_neg'] or '-'}  [display-only]")
     line("Regime", f"{regime or 'n/a'}  → weights={card['weights']}")
     print("  --- factor scores (0-100, cross-sectional, point-in-time) ---")
     for k, v in card["factors"].items():

@@ -186,6 +186,15 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
     elif macro["state"] == "Risk Off" and action.startswith(("BUY", "STRONG")):
         action = "BUY (cautious — macro Risk Off)"
 
+    # Engine-6 News Intelligence — DISPLAY-ONLY (can't be backtested yet, ~2.5mo of
+    # announcement history): structured recent events, not folded into the Buy Score.
+    from . import news_engine
+    news = news_engine.news_raw(conn, symbol, _eod_ep(as_of_date))
+    if news["top_pos"]:
+        pos = pos + [f"news:{news['top_pos'][0]}"]
+    if news["top_neg"] and news["news_risk"] < 75:        # only surface a material bad-news flag
+        neg = neg + [f"news:{news['top_neg'][0]}"]
+
     annv = (vol_ann_pct if vol_ann_pct else 30.0) / 100.0
     sig = annv * (horizon / 252.0) ** 0.5 * 100                # ~1σ move over horizon (%)
     edge = ((buy or 50) - 50) / 50.0
@@ -199,6 +208,10 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
     return {
         "symbol": symbol, "as_of": as_of_date, "sector": f.get("sector"),
         "regime": regime, "macro": macro, "weights": {k: weights[k] for k in COMPONENTS},
+        "news": {"score": news["news_score"], "risk": news["news_risk"],
+                 "n_events": news["n_events"],
+                 "top_pos": news["top_pos"][0] if news["top_pos"] else None,
+                 "top_neg": news["top_neg"][0] if news["top_neg"] else None},
         "factors": {k: f.get(k) for k in ("quality", "valuation", "momentum", "surprise",
                     "catalyst", "turnaround", "liquidity", "risk", "confidence", "sector_flow")},
         "sector_rank": f.get("sector_rank"), "sector_n": f.get("sector_n"),

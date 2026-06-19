@@ -1,0 +1,165 @@
+"""Engine 6 — News Intelligence. Converts raw announcements/news into STRUCTURED
+event signals (not simple sentiment): each item is classified to an event TYPE, given
+a signed severity, and decayed by a TYPE-SPECIFIC half-life (an order win fades slowly,
+a dividend fast, an auditor exit barely fades). Two point-in-time outputs per stock:
+
+  news_score  [0,100]  — positive information flow (orders/acquisitions/expansion/
+                         buyback/…); 50 = quiet. The "catalyst of news" momentum.
+  news_risk   [0,100]  — higher = safer; bad news (governance/regulatory/penalty/
+                         downgrade/pledge) pulls it down. Overlaps risk_engine by
+                         design (this is the news-flow view; risk_engine is the gate).
+
+Classification is deterministic keyword rules on the NSE announcement subject + details
+(explainable), with sentiment only as a tie-breaker (rating up/down, general news).
+Point-in-time via broadcast_epoch ≤ as_of. Severities/half-lives are documented
+heuristics; validated by scripts/backtest_engine.py --engine news before any weight.
+"""
+from __future__ import annotations
+
+import math
+
+WINDOW_DAYS = 180
+
+# event_type -> (sign, base_severity 1-10, decay half-life days)
+EVENT_TYPES = {
+    "order_win":      (+1, 6, 90),
+    "acquisition":    (+1, 7, 120),
+    "expansion":      (+1, 5, 120),
+    "product_launch": (+1, 4, 90),
+    "buyback":        (+1, 6, 60),
+    "bonus_split":    (+1, 4, 45),
+    "dividend":       (+1, 2, 30),
+    "fundraise":      (+1, 3, 60),
+    "rating_up":      (+1, 5, 120),
+    "positive_news":  (+1, 2, 21),
+    "auditor_exit":   (-1, 9, 180),
+    "kmp_exit":       (-1, 6, 120),
+    "regulatory":     (-1, 7, 150),
+    "penalty":        (-1, 6, 120),
+    "rating_down":    (-1, 7, 150),
+    "pledge":         (-1, 5, 120),
+    "negative_news":  (-1, 3, 30),
+}
+
+
+def _sentiment_val(s) -> float | None:
+    if s is None:
+        return None
+    if isinstance(s, (int, float)):
+        return float(s)
+    t = str(s).strip().lower()
+    return {"positive": 1.0, "bullish": 1.0, "negative": -1.0, "bearish": -1.0,
+            "neutral": 0.0}.get(t)
+
+
+def classify(subject: str | None, details: str | None, sentiment=None) -> str | None:
+    """NSE announcement → event type (or None = ignore). Ordered: specific first."""
+    t = f"{subject or ''} {details or ''}".lower()
+    has = lambda *ws: any(w in t for w in ws)
+    # routine compliance filings that merely CITE SEBI/regulations are not events —
+    # drop them so they don't masquerade as a regulatory action.
+    if has("certificate under", "disclosure under", "compliance certificate",
+           "intimation under regulation", "submission under regulation",
+           "reg. 74", "regulation 74", "regulation 7(3)", "regulation 40"):
+        return None
+    # --- negatives (checked first; they dominate the same filing) ---
+    if has("auditor") and has("resignation", "change in auditor", "cessation", "removal"):
+        return "auditor_exit"
+    if has("pledge", "invocation", "encumbrance"):
+        return "pledge"
+    if has("insolvency", "nclt", "cirp", "default in payment", "winding up"):
+        return "regulatory"
+    # adverse regulatory ACTION (not a routine SEBI-regulations citation)
+    if has("show cause", "show-cause", "adjudication", "investigation", "search and seiz",
+           "summons", "prosecution", "sebi order", "interim order", "order passed against",
+           "debarment", "impound", "freezing of", "settlement order", "regulatory action"):
+        return "regulatory"
+    if has("penalty", "penalt", "fine of", "demand notice", "tax demand"):
+        return "penalty"
+    if has("resignation", "cessation", "resign") and has("director", "kmp", "cfo", "ceo",
+            "managing director", "company secretary", "whole-time", "chairman"):
+        return "kmp_exit"
+    # --- positives ---
+    if has("buyback", "buy-back", "buy back"):
+        return "buyback"
+    if has("bonus", "stock split", "sub-division", "subdivision"):
+        return "bonus_split"
+    if has("bagging", "receiving of orders", "work order", "letter of award", "letter of intent",
+           "purchase order", "new order", "order win", "secures order", "wins order", "contract"):
+        return "order_win"
+    if has("acquisition", "acquire", "amalgamation", "merger", "scheme of arrangement"):
+        return "acquisition"
+    if has("capacity", "expansion", "new plant", "greenfield", "brownfield", "commission",
+           "commercial production", "capex", "new facility"):
+        return "expansion"
+    if has("launch", "new product", "unveil"):
+        return "product_launch"
+    if has("qip", "preferential issue", "fund rais", "raising of funds", "rights issue", "warrant"):
+        return "fundraise"
+    if has("credit rating", "rating action", "reaffirm", "rating"):
+        sv = _sentiment_val(sentiment)
+        return "rating_down" if (sv is not None and sv < 0) else "rating_up"
+    if has("dividend"):
+        return "dividend"
+    # --- fall back to sentiment for general news/press releases ---
+    sv = _sentiment_val(sentiment)
+    if sv is not None and (has("press release", "general update", "update", "news", "media")):
+        if sv > 0.2:
+            return "positive_news"
+        if sv < -0.2:
+            return "negative_news"
+    return None
+
+
+def news_raw(conn, symbol: str, as_of_ep: int) -> dict:
+    """{news_score, news_risk, events, top_pos, top_neg} from announcements (+ news if
+    present) in the trailing WINDOW on/before as_of. Always returns a dict (50/100 quiet)."""
+    lo = as_of_ep - WINDOW_DAYS * 86400
+    events = []
+    for subj, det, sent, bep in conn.execute(
+            "SELECT subject, details, sentiment, broadcast_epoch FROM raw_announcements "
+            "WHERE symbol=? AND broadcast_epoch IS NOT NULL AND broadcast_epoch BETWEEN ? AND ?",
+            (symbol, lo, as_of_ep)):
+        et = classify(subj, det, sent)
+        if et:
+            events.append((et, bep, subj))
+    # optional raw_news corpus (headlines) — sentiment-classified general news
+    try:
+        for head, sent, pep in conn.execute(
+                "SELECT headline, NULL, published_epoch FROM raw_news "
+                "WHERE symbol=? AND published_epoch BETWEEN ? AND ?", (symbol, lo, as_of_ep)):
+            et = classify(head, None, sent)
+            if et:
+                events.append((et, pep, head))
+    except Exception:  # noqa: BLE001 — raw_news optional
+        pass
+
+    pos = neg = 0.0
+    top_pos = top_neg = None
+    for et, bep, subj in events:
+        sign, sev, hl = EVENT_TYPES[et]
+        age = max(0.0, (as_of_ep - bep) / 86400.0)
+        contrib = sev * (0.5 ** (age / hl))
+        if sign > 0:
+            pos += contrib
+            if top_pos is None or contrib > top_pos[1]:
+                top_pos = (et, contrib, subj)
+        else:
+            neg += contrib
+            if top_neg is None or contrib > top_neg[1]:
+                top_neg = (et, contrib, subj)
+    news_score = round(50 + 50 * math.tanh(pos / 8.0), 1)
+    news_risk = round(100 - 50 * math.tanh(neg / 8.0), 1)
+    return {"news_score": news_score, "news_risk": news_risk, "n_events": len(events),
+            "top_pos": top_pos, "top_neg": top_neg}
+
+
+def score_universe(conn, symbols, as_of_ep, sector_of=None) -> dict:
+    """{symbol: {'score','news_risk',...}} — news_score is the rankable positive-flow
+    signal (absolute, 50=quiet). Not sector-relative (news is idiosyncratic)."""
+    out = {}
+    for s in symbols:
+        r = news_raw(conn, s, as_of_ep)
+        out[s] = {"score": r["news_score"], "news_risk": r["news_risk"],
+                  "top_pos": r["top_pos"], "top_neg": r["top_neg"]}
+    return out

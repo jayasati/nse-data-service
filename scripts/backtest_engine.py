@@ -23,6 +23,7 @@ ENGINES = {
     "turnaround": "nse_data.research.turnaround_engine",
     "liquidity": "nse_data.research.liquidity_engine",
     "surprise": "nse_data.research.surprise_engine",
+    "news": "nse_data.research.news_engine",
     "composite": "nse_data.research.composite_engine",
     "buyscore": "nse_data.research.buy_score_engine",
     "buyscore_adaptive": "nse_data.research.buy_score_engine_adaptive",
