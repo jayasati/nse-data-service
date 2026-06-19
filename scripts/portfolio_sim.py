@@ -140,6 +140,11 @@ def main() -> int:
         print(f"{i:>3} {t['sym']:<11}{t['in_d']:<11}{t['out_d']:<11}{t['days']:>4} {t['qty']:>5} "
               f"{t['in_px']:>8.1f} {t['out_px']:>8.1f} {t['pnl']:>+11,.0f} {tax:>8,.0f} {net:>+10,.0f}{flag}")
 
+    if not trades:
+        print("  (no trades — the Buy Score never reached the buy threshold; stayed in cash)")
+        print(f"  NET PROFIT AFTER TAX: ₹0    final value: ₹{args.capital:,.0f}  (0.0%)")
+        conn.close()
+        return 0
     wins = [t for t in trades if t["pnl"] > 0]
     # realistic portfolio tax: STCG on NET realised gains (losses offset, all short-term)
     net_tax = max(0.0, gross_sum) * args.stcg / 100.0
