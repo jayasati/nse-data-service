@@ -110,6 +110,23 @@ def buy_raw(f: dict, weights: dict) -> tuple[float | None, dict]:
     return round(base * mult, 1), contrib
 
 
+#: The two factors that SURVIVED cross-regime OOS validation (2023-24 + 2025-26).
+LEAN_FACTORS = ("valuation", "surprise")
+
+
+def lean_raw(f: dict) -> tuple[float | None, dict]:
+    """OOS-VALIDATED lean score — equal-weight mean of the only two factors that held up
+    out-of-sample: Valuation (value premium) and Surprise (post-earnings drift). Drops
+    Quality / Momentum / Turnaround, which were strong in-sample (IC ~0.06) but collapsed
+    to ~0 on unseen 2023-24 data. The composite itself was tested across both windows:
+    Rank IC +0.095 (unseen) / +0.058 (in-sample), positive+significant in both — the
+    first genuinely OOS-validated signal in the system. Returns (score, parts_used)."""
+    parts = {k: f[k] for k in LEAN_FACTORS if f.get(k) is not None}
+    if not parts:
+        return None, parts
+    return round(sum(parts.values()) / len(parts), 1), parts
+
+
 def classify(f: dict) -> str:
     """Investment classification from the factor profile (price-aware via trend)."""
     opp, trend = _opportunity(f), f.get("momentum")
@@ -251,6 +268,7 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
         "sector_rank": f.get("sector_rank"), "sector_n": f.get("sector_n"),
         "market_rank": market_rank, "market_n": market_n,
         "opportunity": _opportunity(f), "buy_score": buy, "contributions": contrib,
+        "lean_score": lean_raw(f)[0], "lean_parts": lean_raw(f)[1],
         "velocity": vel, "acceleration": accel, "history_days": hist_n,
         "confidence": conf, "classification": cls, "verdict": action,
         "drivers_positive": pos, "drivers_negative": neg,
