@@ -207,6 +207,12 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
     if cred and cred["score"] < 40:
         neg = neg + [f"low credibility {cred['score']:.0f}"]
 
+    # Engine-1 RBI central-bank catalyst — sector-level policy/regulatory events the
+    # per-stock News engine can't see (rate decisions move banks & rate-sensitive names).
+    rbi = macro_engine.rbi_recent(conn, _eod_ep(as_of_date), f.get("sector"))
+    if rbi["has_policy"]:
+        pos = pos + ["rbi:MPC/policy"]
+
     annv = (vol_ann_pct if vol_ann_pct else 30.0) / 100.0
     sig = annv * (horizon / 252.0) ** 0.5 * 100                # ~1σ move over horizon (%)
     edge = ((buy or 50) - 50) / 50.0
@@ -239,6 +245,7 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
                  "top_pos": news["top_pos"][0] if news["top_pos"] else None,
                  "top_neg": news["top_neg"][0] if news["top_neg"] else None},
         "credibility": ({"score": cred["score"], **cred["components"]} if cred else None),
+        "rbi": rbi["events"],
         "factors": {k: f.get(k) for k in ("quality", "valuation", "momentum", "surprise",
                     "catalyst", "turnaround", "liquidity", "risk", "confidence", "sector_flow")},
         "sector_rank": f.get("sector_rank"), "sector_n": f.get("sector_n"),

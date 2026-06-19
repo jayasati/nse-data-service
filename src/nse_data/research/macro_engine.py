@@ -150,6 +150,32 @@ def _rates_safety(conn, as_of_ep):                  # 10y G-sec yield (manual ra
     return None if y is None else _bucket(y, [(6.5, 80), (7, 65), (7.5, 50), (8, 35), (1e9, 20)])
 
 
+_FIN_SECTORS = {"bfsi", "nbfc", "capmarkets"}
+
+
+def rbi_recent(conn, as_of_ep: int, sector: str | None = None, days: int = 20) -> dict:
+    """Recent RBI policy/regulatory events relevant to a stock (raw_rbi_press) — the
+    central-bank catalysts the per-stock News engine can't see. Monetary-policy events
+    matter market-wide; banking-regulatory events matter for financial sectors. Returns
+    {events:[{date,kind,title}], has_policy, has_regulatory}."""
+    iso = _dt.datetime.fromtimestamp(as_of_ep, _IST).date()
+    lo = (iso - _dt.timedelta(days=days)).isoformat()
+    kinds = ["monetary_policy"]
+    if sector is None or sector in _FIN_SECTORS:
+        kinds.append("banking_regulatory")
+    try:
+        rows = conn.execute(
+            f"SELECT pub_date, kind, title FROM raw_rbi_press WHERE pub_date BETWEEN ? AND ? "
+            f"AND kind IN ({','.join('?' * len(kinds))}) ORDER BY pub_date DESC, prid DESC LIMIT 6",
+            [lo, iso.isoformat(), *kinds]).fetchall()
+    except Exception:  # noqa: BLE001 — table optional
+        return {"events": [], "has_policy": False, "has_regulatory": False}
+    ev = [{"date": d, "kind": k, "title": t} for d, k, t in rows]
+    return {"events": ev,
+            "has_policy": any(e["kind"] == "monetary_policy" for e in ev),
+            "has_regulatory": any(e["kind"] == "banking_regulatory" for e in ev)}
+
+
 def macro_risk(conn, as_of_ep: int) -> dict:
     """{score, state, vix, components, missing} — higher score = safer / risk-on."""
     vix_sc, vix = _vix_safety(conn, as_of_ep)
