@@ -60,8 +60,11 @@ def main() -> int:
         print(f"backfill: {len(dates)} dates {dates[0]}..{dates[-1]} (cadence {args.cadence}), PIT")
         for i, d in enumerate(dates, 1):
             t0 = _time.time()
-            n = snapshot.run_snapshot(conn, d, computed_epoch, _eod_ep(d))
-            print(f"  [{i}/{len(dates)}] {d}: {n} rows ({_time.time()-t0:.0f}s)", flush=True)
+            try:
+                n = snapshot.run_snapshot(conn, d, computed_epoch, _eod_ep(d))
+                print(f"  [{i}/{len(dates)}] {d}: {n} rows ({_time.time()-t0:.0f}s)", flush=True)
+            except Exception as e:  # noqa: BLE001 — one bad/locked date shouldn't abort the backfill
+                print(f"  [{i}/{len(dates)}] {d}: SKIPPED ({type(e).__name__}: {e})", flush=True)
         if args.label:
             filled = snapshot.label_matured(conn)
             print("labelled: " + "  ".join(f"{h}d:+{v}" for h, v in filled.items()))
