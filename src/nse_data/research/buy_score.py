@@ -118,6 +118,42 @@ def verdict(buy, f: dict, velocity, regime: str | None, confidence) -> tuple[str
     return "HOLD", pos, neg
 
 
+def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: float | None,
+                  as_of_date: str, horizon: int = 60) -> dict:
+    """Full decision card dict from a factor row `f` (engine scores + sector/sector_rank).
+    Used by both the CLI (f from a live universe rescore) and the web service (f from
+    the latest factor_snapshot row) so the verdict is identical either way."""
+    weights = REGIME_WEIGHTS.get((regime or "neutral").lower(), REGIME_WEIGHTS["neutral"])
+    buy, contrib = buy_raw(f, weights)
+    vel, accel, hist_n = velocity_accel(conn, symbol, weights, as_of_date)
+    cls = classify(f)
+    conf = f.get("confidence")
+    action, pos, neg = verdict(buy, f, vel, regime, conf)
+
+    annv = (vol_ann_pct if vol_ann_pct else 30.0) / 100.0
+    sig = annv * (horizon / 252.0) ** 0.5 * 100                # ~1σ move over horizon (%)
+    edge = ((buy or 50) - 50) / 50.0
+    exp_dd = -round(sig * (1.2 - 0.4 * max(0, edge)), 1)
+    exp_up = round(sig * max(0.0, edge) * 1.8, 1)
+    rr = round(exp_up / abs(exp_dd), 2) if exp_dd else None
+    buyable = action.startswith(("BUY", "STRONG"))
+    alloc = round(max(0.0, ((buy or 0) - 50) / 5.0) * (conf or 60) / 100.0, 1) if buyable else 0.0
+
+    return {
+        "symbol": symbol, "as_of": as_of_date, "sector": f.get("sector"),
+        "regime": regime, "weights": {k: weights[k] for k in COMPONENTS},
+        "factors": {k: f.get(k) for k in ("quality", "valuation", "momentum", "surprise",
+                    "catalyst", "turnaround", "liquidity", "risk", "confidence", "sector_flow")},
+        "sector_rank": f.get("sector_rank"), "sector_n": f.get("sector_n"),
+        "opportunity": _opportunity(f), "buy_score": buy, "contributions": contrib,
+        "velocity": vel, "acceleration": accel, "history_days": hist_n,
+        "confidence": conf, "classification": cls, "verdict": action,
+        "drivers_positive": pos, "drivers_negative": neg,
+        "expected_upside_pct": exp_up, "expected_drawdown_pct": exp_dd,
+        "reward_risk": rr, "suggested_allocation_pct": alloc, "horizon": horizon,
+    }
+
+
 def velocity_accel(conn, symbol: str, weights: dict, as_of_date: str, lookback=20) -> tuple:
     """Score velocity (Δ buy-score over ~lookback trading snapshots) + acceleration,
     recomputed from the STORED factor_snapshot history (point-in-time)."""

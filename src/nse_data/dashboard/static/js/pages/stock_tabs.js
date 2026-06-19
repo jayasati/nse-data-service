@@ -91,6 +91,31 @@ async function renderScoreBadge() {
   else strip.insertAdjacentHTML("afterbegin", badge);
 }
 
+// Integrated Buy Decision verdict — the headline chip (regime-adaptive Buy Score +
+// verdict + classification), prepended to the overview strip. Gates on Trend, so a
+// cheap/quality value-trap reads as AVOID, not a bare high score.
+async function renderBuyCard() {
+  let c;
+  try {
+    const r = await fetch(`/api/stocks/${encodeURIComponent(symbol)}/buy-card`, { cache: "no-store" });
+    if (!r.ok) return;
+    c = await r.json();
+  } catch (e) { return; }
+  if (!c || !c.available || c.buy_score == null) return;
+  const v = String(c.verdict || "");
+  const cls = /^(STRONG BUY|BUY)/.test(v) ? "good" : /^(AVOID|EXIT|REDUCE)/.test(v) ? "bad" : "";
+  const verb = v.split("—")[0].trim();                       // drop the "— reason" tail
+  const vel = c.velocity == null ? "" :
+    ` ${c.velocity > 0 ? "↑" : c.velocity < 0 ? "↓" : "→"}${Math.abs(c.velocity).toFixed(0)}`;
+  const title = `Buy ${c.buy_score} · ${esc(c.classification || "")}`
+    + (c.drivers_negative?.length ? ` · risks: ${esc(c.drivers_negative.join(", "))}` : "");
+  const badge = `<span class="ochip ${cls}" title="${title}"><span class="k">Verdict</span>`
+    + `<b>${esc(verb)}</b> ${(+c.buy_score).toFixed(0)}${vel}</span>`;
+  const strip = $("ovwStrip");
+  if (strip.querySelector(".cempty")) strip.innerHTML = badge;
+  else strip.insertAdjacentHTML("afterbegin", badge);
+}
+
 // ---- tab renderers -------------------------------------------------------------
 
 function table(headers, rows) {
@@ -342,7 +367,7 @@ export function setCockpitSymbol(sym) {
   u.searchParams.set("symbol", sym);
   history.replaceState(null, "", u);
   api("overview").then(renderOverview).catch(() => { $("ovwStrip").innerHTML = ""; })
-    .finally(renderScoreBadge);
+    .finally(() => renderScoreBadge().finally(renderBuyCard));   // verdict chip ends up leftmost
   renderTab();
 }
 

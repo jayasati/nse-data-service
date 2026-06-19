@@ -163,6 +163,21 @@ class StockService:
         return {"symbol": symbol, "type": "scores", "count": len(points),
                 "points": points, "latest": points[-1] if points else None}
 
+    def buy_card(self, symbol: str) -> dict:
+        """Integrated Buy Decision card (grand-prompt v2) from the latest stored
+        factor snapshot — regime-adaptive Buy Score, velocity, classification, and a
+        Buy/Hold/Reduce/Exit verdict with drivers. `available=False` if no snapshot."""
+        from ...research import buy_score as bs
+        symbol = symbol.upper()
+        row = self.repo.latest_snapshot_row(symbol)
+        if not row:
+            return {"symbol": symbol, "available": False}
+        f = dict(row)
+        card = bs.assemble_card(self.repo.conn, symbol, f, f.get("regime"),
+                                self.repo.stock_ann_vol(symbol), f["snapshot_date"])
+        card["available"] = True
+        return card
+
     def _backfill_candles(self, symbol: str, interval: str) -> list[dict]:
         return [{"time": r["ts"] + IST_OFFSET, "open": r["open"], "high": r["high"],
                  "low": r["low"], "close": r["close"], "volume": r["volume"]}

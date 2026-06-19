@@ -92,6 +92,21 @@ class StockRepository:
             (symbol, days),
         ).fetchall()[::-1]
 
+    def latest_snapshot_row(self, symbol: str):
+        """The most recent factor_snapshot row (all engine scores + sector rank +
+        regime) for the Buy Decision card. None if the store is absent/empty."""
+        if not self.has_table("factor_snapshot"):
+            return None
+        return self.conn.execute(
+            "SELECT * FROM factor_snapshot WHERE symbol = ? "
+            "ORDER BY snapshot_date DESC LIMIT 1", (symbol,)).fetchone()
+
+    def stock_ann_vol(self, symbol: str):
+        """Annualised volatility % from the universe table (for reward/risk sizing)."""
+        r = self.conn.execute(
+            "SELECT ann_vol_pct FROM tradeable_universe WHERE symbol = ?", (symbol,)).fetchone()
+        return r[0] if r else None
+
     def intraday_snapshots(self, symbol: str) -> list[sqlite3.Row]:
         """(as_of, last_price, volume) from the live 1-min feed, oldest-first."""
         if not self.has_table(QUOTES):

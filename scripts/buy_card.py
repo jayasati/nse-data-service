@@ -51,52 +51,36 @@ def main() -> int:
         regime = (latest_market_state(conn) or {}).get("overall_regime")
     except Exception:  # noqa: BLE001
         regime = None
-    weights = bs.REGIME_WEIGHTS.get((regime or "neutral").lower(), bs.REGIME_WEIGHTS["neutral"])
 
     rows = snapshot.compute_snapshot(conn, universe, ep, sector_of)
     f = rows.get(sym)
     if not f:
         print(f"{sym}: no factor coverage as-of {today}"); return 1
-    conf = f.get("confidence")
-    buy, contrib = bs.buy_raw(f, weights)
-    vel, accel, hist_n = bs.velocity_accel(conn, sym, weights, today)
-    cls = bs.classify(f)
-    action, pos, neg = bs.verdict(buy, f, vel, regime, conf)
-
-    # heuristic reward/risk + sizing (volatility from tradeable_universe)
     vol = conn.execute("SELECT ann_vol_pct FROM tradeable_universe WHERE symbol=?", (sym,)).fetchone()
-    annv = (vol[0] if vol and vol[0] else 30.0) / 100.0
-    sig = annv * (args.horizon / 252.0) ** 0.5 * 100      # ~1σ move over horizon (%)
-    edge = ((buy or 50) - 50) / 50.0                       # -1..+1
-    exp_dd = -round(sig * (1.2 - 0.4 * max(0, edge)), 1)    # downside ~1σ, lighter if strong
-    exp_up = round(sig * max(0.0, edge) * 1.8, 1)
-    rr = round(exp_up / abs(exp_dd), 2) if exp_dd else None
-    buyable = action.startswith(("BUY", "STRONG"))
-    base_alloc = max(0.0, ((buy or 0) - 50) / 5.0)         # 60→2%, 70→4%, 80→6%, 90→8%
-    alloc = round(base_alloc * (conf or 60) / 100.0, 1) if buyable else 0.0
+    card = bs.assemble_card(conn, sym, f, regime, vol[0] if vol else None, today, args.horizon)
 
     def line(k, v):
         print(f"  {k:<22} {v}")
-    print(f"\n=== BUY DECISION CARD — {sym} ({sector_of(sym)}, grade {grade_of[sym]}) "
+    print(f"\n=== BUY DECISION CARD — {sym} ({card['sector']}, grade {grade_of[sym]}) "
           f"as-of {today} ===")
-    line("Regime", f"{regime or 'n/a'}  → weights={ {k: weights[k] for k in bs.COMPONENTS} }")
+    line("Regime", f"{regime or 'n/a'}  → weights={card['weights']}")
     print("  --- factor scores (0-100, cross-sectional, point-in-time) ---")
-    for k in ("quality", "valuation", "momentum", "surprise", "catalyst", "turnaround",
-              "liquidity", "risk", "confidence"):
-        v = f.get(k)
+    for k, v in card["factors"].items():
         line(k.capitalize(), "—" if v is None else f"{v:.1f}")
-    line("Sector rank", f"{f.get('sector_rank')}/{f.get('sector_n')}")
+    line("Sector rank", f"{card['sector_rank']}/{card['sector_n']}")
     print("  --- decision ---")
-    line("Opportunity (Q+V)", "—" if bs._opportunity(f) is None else f"{bs._opportunity(f):.1f}")
-    line("BUY SCORE", f"{buy}   (contrib={contrib})")
-    line("Score velocity (~20d)", "—" if vel is None else f"{vel:+.1f}  accel={accel:+.1f}  (hist {hist_n}d)")
-    line("Confidence", "—" if conf is None else f"{conf:.0f}%")
-    line("Classification", cls)
-    line("VERDICT", action)
-    line("Top positive", ", ".join(pos) or "—")
-    line("Top negative", ", ".join(neg) or "—")
-    line(f"Reward/Risk ({args.horizon}d)*", f"up {exp_up:+.1f}% / down {exp_dd:+.1f}%  RR={rr}")
-    line("Suggested allocation*", f"{alloc}%")
+    line("Opportunity (Q+V)", "—" if card["opportunity"] is None else f"{card['opportunity']:.1f}")
+    line("BUY SCORE", f"{card['buy_score']}   (contrib={card['contributions']})")
+    line("Score velocity (~20d)", "—" if card["velocity"] is None else
+         f"{card['velocity']:+.1f}  accel={card['acceleration']:+.1f}  (hist {card['history_days']}d)")
+    line("Confidence", "—" if card["confidence"] is None else f"{card['confidence']:.0f}%")
+    line("Classification", card["classification"])
+    line("VERDICT", card["verdict"])
+    line("Top positive", ", ".join(card["drivers_positive"]) or "—")
+    line("Top negative", ", ".join(card["drivers_negative"]) or "—")
+    line(f"Reward/Risk ({args.horizon}d)*",
+         f"up {card['expected_upside_pct']:+.1f}% / down {card['expected_drawdown_pct']:+.1f}%  RR={card['reward_risk']}")
+    line("Suggested allocation*", f"{card['suggested_allocation_pct']}%")
     print("  * reward/risk + sizing are heuristics (volatility-scaled), NOT yet "
           "backtest-calibrated.\n")
     conn.close()
