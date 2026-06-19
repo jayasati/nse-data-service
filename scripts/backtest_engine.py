@@ -21,6 +21,7 @@ ENGINES = {
     "valuation": "nse_data.research.valuation_engine",
     "momentum": "nse_data.research.momentum_engine",
     "turnaround": "nse_data.research.turnaround_engine",
+    "improvement": "nse_data.research.improvement_engine",
     "liquidity": "nse_data.research.liquidity_engine",
     "surprise": "nse_data.research.surprise_engine",
     "news": "nse_data.research.news_engine",
