@@ -121,13 +121,46 @@ def _oil_safety(conn, as_of_ep):
     return None if chg is None else _bucket(chg, [(-5, 85), (0, 70), (5, 55), (12, 40), (1e9, 25)])
 
 
+def _latest_le(conn, sql, as_of_ep):
+    """Latest scalar from a query parameterised by an ISO date <= as_of. None on
+    missing table/empty."""
+    iso = _dt.datetime.fromtimestamp(as_of_ep, _IST).date().isoformat()
+    try:
+        r = conn.execute(sql, (iso,)).fetchone()
+    except Exception:  # noqa: BLE001
+        return None
+    return r[0] if r and r[0] is not None else None
+
+
+def _inflation_safety(conn, as_of_ep):
+    cpi = _latest_le(conn, "SELECT cpi_yoy FROM raw_macro_market WHERE cpi_yoy IS NOT NULL "
+                     "AND date<=? ORDER BY date DESC LIMIT 1", as_of_ep)
+    return None if cpi is None else _bucket(cpi, [(4, 85), (5, 70), (6, 55), (7, 40), (1e9, 25)])
+
+
+def _geopolitical_safety(conn, as_of_ep):           # Caldara-Iacoviello GPR; ~100 = baseline
+    gpr = _latest_le(conn, "SELECT gpr FROM raw_macro_market WHERE gpr IS NOT NULL "
+                     "AND date<=? ORDER BY date DESC LIMIT 1", as_of_ep)
+    return None if gpr is None else _bucket(gpr, [(80, 90), (120, 70), (160, 55), (220, 40), (1e9, 25)])
+
+
+def _rates_safety(conn, as_of_ep):                  # 10y G-sec yield (manual raw_macro_rates)
+    y = _latest_le(conn, "SELECT gsec_10y_yield FROM raw_macro_rates WHERE gsec_10y_yield IS NOT NULL "
+                   "AND as_of_date<=? ORDER BY as_of_date DESC LIMIT 1", as_of_ep)
+    return None if y is None else _bucket(y, [(6.5, 80), (7, 65), (7.5, 50), (8, 35), (1e9, 20)])
+
+
 def macro_risk(conn, as_of_ep: int) -> dict:
     """{score, state, vix, components, missing} — higher score = safer / risk-on."""
     vix_sc, vix = _vix_safety(conn, as_of_ep)
     comps = {"vix": vix_sc, "breadth": _breadth_safety(conn, as_of_ep),
              "fii_flow": _fii_safety(conn, as_of_ep),
-             "currency": _currency_safety(conn, as_of_ep), "oil": _oil_safety(conn, as_of_ep)}
-    wts = {"vix": 0.4, "breadth": 0.2, "fii_flow": 0.15, "currency": 0.15, "oil": 0.1}
+             "currency": _currency_safety(conn, as_of_ep), "oil": _oil_safety(conn, as_of_ep),
+             "inflation": _inflation_safety(conn, as_of_ep),
+             "rates": _rates_safety(conn, as_of_ep),
+             "geopolitical": _geopolitical_safety(conn, as_of_ep)}
+    wts = {"vix": 0.30, "breadth": 0.15, "fii_flow": 0.1, "currency": 0.1, "oil": 0.1,
+           "inflation": 0.1, "rates": 0.1, "geopolitical": 0.05}
     num = den = 0.0
     for k, sc in comps.items():
         if sc is not None:
@@ -138,4 +171,4 @@ def macro_risk(conn, as_of_ep: int) -> dict:
              "Neutral" if score >= 50 else "Risk Off" if score >= 30 else "Panic")
     return {"score": score, "state": state, "vix": vix,
             "components": {k: (round(v, 1) if v is not None else None) for k, v in comps.items()},
-            "missing": ["inflation", "rates", "geopolitical"]}
+            "missing": [k for k, v in comps.items() if v is None]}

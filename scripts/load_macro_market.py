@@ -37,18 +37,51 @@ def main() -> int:
         except Exception as e:  # noqa: BLE001
             print(f"WARN {col} ({tk}) fetch failed: {e}")
 
+    # Geopolitical Risk (Caldara-Iacoviello) — daily .xls, the one reliable free feed.
+    try:
+        import io
+        import requests
+        import pandas as pd
+        c = requests.get("https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls",
+                         headers={"User-Agent": "Mozilla/5.0"}, timeout=90).content
+        g = pd.read_excel(io.BytesIO(c))
+        g = g.dropna(subset=["date"]).tail(800)             # recent history is enough
+        for _, row in g.iterrows():
+            d = row["date"].date().isoformat() if hasattr(row["date"], "date") else str(row["date"])[:10]
+            v = row.get("GPRD_MA7", row.get("GPRD"))         # 7-day smoothed
+            if v == v:                                       # not NaN
+                series.setdefault(d, {})["gpr"] = float(v)
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN gpr fetch failed: {e}")
+
+    # CPI YoY (best-effort; FRED/data.gov.in are unreliable from ap-south-1 — non-fatal)
+    try:
+        import io
+        import requests
+        import pandas as pd
+        t = requests.get("https://fred.stlouisfed.org/graph/fredgraph.csv?id=INDCPALTT02GYM",
+                         headers={"User-Agent": "Mozilla/5.0"}, timeout=20).text
+        df = pd.read_csv(io.StringIO(t)).dropna()
+        last = df.iloc[-1]
+        series.setdefault(str(last.iloc[0])[:10], {})["cpi_yoy"] = float(last.iloc[1])
+    except Exception as e:  # noqa: BLE001
+        print(f"WARN cpi fetch failed (best-effort): {e}")
+
     now = int(time.time())
+    cols = ("usdinr", "brent", "gpr", "cpi_yoy")
+    sets = ", ".join(f"{c}=COALESCE(excluded.{c}, {c})" for c in cols)
     n = 0
     for d, v in sorted(series.items()):
         conn.execute(
-            "INSERT INTO raw_macro_market (date, usdinr, brent, fetched_at) VALUES (?,?,?,?) "
-            "ON CONFLICT(date) DO UPDATE SET usdinr=COALESCE(excluded.usdinr, usdinr), "
-            "brent=COALESCE(excluded.brent, brent), fetched_at=excluded.fetched_at",
-            (d, v.get("usdinr"), v.get("brent"), now))
+            f"INSERT INTO raw_macro_market (date, {','.join(cols)}, fetched_at) "
+            f"VALUES (?,?,?,?,?,?) ON CONFLICT(date) DO UPDATE SET {sets}, "
+            "fetched_at=excluded.fetched_at",
+            (d, v.get("usdinr"), v.get("brent"), v.get("gpr"), v.get("cpi_yoy"), now))
         n += 1
     conn.commit()
-    last = conn.execute("SELECT date, usdinr, brent FROM raw_macro_market ORDER BY date DESC LIMIT 1").fetchone()
-    print(f"raw_macro_market: upserted {n} dates; latest {last}")
+    last = conn.execute("SELECT date, usdinr, brent, gpr, cpi_yoy FROM raw_macro_market "
+                        "WHERE gpr IS NOT NULL ORDER BY date DESC LIMIT 1").fetchone()
+    print(f"raw_macro_market: upserted {n} dates; latest-with-gpr {last}")
     conn.close()
     return 0
 
