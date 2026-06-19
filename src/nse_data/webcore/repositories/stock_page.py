@@ -194,12 +194,12 @@ class StockPageRepository:
         )
 
     def signal_backtest(self, symbol: str) -> dict:
-        """Explainable Buy-Score backtest for this stock — entry/exit + reasons + holding
-        period, computed live from factor_snapshot + daily closes. t_in 70 (per-stock
-        signal threshold — the portfolio strategy uses 80; 70 surfaces the weaker names
-        that still occasionally signalled, for assessment)."""
+        """Explainable backtest for this stock on the OOS-validated LEAN score
+        (Valuation+Surprise) — entry/exit + reasons + holding period, live from
+        factor_snapshot + daily closes. t_in 70; macro_exit off (the macro overlay was
+        unvalidated and hurt returns), so this is the clean validated-factor strategy."""
         from ...research import signal_backtest as sbt
-        trades = sbt.backtest_symbol(self.conn, symbol, t_in=70.0)
+        trades = sbt.backtest_symbol(self.conn, symbol, t_in=70.0, lean=True, macro_exit=False)
         return {"trades": trades, "summary": sbt.summary(trades)}
 
     # ---- flow --------------------------------------------------------------

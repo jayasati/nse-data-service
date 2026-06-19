@@ -159,13 +159,15 @@ class StockService:
         for r in rows:
             facs = {k: r[k] for k in ("quality", "valuation", "momentum",
                     "turnaround", "surprise", "liquidity", "risk", "confidence")}
-            # the trend-aware Buy Score (gates on momentum) — unlike the price-blind
-            # composite, it FALLS when a name's trend breaks (no value-trap illusion).
+            # lean_score = the OOS-validated Valuation+Surprise composite (the operational
+            # signal). buy_score (kitchen-sink) kept for reference — it failed OOS.
             buy, _ = bs.buy_raw(facs, W)
+            lean = bs.lean_raw(facs)[0]
             points.append({
-                "date": r["snapshot_date"], "buy_score": buy, "composite": r["composite"],
-                "sector": r["sector"], "sector_rank": r["sector_rank"],
-                "sector_n": r["sector_n"], "regime": r["regime"], "factors": facs})
+                "date": r["snapshot_date"], "lean_score": lean, "buy_score": buy,
+                "composite": r["composite"], "sector": r["sector"],
+                "sector_rank": r["sector_rank"], "sector_n": r["sector_n"],
+                "regime": r["regime"], "factors": facs})
         return {"symbol": symbol, "type": "scores", "count": len(points),
                 "points": points, "latest": points[-1] if points else None}
 

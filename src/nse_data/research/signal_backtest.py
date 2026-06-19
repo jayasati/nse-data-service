@@ -59,13 +59,14 @@ def macro_states(conn) -> dict:
 
 def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
                     trail: float = 15.0, max_hold: int = 120, stop: float = -15.0,
-                    cost: float = 1.0, macro_exit: bool = True) -> list[dict]:
-    """Buy when Buy Score ≥ t_in (and the macro tape isn't Risk-Off); exit on the first of:
-    a MACRO SHOCK (tape flips Risk-Off/Panic — 'macro overrides thesis', spec Engine 1),
-    score < t_out (faded), score falls `trail` from its in-trade peak, −`stop`% stop-loss,
-    or `max_hold` days."""
+                    cost: float = 1.0, macro_exit: bool = True, lean: bool = True) -> list[dict]:
+    """Buy when the score ≥ t_in (and the macro tape isn't Risk-Off); exit on the first of:
+    a MACRO SHOCK (tape flips Risk-Off/Panic), score < t_out (faded), score falls `trail`
+    from its in-trade peak, −`stop`% stop-loss, or `max_hold` days. `lean=True` (default)
+    uses the OOS-validated Lean score (Valuation+Surprise); lean=False = the old Buy Score."""
     sym = symbol.upper()
     W = bs.REGIME_WEIGHTS["neutral"]
+    label = "Lean Score" if lean else "Buy Score"
     macro = macro_states(conn) if macro_exit else {}
     try:
         rows = conn.execute(
@@ -80,14 +81,15 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
         return []
     series = []                                              # (date, score, contrib)
     for r in rows:
-        sc, contrib = bs.buy_raw(dict(zip(_KEYS, r[1:])), W)
+        f = dict(zip(_KEYS, r[1:]))
+        sc, contrib = bs.lean_raw(f) if lean else bs.buy_raw(f, W)
         series.append((r[0], sc, contrib))
 
     def reason_in(contrib, sc):
         top = sorted(((k, v) for k, v in contrib.items() if k != "risk" and v is not None),
                      key=lambda kv: -kv[1])[:3]
         drivers = ", ".join(f"{k} {v:.0f}" for k, v in top)
-        return f"Buy Score {sc:.0f} ≥ {t_in:.0f} — led by {drivers}"
+        return f"{label} {sc:.0f} ≥ {t_in:.0f} — led by {drivers}"
 
     trades = []
     held = False
@@ -124,13 +126,13 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
                 reason = f"Macro shock — tape {macro_st}{gtxt} (sell; re-buy on recovery)"
                 arm = True
             elif sc is None:
-                reason = "Buy Score no longer computable"
+                reason = f"{label} no longer computable"
             elif gross <= stop:
                 reason = f"Stop-loss hit (down {gross:.0f}%)"
             elif sc < t_out:
-                reason = f"Buy Score {sc:.0f} fell below exit {t_out:.0f} (signal faded)"
+                reason = f"{label} {sc:.0f} fell below exit {t_out:.0f} (signal faded / re-rated)"
             elif (peak - sc) >= trail:
-                reason = f"Buy Score dropped {peak - sc:.0f} from peak {peak:.0f} (trail {trail:.0f})"
+                reason = f"{label} dropped {peak - sc:.0f} from peak {peak:.0f} (trail {trail:.0f})"
             elif hd >= max_hold:
                 reason = f"Max holding period {max_hold}d reached"
             if reason:

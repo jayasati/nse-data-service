@@ -80,12 +80,13 @@ async function renderScoreBadge() {
     body = await r.json();
   } catch (e) { return; }
   const l = body.latest;
-  const v = l && l.buy_score != null ? l.buy_score : (l ? l.composite : null);
+  // operational score = lean (Valuation+Surprise, OOS-validated); fall back to buy/composite
+  const v = l == null ? null : (l.lean_score ?? l.buy_score ?? l.composite);
   if (v == null) return;
   const cls = v >= 60 ? "good" : v < 45 ? "bad" : "";
   const rank = (l.sector_rank != null && l.sector_n != null)
     ? ` · #${l.sector_rank}/${l.sector_n} ${esc(l.sector || "")}` : "";
-  const badge = chip("Score", `<b>${(+v).toFixed(0)}</b>${rank}`, cls);
+  const badge = chip("Lean", `<b>${(+v).toFixed(0)}</b>${rank}`, cls);
   const strip = $("ovwStrip");
   // prepend; if the strip is showing only the empty-state, replace it
   if (strip.querySelector(".cempty")) strip.innerHTML = badge;
@@ -242,8 +243,8 @@ function renderActivity(d) {
   // strategy's decisions on this stock can be assessed (Buy Score ≥70, sell-on-decline).
   const sb = d.signal_backtest || {}, ss = sb.summary || {};
   if (ss.trades)
-    out.push(`<div class="vcard"><div class="vsum">Buy-Score strategy backtest
-      (score ≥70 · buy-high / sell-on-decline): <b>${ss.trades}</b> trades ·
+    out.push(`<div class="vcard"><div class="vsum">Lean-score strategy backtest
+      (Valuation+Surprise ≥70 · OOS-validated): <b>${ss.trades}</b> trades ·
       win <b>${num(ss.win_rate)}%</b> · avg net ${pct(ss.avg_net_pct)} ·
       total ${pct(ss.total_net_pct)} · avg hold <b>${ss.avg_hold_days}d</b></div></div>`);
   out.push(section("Strategy backtest — every entry, exit & why", table(

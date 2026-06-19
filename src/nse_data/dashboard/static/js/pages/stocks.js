@@ -279,11 +279,11 @@ async function loadScore() {
     catch (e) { score.data = null; }
   }
   const candleTimes = new Set(lastBars.map(b => b.time));
-  // Plot the trend-aware Buy Score (falls when a name's trend breaks), NOT the
-  // price-blind composite which rises as a falling stock gets "cheaper".
+  // Plot the OOS-validated Lean score (Valuation+Surprise) — the operational signal;
+  // fall back to buy_score for older points lacking it.
   const pts = (score.data?.points || [])
-    .filter(p => p.buy_score != null && isFinite(p.buy_score) && candleTimes.has(p.date))
-    .map(p => ({ time: p.date, value: p.buy_score }));
+    .map(p => ({ time: p.date, value: p.lean_score ?? p.buy_score }))
+    .filter(p => p.value != null && isFinite(p.value) && candleTimes.has(p.time));
   if (!pts.length) { chart.hideServerOscillator("score"); return; }
   chart.showServerOscillator("score", ["composite"], { composite: pts }, SCORE_COLOR);
 }
