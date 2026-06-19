@@ -36,8 +36,11 @@ def macro_states(conn) -> dict:
     """{snapshot_date: (macro_state, geopolitical_safety)} for every snapshot date —
     computed once and cached (macro is symbol-independent), so a Risk-Off/Panic tape can
     drive exits across all backtests. Keyed on the latest date so it refreshes on new data."""
-    dates = [r[0] for r in conn.execute(
-        "SELECT DISTINCT snapshot_date FROM factor_snapshot ORDER BY snapshot_date")]
+    try:
+        dates = [r[0] for r in conn.execute(
+            "SELECT DISTINCT snapshot_date FROM factor_snapshot ORDER BY snapshot_date")]
+    except Exception:  # noqa: BLE001 — table optional (tableless/fresh DB)
+        return {}
     if not dates:
         return {}
     if dates[-1] in _MACRO_CACHE:
