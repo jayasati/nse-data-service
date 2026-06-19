@@ -9,21 +9,55 @@ from __future__ import annotations
 import datetime as _dt
 
 from . import buy_score as bs
+from . import macro_engine
 
 _KEYS = ["quality", "valuation", "momentum", "surprise", "catalyst", "turnaround", "liquidity", "risk"]
+_IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
+_RISKOFF = {"Risk Off", "Panic"}
+_MACRO_CACHE: dict = {}                                      # max_date -> {date: (state, geo)}
 
 
 def _d(s):
     return _dt.date.fromisoformat(s)
 
 
+def _eod_ep(date_iso: str) -> int:
+    d = _d(date_iso)
+    return int(_dt.datetime(d.year, d.month, d.day, 15, 35, tzinfo=_IST).timestamp())
+
+
+def macro_states(conn) -> dict:
+    """{snapshot_date: (macro_state, geopolitical_safety)} for every snapshot date —
+    computed once and cached (macro is symbol-independent), so a Risk-Off/Panic tape can
+    drive exits across all backtests. Keyed on the latest date so it refreshes on new data."""
+    dates = [r[0] for r in conn.execute(
+        "SELECT DISTINCT snapshot_date FROM factor_snapshot ORDER BY snapshot_date")]
+    if not dates:
+        return {}
+    if dates[-1] in _MACRO_CACHE:
+        return _MACRO_CACHE[dates[-1]]
+    out = {}
+    for d in dates:
+        try:
+            m = macro_engine.macro_risk(conn, _eod_ep(d))
+            out[d] = (m["state"], m["components"].get("geopolitical"))
+        except Exception:  # noqa: BLE001
+            out[d] = (None, None)
+    _MACRO_CACHE.clear()
+    _MACRO_CACHE[dates[-1]] = out
+    return out
+
+
 def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
                     trail: float = 15.0, max_hold: int = 120, stop: float = -15.0,
-                    cost: float = 1.0) -> list[dict]:
-    """Buy when Buy Score ≥ t_in; exit on the first of: score < t_out (signal faded),
-    score falls `trail` from its in-trade peak, −`stop`% stop-loss, or `max_hold` days."""
+                    cost: float = 1.0, macro_exit: bool = True) -> list[dict]:
+    """Buy when Buy Score ≥ t_in (and the macro tape isn't Risk-Off); exit on the first of:
+    a MACRO SHOCK (tape flips Risk-Off/Panic — 'macro overrides thesis', spec Engine 1),
+    score < t_out (faded), score falls `trail` from its in-trade peak, −`stop`% stop-loss,
+    or `max_hold` days."""
     sym = symbol.upper()
     W = bs.REGIME_WEIGHTS["neutral"]
+    macro = macro_states(conn) if macro_exit else {}
     try:
         rows = conn.execute(
             "SELECT snapshot_date, quality, valuation, momentum, surprise, catalyst, turnaround, "
@@ -54,8 +88,10 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
         p = px.get(d)
         if p is None:
             continue
+        macro_st, geo = macro.get(d, (None, None))
         if not held:
-            if sc is not None and sc >= t_in:
+            # don't buy into a Risk-Off/Panic tape (spec buy rule: macro not in panic)
+            if sc is not None and sc >= t_in and macro_st not in _RISKOFF:
                 held, e_px, e_d, e_sc, peak = True, p, d, sc, sc
                 e_reason = reason_in(contrib, sc)
         else:
@@ -64,7 +100,10 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
             gross = (p / e_px - 1) * 100
             hd = (_d(d) - _d(e_d)).days
             reason = None
-            if sc is None:
+            if macro_st in _RISKOFF:                          # macro shock overrides thesis
+                gtxt = f", geopolitical {geo:.0f}" if geo is not None else ""
+                reason = f"Macro shock — tape {macro_st}{gtxt} (risk-off override)"
+            elif sc is None:
                 reason = "Buy Score no longer computable"
             elif gross <= stop:
                 reason = f"Stop-loss hit (down {gross:.0f}%)"
