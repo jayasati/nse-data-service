@@ -36,6 +36,20 @@ def api_market_regime(conn=Depends(get_conn)) -> JSONResponse:
     return JSONResponse({"regime": rows[0] if rows else None})
 
 
+@router.get("/api/market/lean-rank")
+def api_lean_rank(limit: int = 50, grades: str = "A core,B tradeable",
+                  conn=Depends(get_conn)) -> JSONResponse:
+    """Liquidity-gated ranking on the OOS-validated Lean score (Valuation+Surprise).
+    `grades=all` disables the tradeability gate. Empty on a pre-snapshot DB (no 500)."""
+    from ...research import lean_rank as lr
+    try:
+        g = () if grades.strip().lower() == "all" else tuple(x.strip() for x in grades.split(","))
+        rows = lr.rank(conn, grades=g or lr.TRADEABLE, limit=limit)
+    except sqlite3.OperationalError:
+        rows = []
+    return JSONResponse({"count": len(rows), "rows": rows})
+
+
 @router.get("/api/market/sectors")
 def api_market_sectors(conn=Depends(get_conn)) -> JSONResponse:
     """Latest sector RS leaderboard (11 sectors, best rank first)."""
