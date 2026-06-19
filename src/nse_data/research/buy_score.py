@@ -120,6 +120,10 @@ def classify(f: dict) -> str:
         return "Compounder"
     if (trend or 0) >= 70 and (opp or 0) >= 50:
         return "Momentum Leader"
+    if (f.get("catalyst") or 0) >= 70 or (f.get("surprise") or 0) >= 75:
+        return "Event Driven"
+    if (turn or 0) >= 55 and (f.get("sector_flow") or 0) >= 65 and (trend or 0) >= 45:
+        return "Cyclical Recovery"        # improving + sector rotating up + trend turning
     if (turn or 0) >= 70:
         return "Turnaround Candidate"
     if (val or 0) >= 65 and (trend or 100) < 40:
@@ -209,6 +213,20 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
     exp_dd = -round(sig * (1.2 - 0.4 * max(0, edge)), 1)
     exp_up = round(sig * max(0.0, edge) * 1.8, 1)
     rr = round(exp_up / abs(exp_dd), 2) if exp_dd else None
+    # Market Rank — composite rank across the WHOLE universe on this date (sector_rank
+    # = the within-sector/"industry" rank). From the stored snapshot when available.
+    market_rank = market_n = None
+    comp = f.get("composite")
+    if comp is not None:
+        try:
+            market_n = conn.execute("SELECT COUNT(*) FROM factor_snapshot WHERE snapshot_date=? "
+                                    "AND composite IS NOT NULL", (as_of_date,)).fetchone()[0]
+            higher = conn.execute("SELECT COUNT(*) FROM factor_snapshot WHERE snapshot_date=? "
+                                  "AND composite > ?", (as_of_date, comp)).fetchone()[0]
+            market_rank = higher + 1 if market_n else None
+        except Exception:  # noqa: BLE001
+            market_rank = market_n = None
+
     buyable = action.startswith(("BUY", "STRONG"))
     macro_mult = 0.5 if macro["state"] == "Risk Off" else 0.0 if macro["state"] == "Panic" else 1.0
     alloc = round(max(0.0, ((buy or 0) - 50) / 5.0) * (conf or 60) / 100.0 * macro_mult, 1) if buyable else 0.0
@@ -224,6 +242,7 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
         "factors": {k: f.get(k) for k in ("quality", "valuation", "momentum", "surprise",
                     "catalyst", "turnaround", "liquidity", "risk", "confidence", "sector_flow")},
         "sector_rank": f.get("sector_rank"), "sector_n": f.get("sector_n"),
+        "market_rank": market_rank, "market_n": market_n,
         "opportunity": _opportunity(f), "buy_score": buy, "contributions": contrib,
         "velocity": vel, "acceleration": accel, "history_days": hist_n,
         "confidence": conf, "classification": cls, "verdict": action,

@@ -78,6 +78,7 @@ def main() -> int:
     for k, v in card["factors"].items():
         line(k.capitalize(), "—" if v is None else f"{v:.1f}")
     line("Sector rank", f"{card['sector_rank']}/{card['sector_n']}")
+    line("Market rank", f"{card['market_rank']}/{card['market_n']}")
     print("  --- decision ---")
     line("Opportunity (Q+V)", "—" if card["opportunity"] is None else f"{card['opportunity']:.1f}")
     line("BUY SCORE", f"{card['buy_score']}   (contrib={card['contributions']})")
