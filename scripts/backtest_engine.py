@@ -25,6 +25,7 @@ ENGINES = {
     "surprise": "nse_data.research.surprise_engine",
     "composite": "nse_data.research.composite_engine",
     "buyscore": "nse_data.research.buy_score_engine",
+    "buyscore_adaptive": "nse_data.research.buy_score_engine_adaptive",
 }
 
 

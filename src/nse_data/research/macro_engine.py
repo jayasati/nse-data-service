@@ -74,6 +74,29 @@ def _fii_safety(conn, as_of_ep):
     return _bucket(recent, [(-5000, 20), (-1500, 40), (1500, 55), (5000, 75), (1e9, 90)])
 
 
+def nifty_regime(conn, as_of_ep: int) -> str:
+    """Point-in-time market regime from NIFTYBEES trend (close vs 50/200-DMA) + VIX —
+    reconstructable for any historical date (unlike the live market_state snapshot),
+    so it's leak-free in a backtest. Returns a REGIME_WEIGHTS key."""
+    rows = conn.execute(
+        "SELECT close FROM raw_intraday_candles WHERE symbol='NIFTYBEES' AND interval='day' "
+        "AND close IS NOT NULL AND ts<=? ORDER BY ts DESC LIMIT 200", (as_of_ep,)).fetchall()
+    if len(rows) < 200:
+        return "neutral"
+    c = [r[0] for r in rows][::-1]
+    px, s50, s200 = c[-1], sum(c[-50:]) / 50.0, sum(c) / 200.0
+    vr = conn.execute("SELECT vix FROM raw_india_vix WHERE as_of<=? ORDER BY as_of DESC LIMIT 1",
+                      (as_of_ep,)).fetchone()
+    vix = vr[0] if vr else None
+    if vix is not None and vix > 28:
+        return "panic"
+    if px > s50 > s200:
+        return "strong_bull" if (vix is not None and vix < 13) else "bull"
+    if px < s200 and px < s50:
+        return "bear"
+    return "neutral"
+
+
 def macro_risk(conn, as_of_ep: int) -> dict:
     """{score, state, vix, components, missing} — higher score = safer / risk-on."""
     vix_sc, vix = _vix_safety(conn, as_of_ep)

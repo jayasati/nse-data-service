@@ -40,6 +40,7 @@ ENGINE_MODS = {
     "surprise": "nse_data.research.surprise_engine",
     "liquidity": "nse_data.research.liquidity_engine",
     "buyscore": "nse_data.research.buy_score_engine",
+    "buyscore_adaptive": "nse_data.research.buy_score_engine_adaptive",
 }
 WIN, MIN_DAYS, MIN_TURN_CR, MAX_VOL = 252, 200, 5.0, 50.0
 
