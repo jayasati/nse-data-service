@@ -37,6 +37,7 @@ def main() -> int:
     ap.add_argument("--stop", type=float, default=-15.0)
     ap.add_argument("--cost", type=float, default=1.0, help="round-trip cost %%")
     ap.add_argument("--stcg", type=float, default=20.0, help="short-term cap-gains tax %%")
+    ap.add_argument("--symbol", default=None, help="restrict to a single symbol")
     args = ap.parse_args()
 
     from nse_data.storage.db import open_db
@@ -52,6 +53,8 @@ def main() -> int:
             "SELECT snapshot_date, symbol, quality, valuation, momentum, surprise, catalyst, "
             "turnaround, liquidity, risk FROM factor_snapshot"):
         d, sym = row[0], row[1]
+        if args.symbol and sym != args.symbol.upper():
+            continue
         buy, _ = bs.buy_raw(dict(zip(keys, row[2:])), W)
         if buy is not None:
             by_date.setdefault(d, {})[sym] = buy
