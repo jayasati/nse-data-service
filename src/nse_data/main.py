@@ -47,6 +47,7 @@ from .fundamentals.from_results import (
     register_intraday_extract_runner,
 )
 from .market.regime_job import register_regime_job
+from .research.snapshot_job import register_factor_snapshot_job
 from .market.sector_radar_job import register_sector_radar_job
 from .signals.detect import register_signal_job
 from .signals.watchlist import register_watchlist_job
@@ -156,6 +157,10 @@ def main() -> int:
     registered.append(register_delivery_job(scheduler, db_path))
     # Nightly fundamentals quality score (18:00) — gates + nudges signals (Week 14).
     registered.append(register_quality_job(scheduler, db_path))
+    # Daily 18:45 factor snapshot → factor_snapshot feature store: every ranking
+    # engine's score + composite + sector rank + regime, point-in-time, plus a
+    # top-up of matured forward-return labels (P8 — the ML/factor-research matrix).
+    registered.append(register_factor_snapshot_job(scheduler, db_path))
     # Per-minute intraday pattern scan (inside bar, divergence, S/R proximity…)
     # → patterns table, feeding the confidence scorer (Week 15).
     registered.append(register_patterns_job(scheduler, db_path))
