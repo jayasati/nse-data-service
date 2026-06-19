@@ -254,9 +254,6 @@ function renderActivity(d) {
       t.holding_days, num(t.entry_px), num(t.exit_px), pct(t.net_pct),
       esc(t.entry_reason), esc(t.exit_reason),
     ])) || empty("the Buy Score never crossed the buy threshold here — the strategy never bought this stock in the backtest window")));
-  if (d.backtest)
-    out.push(`<div class="vcard"><div class="vsum">Backtests: ${d.backtest.trades} trades ·
-      win rate ${num(d.backtest.win_rate)}% · net P&L ₹${num(d.backtest.pnl_net)}</div></div>`);
   out.push(section("Signals", table(
     ["Detected", "Type", "Dir", "Conf", "Price", "ret 1d", "T1/SL"],
     d.signals.map(s => [
