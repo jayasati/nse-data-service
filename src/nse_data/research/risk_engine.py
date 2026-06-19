@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import datetime as _dt
 
-from .ownership_engine import ownership_raw
+from .ownership_engine import ownership_raw, _disclosed_ep
 
 _IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
 WINDOW_DAYS = 180          # events older than this are ignored (and decayed within)
@@ -142,6 +142,21 @@ def risk_raw(conn, symbol: str, as_of_ep: int) -> dict:
     own = ownership_raw(conn, symbol, as_of_ep)
     if own and own.get("d_promoter") is not None and own["d_promoter"] <= -1.0:
         comps["promoter"] = min(40.0, abs(own["d_promoter"]) * 4.0)
+
+    # promoter PLEDGE — latest disclosed ≤ as_of (PIT on the SHP filename timestamp).
+    # >15% of promoter holding pledged is a red flag; scales to a 40-pt cap (~70%+).
+    try:
+        best = None
+        for qe, url, pl in conn.execute(
+                "SELECT qe_date, xbrl_url, promoter_pledge_pct FROM raw_shareholding_quarterly "
+                "WHERE symbol=? AND promoter_pledge_pct IS NOT NULL", (symbol,)):
+            ep = _disclosed_ep(url, qe)
+            if ep is not None and ep <= as_of_ep and (best is None or ep > best[0]):
+                best = (ep, pl)
+        if best and best[1] >= 15:
+            comps["promoter"] = max(comps["promoter"], min(40.0, (best[1] - 15) * 0.7))
+    except Exception:  # noqa: BLE001 — column may be absent on an un-migrated DB
+        pass
 
     # financial red flags (receivables explosion / negative CFO / debt spike)
     comps["financial"] = _financial_adversity(conn, symbol, as_of_ep)

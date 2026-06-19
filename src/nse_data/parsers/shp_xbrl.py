@@ -29,6 +29,11 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 _PCT_ELEM = "ShareholdingAsAPercentageOfTotalNumberOfShares"
+# Promoter PLEDGE: at the promoter-aggregate context this element's denominator is the
+# PROMOTER's own holding (verified 2026-06-19: JAYNECOIND promoter-ctx 0.9708 vs
+# grand-total 0.4803, and 0.4803/49.5%≈0.97 → "% of promoter holding pledged", the
+# standard risk metric). The number fields can be placeholders; the % is reliable.
+_PLEDGE_ELEM = "EncumberedShareUnderPledgedAsPercentageOfTotalNumberOfShares"
 _AXIS = "CategoryOfShareholders"   # ...:CategoryOfShareholdersAxis
 _MAP = {
     "shareholdingofpromoterandpromotergroup": "promoter_pct",
@@ -85,7 +90,22 @@ def parse_shp(xbrl_text: str) -> dict | None:
             continue
     if not raw:
         return None
-    return {k: round(v * _scale(raw), 2) for k, v in raw.items()}
+    scale = _scale(raw)
+    out = {k: round(v * scale, 2) for k, v in raw.items()}
+    # promoter pledge — % of the PROMOTER's holding that is pledged (the promoter-
+    # aggregate context, keyed to promoter_pct). Verified 2026-06-19: this % is encoded
+    # DIRECTLY as a percentage (THYROCARE 1.0, JAYNECOIND 0.97) even when the holding
+    # %s in the same doc are fractions — so do NOT apply the holding scale; clamp 0-100.
+    for el in root.iter():
+        if el.tag.split("}")[-1] != _PLEDGE_ELEM:
+            continue
+        if ctx_key.get(el.get("contextRef") or "") == "promoter_pct" and el.text:
+            try:
+                out["promoter_pledge_pct"] = round(max(0.0, min(100.0, float(el.text))), 2)
+            except ValueError:
+                pass
+            break
+    return out
 
 
 def _scale(raw: dict[str, float]) -> float:

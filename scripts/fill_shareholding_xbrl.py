@@ -72,10 +72,10 @@ def main() -> int:
         else:
             conn.execute(
                 "INSERT OR REPLACE INTO raw_shareholding_quarterly (symbol, qe_date, "
-                "promoter_pct, public_pct, fii_pct, dii_pct, mf_pct, xbrl_url, fetched_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "promoter_pct, public_pct, fii_pct, dii_pct, mf_pct, promoter_pledge_pct, xbrl_url, fetched_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (sym, qe, f.get("promoter_pct"), f.get("public_pct"), f.get("fii_pct"),
-                 f.get("dii_pct"), f.get("mf_pct"), url, int(time.time())))
+                 f.get("dii_pct"), f.get("mf_pct"), f.get("promoter_pledge_pct"), url, int(time.time())))
             n_ok += 1
         if i % 100 == 0:
             conn.commit()
