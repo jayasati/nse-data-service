@@ -90,7 +90,9 @@ export class ChartController {
 
   clearServerSeries() {
     for (const k in this.srv) this.srv[k].setData([]);
-    for (const k of Object.keys(this.srvPanes)) this.hideServerOscillator(k);
+    // The "score" pane is an independent feature (not a server indicator), so it
+    // survives indicator reloads — the score loader owns its lifecycle.
+    for (const k of Object.keys(this.srvPanes)) if (k !== "score") this.hideServerOscillator(k);
   }
 
   // ---- server-computed oscillator sub-panes (RSI, MACD, ...) ----
@@ -167,6 +169,10 @@ export class ChartController {
     // ADX gets the 25 trend-strength threshold for the same reason.
     if (base === "adx" || base.startsWith("adx_")) {
       series[primaryCol].createPriceLine({ price: 25, color: BBC, lineStyle: 2, lineWidth: 1, axisLabelVisible: true });
+    }
+    // Ranking-engine score pane: 50 = sector-median reference (above = top half).
+    if (base === "score") {
+      series[primaryCol].createPriceLine({ price: 50, color: BBC, lineStyle: 2, lineWidth: 1, axisLabelVisible: true });
     }
     // CHOP's conventional choppy/trending thresholds.
     if (base === "chop" || base.startsWith("chop_")) {

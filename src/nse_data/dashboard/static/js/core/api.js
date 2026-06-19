@@ -16,4 +16,7 @@ export const Api = {
   },
   search: (q, limit = 20) =>
     getJSON(`/api/stocks/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  // Daily ranking-engine composite + per-factor scores for the chart overlay/badge.
+  scoreHistory: (symbol, days = 365) =>
+    getJSON(`/api/stocks/${encodeURIComponent(symbol)}/score-history?days=${days}`),
 };

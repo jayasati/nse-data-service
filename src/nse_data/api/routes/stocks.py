@@ -51,6 +51,13 @@ def history(symbol: str, interval: str = Query("1d"),
     return _run(lambda: svc.history(symbol, interval, days, end=end))
 
 
+@router.get("/{symbol}/score-history")
+def score_history(symbol: str, days: int = Query(365, ge=1, le=3000),
+                  svc: StockService = Depends(get_service)) -> JSONResponse:
+    # Daily ranking-engine composite + factor scores for the chart-view overlay.
+    return _run(lambda: svc.score_history(symbol, days))
+
+
 @router.get("/{symbol}/indicators")
 def indicators(symbol: str,
                days: int = Query(365, ge=1, le=6000),

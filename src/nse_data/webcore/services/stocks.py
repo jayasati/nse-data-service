@@ -147,6 +147,22 @@ class StockService:
         return {"symbol": symbol, "interval": interval, "type": "candles",
                 "count": len(points), "points": points}
 
+    def score_history(self, symbol: str, days: int) -> dict:
+        """Daily ranking-engine score series for the chart-view overlay: composite +
+        per-engine factor scores + sector rank, oldest-first. `latest` is the most
+        recent row (for the score badge); empty points = no snapshots yet."""
+        symbol = symbol.upper()
+        rows = self.repo.score_history(symbol, days)
+        points = [{
+            "date": r["snapshot_date"], "composite": r["composite"],
+            "sector": r["sector"], "sector_rank": r["sector_rank"],
+            "sector_n": r["sector_n"], "regime": r["regime"],
+            "factors": {k: r[k] for k in ("quality", "valuation", "momentum",
+                        "turnaround", "surprise", "liquidity", "risk", "confidence")},
+        } for r in rows]
+        return {"symbol": symbol, "type": "scores", "count": len(points),
+                "points": points, "latest": points[-1] if points else None}
+
     def _backfill_candles(self, symbol: str, interval: str) -> list[dict]:
         return [{"time": r["ts"] + IST_OFFSET, "open": r["open"], "high": r["high"],
                  "low": r["low"], "close": r["close"], "volume": r["volume"]}

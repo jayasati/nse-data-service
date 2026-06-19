@@ -68,6 +68,29 @@ function renderOverview(o) {
     `<span class="cempty">no intelligence recorded for this symbol yet</span>`;
 }
 
+// Ranking-engine composite badge — prepended to the overview strip once the
+// score-history endpoint answers (separate fetch so a missing feature store
+// just means no chip, never a broken overview).
+async function renderScoreBadge() {
+  let body;
+  try {
+    const r = await fetch(`/api/stocks/${encodeURIComponent(symbol)}/score-history?days=5`,
+                          { cache: "no-store" });
+    if (!r.ok) return;
+    body = await r.json();
+  } catch (e) { return; }
+  const l = body.latest;
+  if (!l || l.composite == null) return;
+  const cls = l.composite >= 66 ? "good" : l.composite < 34 ? "bad" : "";
+  const rank = (l.sector_rank != null && l.sector_n != null)
+    ? ` · #${l.sector_rank}/${l.sector_n} ${esc(l.sector || "")}` : "";
+  const badge = chip("Score", `<b>${(+l.composite).toFixed(0)}</b>${rank}`, cls);
+  const strip = $("ovwStrip");
+  // prepend; if the strip is showing only the empty-state, replace it
+  if (strip.querySelector(".cempty")) strip.innerHTML = badge;
+  else strip.insertAdjacentHTML("afterbegin", badge);
+}
+
 // ---- tab renderers -------------------------------------------------------------
 
 function table(headers, rows) {
@@ -318,7 +341,8 @@ export function setCockpitSymbol(sym) {
   const u = new URL(location.href);
   u.searchParams.set("symbol", sym);
   history.replaceState(null, "", u);
-  api("overview").then(renderOverview).catch(() => { $("ovwStrip").innerHTML = ""; });
+  api("overview").then(renderOverview).catch(() => { $("ovwStrip").innerHTML = ""; })
+    .finally(renderScoreBadge);
   renderTab();
 }
 

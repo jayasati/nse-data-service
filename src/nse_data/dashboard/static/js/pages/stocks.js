@@ -33,6 +33,12 @@ let wl = new Set(JSON.parse(localStorage.getItem("nse_watchlist") || "[]"));
 const srv = { data: null, enabled: new Set(JSON.parse(localStorage.getItem("nse_srv_overlays") || "[]")) };
 const saveSrv = () => localStorage.setItem("nse_srv_overlays", JSON.stringify([...srv.enabled]));
 
+// Ranking-engine composite score overlay (its own sub-pane). Daily-only: the
+// factor_snapshot rows carry `date` strings, so they align with 1d bars (3M+)
+// but not intraday epoch times — hidden on 1D/1W/1M like the EOD indicators.
+const SCORE_COLOR = "#f5c518";
+const score = { data: null, symbol: null, on: localStorage.getItem("nse_score_overlay") === "1" };
+
 const MODES = ["area", "candle", "ha"];
 const MODE_LABEL = { area: "📈 Line", candle: "📊 Candle", ha: "📊 Heikin-Ashi" };
 // There are intentionally NO client-computed studies (RSI/MACD/ADX/CHOP used
@@ -74,6 +80,7 @@ async function loadChart() {
   }
   const info = chart.render(lastBars, mode);
   drawSrvOverlays();
+  loadScore();
   const asofTag = asof ? ` · as of ${asof}` : "";
   $("syminfo").innerHTML = `${info.count} bars · <span class="${info.up ? "up" : "down"}">${info.chg >= 0 ? "+" : ""}${info.chg.toFixed(1)}%</span> over ${tf}${asofTag}`;
 }
@@ -261,6 +268,31 @@ function drawSrvOverlays() {
   }
 }
 
+// ---- ranking-engine score overlay (sub-pane) ----
+// Draws the daily composite score as a 0-100 sub-pane below price, clipped to the
+// chart's daily bars. Gated to EOD timeframes; hidden (but kept toggled) on
+// intraday, so switching 1D→3M brings it back. `score.data` is cached per symbol.
+async function loadScore() {
+  if (!current || !score.on || tfCadence() !== "eod") { chart.hideServerOscillator("score"); return; }
+  if (score.symbol !== current || !score.data) {
+    try { score.data = await Api.scoreHistory(current, plan().days + 5); score.symbol = current; }
+    catch (e) { score.data = null; }
+  }
+  const candleTimes = new Set(lastBars.map(b => b.time));
+  const pts = (score.data?.points || [])
+    .filter(p => p.composite != null && isFinite(p.composite) && candleTimes.has(p.date))
+    .map(p => ({ time: p.date, value: p.composite }));
+  if (!pts.length) { chart.hideServerOscillator("score"); return; }
+  chart.showServerOscillator("score", ["composite"], { composite: pts }, SCORE_COLOR);
+}
+
+function setScoreOverlay(on) {
+  score.on = on;
+  localStorage.setItem("nse_score_overlay", on ? "1" : "0");
+  $("scoreBtn").classList.toggle("on", on);
+  loadScore();
+}
+
 async function loadMeta() {
   if (!current) return;
   let m; try { m = await Api.meta(current); } catch (e) { return; }
@@ -295,7 +327,7 @@ async function loadMeta() {
   updateStar();
 }
 
-function select(sym) { current = sym; $("empty").style.display = "none"; loadChart(); loadMeta(); loadSrvIndicators(); updateStar(); setCockpitSymbol(sym); }
+function select(sym) { current = sym; score.data = null; $("empty").style.display = "none"; loadChart(); loadMeta(); loadSrvIndicators(); updateStar(); setCockpitSymbol(sym); }
 
 // ---- watchlist (per-stock star) ----
 const saveWl = () => localStorage.setItem("nse_watchlist", JSON.stringify([...wl]));
@@ -312,6 +344,7 @@ function setMode(m) {
 }
 $("modes").onclick = e => { if (e.target.tagName === "BUTTON") setMode(e.target.dataset.m); };
 $("candleBtn").onclick = () => setMode(MODES[(MODES.indexOf(mode) + 1) % MODES.length]);
+$("scoreBtn").onclick = () => setScoreOverlay(!score.on);
 
 // ---- timeframe & terminal ----
 // The intraday bar toggle (5m/1m) only applies to 1D; hide it elsewhere so it
@@ -339,6 +372,7 @@ function restoreView() {
     document.body.classList.add("terminal");
     $("termBtn").classList.add("on");
   }
+  $("scoreBtn").classList.toggle("on", score.on);
 }
 $("bars").onclick = e => {
   if (e.target.tagName !== "BUTTON") return;

@@ -77,6 +77,21 @@ class StockRepository:
             (symbol, days),
         ).fetchall()
 
+    def score_history(self, symbol: str, days: int) -> list[sqlite3.Row]:
+        """Last `days` daily factor-snapshot rows for the symbol, oldest-first —
+        the ranking-engine score series the chart view overlays. Empty if the
+        feature store (migration 082) hasn't been created yet."""
+        if not self.has_table("factor_snapshot"):
+            return []
+        return self.conn.execute(
+            """SELECT snapshot_date, composite, quality, valuation, momentum,
+                      turnaround, surprise, liquidity, risk, confidence,
+                      sector, sector_rank, sector_n, regime
+               FROM factor_snapshot WHERE symbol = ?
+               ORDER BY snapshot_date DESC LIMIT ?""",
+            (symbol, days),
+        ).fetchall()[::-1]
+
     def intraday_snapshots(self, symbol: str) -> list[sqlite3.Row]:
         """(as_of, last_price, volume) from the live 1-min feed, oldest-first."""
         if not self.has_table(QUOTES):
