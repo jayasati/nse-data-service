@@ -14,6 +14,16 @@ Q+V(+Mom) backtests. Marked clearly in the output.
 """
 from __future__ import annotations
 
+import datetime as _dt
+
+_IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
+
+
+def _eod_ep(as_of_date: str) -> int:
+    d = _dt.date.fromisoformat(as_of_date)
+    return int(_dt.datetime(d.year, d.month, d.day, 15, 35, tzinfo=_IST).timestamp())
+
+
 # Buy-Score components (0-100) drawn from the engines. Risk is handled separately
 # (a gate/multiplier, higher=safer), not a positive additive component.
 COMPONENTS = ("opportunity", "trend", "catalyst", "expectation", "turnaround", "liquidity")
@@ -130,6 +140,16 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
     conf = f.get("confidence")
     action, pos, neg = verdict(buy, f, vel, regime, conf)
 
+    # Engine-1 macro overlay: a great stock is still a poor buy in a panic.
+    from . import macro_engine
+    macro = macro_engine.macro_risk(conn, _eod_ep(as_of_date))
+    if macro["state"] == "Panic":
+        if action.startswith(("BUY", "STRONG")):
+            action = "HOLD — macro Panic (stand aside)"
+        neg = neg + [f"macro {macro['state']} (VIX {macro.get('vix')})"]
+    elif macro["state"] == "Risk Off" and action.startswith(("BUY", "STRONG")):
+        action = "BUY (cautious — macro Risk Off)"
+
     annv = (vol_ann_pct if vol_ann_pct else 30.0) / 100.0
     sig = annv * (horizon / 252.0) ** 0.5 * 100                # ~1σ move over horizon (%)
     edge = ((buy or 50) - 50) / 50.0
@@ -137,11 +157,12 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
     exp_up = round(sig * max(0.0, edge) * 1.8, 1)
     rr = round(exp_up / abs(exp_dd), 2) if exp_dd else None
     buyable = action.startswith(("BUY", "STRONG"))
-    alloc = round(max(0.0, ((buy or 0) - 50) / 5.0) * (conf or 60) / 100.0, 1) if buyable else 0.0
+    macro_mult = 0.5 if macro["state"] == "Risk Off" else 0.0 if macro["state"] == "Panic" else 1.0
+    alloc = round(max(0.0, ((buy or 0) - 50) / 5.0) * (conf or 60) / 100.0 * macro_mult, 1) if buyable else 0.0
 
     return {
         "symbol": symbol, "as_of": as_of_date, "sector": f.get("sector"),
-        "regime": regime, "weights": {k: weights[k] for k in COMPONENTS},
+        "regime": regime, "macro": macro, "weights": {k: weights[k] for k in COMPONENTS},
         "factors": {k: f.get(k) for k in ("quality", "valuation", "momentum", "surprise",
                     "catalyst", "turnaround", "liquidity", "risk", "confidence", "sector_flow")},
         "sector_rank": f.get("sector_rank"), "sector_n": f.get("sector_n"),

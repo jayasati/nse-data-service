@@ -63,6 +63,9 @@ def main() -> int:
         print(f"  {k:<22} {v}")
     print(f"\n=== BUY DECISION CARD — {sym} ({card['sector']}, grade {grade_of[sym]}) "
           f"as-of {today} ===")
+    m = card["macro"]
+    line("Macro (Engine 1)", f"{m['state']}  score={m['score']}  VIX={m['vix']}  "
+         f"comps={m['components']}  (missing: {', '.join(m['missing'])})")
     line("Regime", f"{regime or 'n/a'}  → weights={card['weights']}")
     print("  --- factor scores (0-100, cross-sectional, point-in-time) ---")
     for k, v in card["factors"].items():
