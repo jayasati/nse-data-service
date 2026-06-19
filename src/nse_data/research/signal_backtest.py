@@ -13,8 +13,14 @@ from . import macro_engine
 
 _KEYS = ["quality", "valuation", "momentum", "surprise", "catalyst", "turnaround", "liquidity", "risk"]
 _IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
-_RISKOFF = {"Risk Off", "Panic"}
 _MACRO_CACHE: dict = {}                                      # max_date -> {date: (state, geo)}
+
+
+def _is_shock(state, geo, geo_floor=30.0):
+    """A genuine macro SHOCK worth overriding a position for — not every mild 'Risk Off'.
+    Panic, or geopolitical safety collapsed to the extreme bucket (GPR ≳ 200, e.g. a war).
+    Exiting on ordinary Risk-Off over-trades and chops winners (verified: +157%→+33%)."""
+    return state == "Panic" or (geo is not None and geo <= geo_floor)
 
 
 def _d(s):
@@ -91,7 +97,7 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
         macro_st, geo = macro.get(d, (None, None))
         if not held:
             # don't buy into a Risk-Off/Panic tape (spec buy rule: macro not in panic)
-            if sc is not None and sc >= t_in and macro_st not in _RISKOFF:
+            if sc is not None and sc >= t_in and not _is_shock(macro_st, geo):
                 held, e_px, e_d, e_sc, peak = True, p, d, sc, sc
                 e_reason = reason_in(contrib, sc)
         else:
@@ -100,7 +106,7 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
             gross = (p / e_px - 1) * 100
             hd = (_d(d) - _d(e_d)).days
             reason = None
-            if macro_st in _RISKOFF:                          # macro shock overrides thesis
+            if _is_shock(macro_st, geo):                      # macro shock overrides thesis
                 gtxt = f", geopolitical {geo:.0f}" if geo is not None else ""
                 reason = f"Macro shock — tape {macro_st}{gtxt} (risk-off override)"
             elif sc is None:
