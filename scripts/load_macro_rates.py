@@ -23,6 +23,26 @@ from nse_data.market import macro_rates as mr
 from nse_data.storage.db import apply_migrations, open_db
 
 
+def _fetch_rbi():
+    """Scrape the RBI homepage (India-hosted, static HTML, reachable from ap-south-1)
+    for the policy repo rate + the ~10y G-sec benchmark yield (the listed GS maturing
+    closest to year+10). Returns (repo, gsec10y); either may be None."""
+    import datetime
+    import re
+    import requests
+    t = requests.get("https://www.rbi.org.in/", headers={"User-Agent": "Mozilla/5.0"},
+                     timeout=30).text
+    m = re.search(r"Policy Repo Rate\s*</th>\s*<td>\s*:?\s*([0-9.]+)", t)
+    repo = float(m.group(1)) if m else None
+    target = datetime.date.today().year + 10
+    best = None                                          # (|year-target|, yield)
+    for cm in re.finditer(r"GS (20[0-9]{2})\s*</th>\s*<td>\s*:?\s*([0-9.]+)", t):
+        yr, yld = int(cm.group(1)), float(cm.group(2))
+        if best is None or abs(yr - target) < best[0]:
+            best = (abs(yr - target), yld)
+    return repo, (best[1] if best else None)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--db", default="data/nse.db")
@@ -42,12 +62,23 @@ def main() -> None:
     c.add_argument("--source", default="csv")
 
     sub.add_parser("state", help="print the derived macro risk state")
+    sub.add_parser("rbi", help="auto-scrape repo + 10y from the RBI homepage")
 
     args = ap.parse_args()
     conn = open_db(args.db)
+    conn.execute("PRAGMA busy_timeout=60000")
     apply_migrations(conn, "migrations")
 
-    if args.cmd == "set":
+    if args.cmd == "rbi":
+        import datetime
+        repo, gsec10y = _fetch_rbi()
+        if repo is None and gsec10y is None:
+            print("RBI scrape found nothing (page format changed?)")
+        else:
+            d = datetime.date.today().isoformat()
+            mr.record_rates(conn, d, repo_rate=repo, gsec_10y_yield=gsec10y, source="rbi")
+            print(f"recorded {d}: repo={repo} gsec10y={gsec10y} (rbi.org.in)")
+    elif args.cmd == "set":
         if args.repo is None and args.gsec10y is None:
             ap.error("give at least one of --repo / --gsec10y")
         mr.record_rates(conn, args.date, repo_rate=args.repo,
