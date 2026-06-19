@@ -127,6 +127,56 @@ def lean_raw(f: dict) -> tuple[float | None, dict]:
     return round(sum(parts.values()) / len(parts), 1), parts
 
 
+def lean_classify(f: dict) -> str:
+    """Classification on the OOS-validated lens — value + earnings surprise only."""
+    val, sur, risk = f.get("valuation"), f.get("surprise"), f.get("risk")
+    if risk is not None and risk < 35:
+        return "High Risk Speculation"
+    if (val or 0) >= 75 and (sur or 0) >= 65:
+        return "Value + Earnings Surprise"            # both validated factors firing
+    if (sur or 0) >= 75:
+        return "Earnings Surprise"
+    if (val or 0) >= 75:
+        return "Deep Value"
+    if (val or 0) >= 60:
+        return "Value"
+    return "Neutral / No Edge"
+
+
+def lean_verdict(lean, f: dict, velocity, confidence) -> tuple[str, list, list]:
+    """Verdict on the OOS-validated Lean score (Valuation+Surprise). Value buys broken
+    price trends BY DESIGN, so — unlike the old trend-gated verdict — weak momentum is
+    NOT a 'value-trap' veto (momentum failed OOS; valuation passed). Gates on the lean
+    level, risk, and confidence; the macro overlay is applied by the caller."""
+    val, sur, risk = f.get("valuation"), f.get("surprise"), f.get("risk")
+    pos, neg = [], []
+    if val is not None and val >= 70:
+        pos.append(f"cheap (valuation {val:.0f})")
+    if sur is not None and sur >= 65:
+        pos.append(f"earnings surprise {sur:.0f}")
+    if velocity is not None and velocity > 2:
+        pos.append("lean rising")
+    if sur is None:
+        neg.append("no fresh surprise (valuation-only)")
+    if risk is not None and risk < 50:
+        neg.append(f"risk {risk:.0f} (elevated)")
+    if confidence is not None and confidence < 50:
+        neg.append("thin data")
+    if velocity is not None and velocity <= -8:
+        neg.append("lean deteriorating fast")
+    if lean is None:
+        return "NO DATA", pos, neg
+    if risk is not None and risk < 35:                    # hard risk gate (governance/credit/pledge)
+        return "AVOID — risk gate", pos, neg
+    if lean >= 80:
+        return ("STRONG BUY — deep value" if lean >= 90 else "BUY — value"), pos, neg
+    if lean >= 65:
+        return "ACCUMULATE — value", pos, neg
+    if lean >= 45:
+        return "HOLD / NEUTRAL", pos, neg
+    return "PASS — not cheap, no edge", pos, neg
+
+
 def classify(f: dict) -> str:
     """Investment classification from the factor profile (price-aware via trend)."""
     opp, trend = _opportunity(f), f.get("momentum")
@@ -192,10 +242,13 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
     if f.get("sector_flow") is None:
         f = {**f, "sector_flow": sector_flow_score(conn, f.get("sector"), _eod_ep(as_of_date))}
     buy, contrib = buy_raw(f, weights)
+    lean = lean_raw(f)[0]
     vel, accel, hist_n = velocity_accel(conn, symbol, weights, as_of_date)
-    cls = classify(f)
     conf = f.get("confidence")
-    action, pos, neg = verdict(buy, f, vel, regime, conf)
+    # Verdict/classification on the OOS-VALIDATED Lean score (Valuation+Surprise) — NOT the
+    # old trend-gated Buy Score, whose momentum/turnaround drivers failed out-of-sample.
+    cls = lean_classify(f)
+    action, pos, neg = lean_verdict(lean, f, vel, conf)
 
     # Engine-1 macro overlay: a great stock is still a poor buy in a panic.
     from . import macro_engine
@@ -232,7 +285,7 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
 
     annv = (vol_ann_pct if vol_ann_pct else 30.0) / 100.0
     sig = annv * (horizon / 252.0) ** 0.5 * 100                # ~1σ move over horizon (%)
-    edge = ((buy or 50) - 50) / 50.0
+    edge = ((lean if lean is not None else 50) - 50) / 50.0   # edge from the validated lean score
     exp_dd = -round(sig * (1.2 - 0.4 * max(0, edge)), 1)
     exp_up = round(sig * max(0.0, edge) * 1.8, 1)
     rr = round(exp_up / abs(exp_dd), 2) if exp_dd else None
