@@ -79,7 +79,8 @@ def quality_raw(conn, symbol: str, as_of_ep: int) -> dict | None:
         "pat_yoy": _growth(latest["pat"], yoy["pat"]) if yoy else None,
         "op_yoy": _growth(latest["op"], yoy["op"]) if yoy else None,
         "rev_qoq": _growth(latest["rev"], qoq["rev"]),
-        "net_margin": (latest["pat"] / latest["ti"] * 100.0) if (latest["ti"] and latest["ti"] > 0) else None,
+        "net_margin": (latest["pat"] / latest["ti"] * 100.0)
+                      if (latest["pat"] is not None and latest["ti"] and latest["ti"] > 0) else None,
         "op_margin": (latest["op"] / latest["rev"] * 100.0)
                      if (latest["rev"] and latest["rev"] > 0 and latest["op"] is not None) else None,
     }
