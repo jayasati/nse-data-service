@@ -97,13 +97,37 @@ def nifty_regime(conn, as_of_ep: int) -> str:
     return "neutral"
 
 
+def _chg(conn, col, as_of_ep, lookback=10):
+    """% change of a raw_macro_market series over ~lookback sessions on/before as_of."""
+    iso = _dt.datetime.fromtimestamp(as_of_ep, _IST).date().isoformat()
+    try:
+        rows = conn.execute(
+            f"SELECT {col} FROM raw_macro_market WHERE {col} IS NOT NULL AND date<=? "
+            "ORDER BY date DESC LIMIT ?", (iso, lookback + 1)).fetchall()
+    except Exception:  # noqa: BLE001 — table optional
+        return None
+    if len(rows) < lookback + 1 or not rows[-1][0]:
+        return None
+    return (rows[0][0] - rows[-1][0]) / rows[-1][0] * 100.0
+
+
+def _currency_safety(conn, as_of_ep):
+    chg = _chg(conn, "usdinr", as_of_ep)            # USDINR up = rupee weaker = risk-off
+    return None if chg is None else _bucket(chg, [(-2, 85), (0, 70), (1.5, 55), (3, 40), (1e9, 20)])
+
+
+def _oil_safety(conn, as_of_ep):
+    chg = _chg(conn, "brent", as_of_ep)             # Brent up = oil shock = risk-off (India imports)
+    return None if chg is None else _bucket(chg, [(-5, 85), (0, 70), (5, 55), (12, 40), (1e9, 25)])
+
+
 def macro_risk(conn, as_of_ep: int) -> dict:
     """{score, state, vix, components, missing} — higher score = safer / risk-on."""
     vix_sc, vix = _vix_safety(conn, as_of_ep)
-    breadth_sc = _breadth_safety(conn, as_of_ep)
-    fii_sc = _fii_safety(conn, as_of_ep)
-    comps = {"vix": vix_sc, "breadth": breadth_sc, "fii_flow": fii_sc}
-    wts = {"vix": 0.5, "breadth": 0.3, "fii_flow": 0.2}
+    comps = {"vix": vix_sc, "breadth": _breadth_safety(conn, as_of_ep),
+             "fii_flow": _fii_safety(conn, as_of_ep),
+             "currency": _currency_safety(conn, as_of_ep), "oil": _oil_safety(conn, as_of_ep)}
+    wts = {"vix": 0.4, "breadth": 0.2, "fii_flow": 0.15, "currency": 0.15, "oil": 0.1}
     num = den = 0.0
     for k, sc in comps.items():
         if sc is not None:
@@ -114,4 +138,4 @@ def macro_risk(conn, as_of_ep: int) -> dict:
              "Neutral" if score >= 50 else "Risk Off" if score >= 30 else "Panic")
     return {"score": score, "state": state, "vix": vix,
             "components": {k: (round(v, 1) if v is not None else None) for k, v in comps.items()},
-            "missing": ["oil/Brent", "USDINR", "rates"]}
+            "missing": ["inflation", "rates", "geopolitical"]}
