@@ -1,0 +1,22 @@
+[Unit]
+# Weekly ranking-model retrain + feature-store health report. Triggered by
+# nse-retrain@.timer (Sun 19:00 IST), not enabled directly. Oneshot: runs to
+# completion, retrains the ridge ranker, saves data/ml_model.json, Telegrams the
+# OOS Rank IC + store growth, then exits. Market is closed Sunday evening, so it
+# barely contends with the collector for the DB.
+Description=NSE ranking-model weekly retrain + feature-store report
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=%i
+WorkingDirectory=/opt/nse-data-service
+ExecStart=/opt/nse-data-service/.venv/bin/python -u scripts/retrain_report.py
+# The engine replay over history takes several minutes — don't let the default
+# 90s oneshot timeout kill it.
+TimeoutStartSec=3600
+# Telegram token (TELEGRAM_*) lives in .env, same as the collector.
+EnvironmentFile=-/opt/nse-data-service/.env
+StandardOutput=journal
+StandardError=journal

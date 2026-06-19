@@ -1,0 +1,16 @@
+[Unit]
+# Fires the weekly ranking-model retrain. Enable on the host with:
+#   sudo systemctl enable --now nse-retrain@ubuntu.timer
+# Inspect:  systemctl list-timers nse-retrain@ubuntu.timer
+Description=Weekly NSE ranking-model retrain (Sun 19:00 IST)
+
+[Timer]
+# Sunday 19:00 India time. The Asia/Kolkata suffix needs systemd >= 240 (Ubuntu
+# 24.04 ships 255). If the host's systemd is older, change to "Sun 13:30 UTC".
+OnCalendar=Sun 19:00 Asia/Kolkata
+# Catch up a missed run (host asleep/rebooted) on next boot rather than skipping.
+Persistent=true
+Unit=nse-retrain@%i.service
+
+[Install]
+WantedBy=timers.target
