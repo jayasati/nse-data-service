@@ -55,6 +55,11 @@ def main() -> int:
     computed_epoch = as_of_now_epoch()
 
     if args.from_:                               # ---- point-in-time range backfill ----
+        # A range backfill can run while the live collector is writing (market
+        # hours). WAL lets our reads proceed, but the per-date write-commit still
+        # serialises against the collector's writer — so wait patiently for the
+        # lock (busy_timeout) instead of erroring out and skipping the date.
+        conn.execute("PRAGMA busy_timeout=120000")
         cal = _trading_dates(conn, args.from_, args.to)
         dates = cal[::max(1, args.cadence)]
         print(f"backfill: {len(dates)} dates {dates[0]}..{dates[-1]} (cadence {args.cadence}), PIT")
