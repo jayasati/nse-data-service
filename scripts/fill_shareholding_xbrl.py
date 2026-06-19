@@ -53,8 +53,10 @@ def main() -> int:
         print(f"universe gate: {'FAIL-OPEN' if g.loaded_empty else f'{len(rows)}/{before} tracked'}",
               flush=True)
 
+    # "covered" = already parsed WITH a pledge value, so a one-time run backfills
+    # promoter_pledge_pct into pre-pledge rows, then skips them on later runs.
     done = {(s, d) for s, d in conn.execute(
-        "SELECT symbol, qe_date FROM raw_shareholding_quarterly")}
+        "SELECT symbol, qe_date FROM raw_shareholding_quarterly WHERE promoter_pledge_pct IS NOT NULL")}
 
     cl = httpx.Client(headers={"User-Agent": _UA, "Referer": "https://www.nseindia.com/"},
                       timeout=30, follow_redirects=True)
