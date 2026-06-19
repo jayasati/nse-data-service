@@ -88,6 +88,7 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
 
     trades = []
     held = False
+    re_armed = False                                         # macro-exited; awaiting re-buy
     e_px = e_d = e_sc = peak = 0.0
     e_reason = ""
     for d, sc, contrib in series:
@@ -95,20 +96,30 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
         if p is None:
             continue
         macro_st, geo = macro.get(d, (None, None))
+        shock = _is_shock(macro_st, geo)
         if not held:
-            # don't buy into a Risk-Off/Panic tape (spec buy rule: macro not in panic)
-            if sc is not None and sc >= t_in and not _is_shock(macro_st, geo):
+            if shock:
+                continue                                      # never buy into an active shock
+            # "sell on shock, buy back on recovery": after a macro exit, re-arm and re-enter
+            # at the lower hold-bar (t_out) the moment the shock lifts — catch the bounce
+            # instead of waiting for the score to re-cross t_in.
+            bar = t_out if re_armed else t_in
+            if sc is not None and sc >= bar:
                 held, e_px, e_d, e_sc, peak = True, p, d, sc, sc
-                e_reason = reason_in(contrib, sc)
+                e_reason = (f"Re-entry after macro pause — Buy Score {sc:.0f} (shock lifted)"
+                            if re_armed else reason_in(contrib, sc))
+                re_armed = False
         else:
             if sc is not None:
                 peak = max(peak, sc)
             gross = (p / e_px - 1) * 100
             hd = (_d(d) - _d(e_d)).days
             reason = None
-            if _is_shock(macro_st, geo):                      # macro shock overrides thesis
+            arm = False
+            if shock:                                         # macro shock overrides thesis
                 gtxt = f", geopolitical {geo:.0f}" if geo is not None else ""
-                reason = f"Macro shock — tape {macro_st}{gtxt} (risk-off override)"
+                reason = f"Macro shock — tape {macro_st}{gtxt} (sell; re-buy on recovery)"
+                arm = True
             elif sc is None:
                 reason = "Buy Score no longer computable"
             elif gross <= stop:
@@ -128,6 +139,7 @@ def backtest_symbol(conn, symbol: str, t_in: float = 80.0, t_out: float = 60.0,
                     "exit_score": round(sc, 1) if sc is not None else None,
                     "entry_reason": e_reason, "exit_reason": reason})
                 held = False
+                re_armed = arm                                # only a macro exit re-arms a re-buy
     if held:                                                 # still open at series end
         d, sc, _ = series[-1]
         p = px.get(d)
