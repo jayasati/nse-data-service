@@ -35,6 +35,12 @@ broker = ["growwapi>=0.1", "pyotp>=2.9", "kiteconnect>=4.2", "smartapi-python>=1
 # Optional: technical indicators nightly compute (indicators/*). pandas-ta-classic
 # is the maintained pandas-ta fork that's compatible with numpy 2.x.
 indicators = ["pandas>=2.0,<3", "pandas-ta-classic>=0.6"]
+# Optional: gradient-boosted models for the P7 ML probability layer (ml/scorer.py
+# make_model('hgb'|'lgbm')). Without it the numpy-only logistic baseline runs
+# everywhere; this only unlocks the GBM upgrade path once history justifies it.
+# 'hgb' (sklearn HistGradientBoosting) works on the wheels alone; 'lgbm' also needs
+# the system OpenMP runtime (apt: libgomp1), else its native lib fails to load.
+ml = ["scikit-learn>=1.9", "lightgbm>=4.6"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
