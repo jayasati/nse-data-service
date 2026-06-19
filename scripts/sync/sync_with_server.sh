@@ -48,7 +48,8 @@ push_candles() {
   echo "==> [push 3/5] server: stop collector + backup + dry-run preview"
   $SSH "sudo systemctl stop nse-collector@$UNIT nse-bot@$UNIT 2>/dev/null || sudo systemctl stop nse-collector@$UNIT"
   $SSH "cd $REMOTE_DIR && mkdir -p data/archive/db_backups \
-        && sqlite3 data/nse.db \".backup 'data/archive/db_backups/nse.db.pre-candle-sync'\" \
+        && rm -f data/archive/db_backups/nse.db.pre-candle-sync \
+        && sqlite3 data/nse.db \"VACUUM INTO 'data/archive/db_backups/nse.db.pre-candle-sync'\" \
         && df -h data | tail -1"
   $SSH "cd $REMOTE_DIR && python3 /tmp/import_candles.py --db data/nse.db --export data/candles_export.db --dry-run"
 

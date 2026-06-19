@@ -34,9 +34,12 @@ SSH_CMD="ssh"
 SRC="$DB"
 if [ "${SKIP_SNAPSHOT:-0}" != "1" ]; then
   command -v sqlite3 >/dev/null || { echo "ERROR: sqlite3 not installed (or set SKIP_SNAPSHOT=1 with the collector stopped)"; exit 1; }
-  echo "==> [1/3] taking a consistent snapshot via sqlite3 .backup (safe while running)"
+  echo "==> [1/3] taking a consistent snapshot via VACUUM INTO (single-pass, safe while running)"
+  # NOT `.backup`: on a continuously-written WAL DB, sqlite3 .backup restarts on every
+  # concurrent change and can livelock for HOURS, holding a read txn that pins the WAL
+  # (seen: a backup ran 32h → 7.2 GB WAL). VACUUM INTO is one atomic pass that finishes.
   rm -f "$SNAP"
-  sqlite3 "$DB" ".backup '$SNAP'"
+  sqlite3 "$DB" "VACUUM INTO '$SNAP'"
   SRC="$SNAP"
 else
   echo "==> [1/3] SKIP_SNAPSHOT=1 — rsyncing the live DB directly (ensure collector is stopped!)"
