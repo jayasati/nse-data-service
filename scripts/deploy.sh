@@ -16,7 +16,7 @@ git fetch --all --tags --quiet
 git pull --ff-only
 
 echo "==> [2/4] syncing dependencies"
-.venv/bin/pip install -q -e ".[dashboard,broker]"
+.venv/bin/pip install -q -e ".[dashboard,broker,ml]"
 
 echo "==> [3/4] applying pending migrations"
 .venv/bin/python scripts/migrate.py --status
