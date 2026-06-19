@@ -58,9 +58,28 @@ def _score_buyscore_adaptive(conn, eligible, ep, sector_of) -> dict:
     return {s: round(r["score"], 1) for s, r in bsa.score_universe(conn, eligible, ep, sector_of).items()}
 
 
+def _score_lean(conn, eligible, ep, sector_of) -> dict:
+    """OOS-VALIDATED Lean score = equal-weight mean of Valuation + Surprise — the only two
+    factors that survived cross-regime OOS (2023-24 + 2025-26; composite IC +0.095/+0.058).
+    This is the forward, out-of-sample test the whole investigation pointed to. Requires
+    Valuation present (so funds/ETFs are excluded)."""
+    from nse_data.research import valuation_engine as ve, surprise_engine as se
+    from nse_data.research.buy_score import lean_raw
+    val = ve.score_universe(conn, eligible, ep, sector_of)
+    sur = se.score_universe(conn, eligible, ep, sector_of)
+    out = {}
+    for sym in eligible:
+        s, parts = lean_raw({"valuation": val.get(sym, {}).get("score"),
+                             "surprise": sur.get(sym, {}).get("score")})
+        if s is not None and "valuation" in parts:
+            out[sym] = round(s, 1)
+    return out
+
+
 STRATEGIES = {
     "qvm": (_score_qvm, "Q+V+Mom"),
     "buyscore_adaptive": (_score_buyscore_adaptive, "BuyScore-Adaptive"),
+    "lean": (_score_lean, "Lean (Val+Surprise · OOS-validated)"),
 }
 
 
