@@ -15,12 +15,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 GRADES = ("A core", "B tradeable", "C volatile")
-HZ = [30, 60, 90]
+HZ = [30, 60, 90, 120]
 ENGINES = {
     "quality": "nse_data.research.quality_engine",
     "valuation": "nse_data.research.valuation_engine",
     "momentum": "nse_data.research.momentum_engine",
     "turnaround": "nse_data.research.turnaround_engine",
+    "liquidity": "nse_data.research.liquidity_engine",
+    "surprise": "nse_data.research.surprise_engine",
     "composite": "nse_data.research.composite_engine",
 }
 
@@ -100,8 +102,10 @@ def main() -> int:
             means = [sum(c[1] for c in data[b*len(data)//B:(b+1)*len(data)//B]) /
                      max(1, len(data[b*len(data)//B:(b+1)*len(data)//B])) for b in range(B)]
             mono = all(means[i] <= means[i+1] for i in range(len(means)-1))
+            from nse_data.ml.eval import spearman_ic
+            ic = spearman_ic([c[0] for c in data], [c[1] for c in data])
             print(f"  {h}d (n={len(data)}): " + "  ".join(f"Q{i+1}:{m:+.1f}%" for i, m in enumerate(means))
-                  + f"   spread={means[-1]-means[0]:+.1f}%  mono={mono}")
+                  + f"   spread={means[-1]-means[0]:+.1f}%  IC={ic:+.3f}  mono={mono}")
 
     for tier in ("ALL", "A+B", "A core", "B tradeable", "C volatile"):
         report(tier); print()
