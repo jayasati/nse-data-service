@@ -26,17 +26,48 @@ def _eod_ep(as_of_date: str) -> int:
 
 # Buy-Score components (0-100) drawn from the engines. Risk is handled separately
 # (a gate/multiplier, higher=safer), not a positive additive component.
-COMPONENTS = ("opportunity", "trend", "catalyst", "expectation", "turnaround", "liquidity")
+COMPONENTS = ("opportunity", "trend", "catalyst", "expectation", "turnaround", "liquidity", "sector_flow")
+
+# Engine-3 Sector Rotation: map our fundamental sector_class → the NSE sectoral index
+# tracked in sector_state, so a stock inherits its sector's relative-strength flow.
+SECTOR_INDEX = {
+    "bfsi": "NIFTY BANK", "nbfc": "NIFTY BANK", "it": "NIFTY IT", "pharma": "NIFTY PHARMA",
+    "fmcg": "NIFTY FMCG", "metals": "NIFTY METAL", "auto": "NIFTY AUTO",
+    "energy": "NIFTY ENERGY", "capgoods": "NIFTY INFRA", "realty": "NIFTY REALTY",
+}
+
+
+def sector_flow_score(conn, sector_class: str | None, as_of_ep: int) -> float | None:
+    """0-100 from the stock's sector RS rank (1=strongest) in sector_state, ± a trend
+    nudge. None for sectors without a tracked index (capmarkets/generic) or no data."""
+    idx = SECTOR_INDEX.get(sector_class or "")
+    if not idx:
+        return None
+    iso = _dt.datetime.fromtimestamp(as_of_ep, _IST).isoformat()
+    r = conn.execute(
+        "SELECT rs_rank, rs_trend, (SELECT COUNT(DISTINCT sector_name) FROM sector_state s2 "
+        "  WHERE s2.as_of=(SELECT MAX(as_of) FROM sector_state s3 WHERE s3.as_of<=?)) "
+        "FROM sector_state WHERE sector_name=? AND as_of<=? ORDER BY as_of DESC LIMIT 1",
+        (iso, idx, iso)).fetchone()
+    if not r or r[0] is None:
+        return None
+    rank, trend, n = r[0], r[1], (r[2] or 11)
+    base = 100.0 * (n - rank) / max(1, n - 1)              # rank 1 → 100, rank n → 0
+    if trend == "improving":
+        base = min(100.0, base + 10)
+    elif trend == "deteriorating":
+        base = max(0.0, base - 10)
+    return round(base, 1)
 
 # Regime-adaptive weights (sum need not be 1; normalised over AVAILABLE components).
 # Bull → reward trend/catalyst; Bear/Panic → lean on quality-value + de-emphasise trend
 # chasing; Neutral → balanced. Keys match market_state.overall_regime (lowercased).
 REGIME_WEIGHTS = {
-    "strong_bull": {"opportunity": 0.9, "trend": 1.5, "catalyst": 1.2, "expectation": 1.0, "turnaround": 0.8, "liquidity": 0.4},
-    "bull":        {"opportunity": 1.0, "trend": 1.3, "catalyst": 1.1, "expectation": 1.0, "turnaround": 0.8, "liquidity": 0.4},
-    "neutral":     {"opportunity": 1.2, "trend": 1.0, "catalyst": 1.0, "expectation": 1.0, "turnaround": 1.0, "liquidity": 0.5},
-    "bear":        {"opportunity": 1.5, "trend": 0.7, "catalyst": 0.8, "expectation": 0.9, "turnaround": 1.1, "liquidity": 0.7},
-    "panic":       {"opportunity": 1.6, "trend": 0.5, "catalyst": 0.6, "expectation": 0.8, "turnaround": 1.0, "liquidity": 1.0},
+    "strong_bull": {"opportunity": 0.9, "trend": 1.5, "catalyst": 1.2, "expectation": 1.0, "turnaround": 0.8, "liquidity": 0.4, "sector_flow": 0.8},
+    "bull":        {"opportunity": 1.0, "trend": 1.3, "catalyst": 1.1, "expectation": 1.0, "turnaround": 0.8, "liquidity": 0.4, "sector_flow": 0.7},
+    "neutral":     {"opportunity": 1.2, "trend": 1.0, "catalyst": 1.0, "expectation": 1.0, "turnaround": 1.0, "liquidity": 0.5, "sector_flow": 0.6},
+    "bear":        {"opportunity": 1.5, "trend": 0.7, "catalyst": 0.8, "expectation": 0.9, "turnaround": 1.1, "liquidity": 0.7, "sector_flow": 0.5},
+    "panic":       {"opportunity": 1.6, "trend": 0.5, "catalyst": 0.6, "expectation": 0.8, "turnaround": 1.0, "liquidity": 1.0, "sector_flow": 0.4},
 }
 
 
@@ -54,6 +85,7 @@ def _components(f: dict) -> dict:
         "expectation": f.get("surprise"),
         "turnaround": f.get("turnaround"),
         "liquidity": f.get("liquidity"),
+        "sector_flow": f.get("sector_flow"),
     }
 
 
@@ -134,6 +166,10 @@ def assemble_card(conn, symbol: str, f: dict, regime: str | None, vol_ann_pct: f
     Used by both the CLI (f from a live universe rescore) and the web service (f from
     the latest factor_snapshot row) so the verdict is identical either way."""
     weights = REGIME_WEIGHTS.get((regime or "neutral").lower(), REGIME_WEIGHTS["neutral"])
+    # Engine-3 sector flow is sector-level (not stored per-stock) → injected live from
+    # the stock's sector so the current Buy Score reflects sector rotation.
+    if f.get("sector_flow") is None:
+        f = {**f, "sector_flow": sector_flow_score(conn, f.get("sector"), _eod_ep(as_of_date))}
     buy, contrib = buy_raw(f, weights)
     vel, accel, hist_n = velocity_accel(conn, symbol, weights, as_of_date)
     cls = classify(f)

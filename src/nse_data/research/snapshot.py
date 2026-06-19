@@ -11,8 +11,8 @@ already-filled fwd_excess_* labels (ON CONFLICT … DO UPDATE, labels untouched)
 from __future__ import annotations
 
 from . import (
-    composite_engine, confidence_engine, liquidity_engine, momentum_engine,
-    ownership_engine, quality_engine, risk_engine, surprise_engine,
+    catalyst_engine, composite_engine, confidence_engine, liquidity_engine,
+    momentum_engine, ownership_engine, quality_engine, risk_engine, surprise_engine,
     turnaround_engine, valuation_engine,
 )
 
@@ -22,8 +22,8 @@ ENGINES = (
     ("quality", quality_engine), ("valuation", valuation_engine),
     ("momentum", momentum_engine), ("turnaround", turnaround_engine),
     ("liquidity", liquidity_engine), ("surprise", surprise_engine),
-    ("ownership", ownership_engine), ("risk", risk_engine),
-    ("confidence", confidence_engine),
+    ("catalyst", catalyst_engine), ("ownership", ownership_engine),
+    ("risk", risk_engine), ("confidence", confidence_engine),
 )
 _COLS = [c for c, _ in ENGINES]
 
