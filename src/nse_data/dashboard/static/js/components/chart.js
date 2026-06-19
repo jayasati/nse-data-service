@@ -16,7 +16,7 @@ const SRV_COLORS = ["#22d3ee", "#a78bfa", "#fb7185", "#facc15", "#34d399", "#f97
 // this lightweight-charts sizes each pane's axis to its own labels — wide
 // price values (249.62) vs short RSI values (60) push the plot areas to
 // different widths and indicator bars drift sideways from price bars.
-const AXIS_MIN_WIDTH = 64;
+const AXIS_MIN_WIDTH = 76;
 
 const baseOpts = () => ({
   layout: { background: { type: "solid", color: "#0e1014" }, textColor: "#7e8696", fontFamily: "Inter, sans-serif" },
@@ -122,6 +122,15 @@ export class ChartController {
     const label = name.split(":").pop().toUpperCase();
     pane.labelEl.textContent = last ? `${label}  ${last.value.toFixed(2)}` : label;
     this.fit();
+    // The pane is created AFTER the main chart auto-fits, so it doesn't inherit the
+    // main's visible time range — force it now so a date in this pane sits exactly
+    // under the same date in the price chart.
+    const r = this.chart.timeScale().getVisibleRange();
+    if (r) {
+      this.syncing = true;
+      try { pane.ch.timeScale().setVisibleRange(r); } catch (e) {}
+      this.syncing = false;
+    }
   }
 
   hideServerOscillator(name) {
