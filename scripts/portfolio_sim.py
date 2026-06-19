@@ -128,7 +128,7 @@ def main() -> int:
     print(f"period {dates[0]} → {dates[-1]}   ({len(trades)} trades)\n")
     print(f"{'#':>3} {'symbol':<11}{'entry':<11}{'exit':<11}{'d':>4} {'qty':>5} "
           f"{'in₹':>8} {'out₹':>8} {'gross P&L₹':>11} {'tax₹':>8} {'net₹':>10}")
-    gross_sum = costs_proxy = 0.0
+    gross_sum = 0.0
     for i, t in enumerate(sorted(trades, key=lambda x: x["in_d"]), 1):
         tax = max(0.0, t["pnl"]) * args.stcg / 100.0         # per-trade STCG estimate
         net = t["pnl"] - tax
@@ -153,10 +153,18 @@ def main() -> int:
     if yrs > 0 and final > 0:
         print(f"  CAGR after tax: {100*((final/args.capital)**(1/yrs)-1):+.1f}%   (over {yrs:.2f} yrs)")
     # NIFTYBEES buy-hold benchmark on the same capital
-    nb = {dd: c for dd, c in conn.execute(
+    nb = sorted((dd, c) for dd, c in conn.execute(
         "SELECT date(ts,'unixepoch','+05:30'), close FROM raw_intraday_candles "
-        "WHERE symbol='NIFTYBEES' AND interval='day' AND close IS NOT NULL")}
-    n0, n1 = nb.get(dates[0]), nb.get(dates[-1])
+        "WHERE symbol='NIFTYBEES' AND interval='day' AND close IS NOT NULL"))
+    def _nb_on(d):                                            # latest NIFTYBEES close on/before d
+        prev = None
+        for dd, c in nb:
+            if dd <= d:
+                prev = c
+            else:
+                break
+        return prev
+    n0, n1 = _nb_on(dates[0]), _nb_on(dates[-1])
     if n0 and n1:
         print(f"  vs NIFTYBEES buy&hold: ₹{args.capital*n1/n0:,.0f}  ({100*(n1/n0-1):+.1f}%)")
     print("  (* = position still open at period end, marked-to-market)\n")
