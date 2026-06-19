@@ -20,6 +20,7 @@ ENGINES = {
     "quality": "nse_data.research.quality_engine",
     "valuation": "nse_data.research.valuation_engine",
     "momentum": "nse_data.research.momentum_engine",
+    "trend": "nse_data.research.trend_engine",
     "turnaround": "nse_data.research.turnaround_engine",
     "improvement": "nse_data.research.improvement_engine",
     "liquidity": "nse_data.research.liquidity_engine",
