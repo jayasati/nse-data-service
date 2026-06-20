@@ -136,6 +136,26 @@ def _pct(p: float | None) -> str:
     return "n/a" if p is None else f"{p:+.2f}%"
 
 
+def _preopen(conn: sqlite3.Connection, now: datetime) -> str:
+    """Top pre-open movers from raw_pre_open (re-wired orphan), only when fresh (≤4h old) —
+    at 09:00 the pre-open session (ends ~09:08) may not have landed yet, so it self-skips."""
+    try:
+        mx = conn.execute("SELECT MAX(as_of) FROM raw_pre_open").fetchone()[0]
+    except sqlite3.OperationalError:
+        return ""
+    if not mx or now.timestamp() - mx > 4 * 3600:
+        return ""
+    rows = conn.execute(
+        "SELECT symbol, pct_change FROM raw_pre_open WHERE as_of=? AND series='EQ' "
+        "AND pct_change IS NOT NULL", (mx,)).fetchall()
+    if not rows:
+        return ""
+    top = sorted(rows, key=lambda r: r[1], reverse=True)
+    up = ", ".join(f"{s} {p:+.1f}%" for s, p in top[:2])
+    dn = ", ".join(f"{s} {p:+.1f}%" for s, p in top[-2:][::-1])
+    return f"Pre-open: ↑ {up} · ↓ {dn}\n"
+
+
 def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
     now = now or market_hours.now_ist()
     today = now.date()
@@ -176,6 +196,7 @@ def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
         f"🌅 Market Brief — {today.isoformat()}\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         f"GIFT Nifty: {_dir(gift_pct)} {_pct(gift_pct)} → Nifty ~{open_str}\n"
+        f"{_preopen(conn, now)}"
         f"US: S&P {_pct(sp_pct)} | Nasdaq {_pct(nq_pct)}\n"
         f"Crude: ${_fmt(brent_price)} ({_pct(brent_pct)})\n\n"
         f"Today's regime: {regime or 'n/a'}"
@@ -254,7 +275,7 @@ def send_morning_brief(db_path: str, *, sender=send_telegram) -> dict:
         text = build_brief(conn)
     finally:
         conn.close()
-    sent = sender(token, chat_id, text)
+    sent = sender(token, chat_id, text, channel="digest")
     return {"sent": sent, "chars": len(text)}
 
 

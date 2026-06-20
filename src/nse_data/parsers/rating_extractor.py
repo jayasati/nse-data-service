@@ -511,7 +511,8 @@ def _emit_credit_signal(conn, symbol, broadcast_dt, h: dict, sender) -> bool:
     token, chat_id = load_telegram_config()
     topic = os.environ.get("TELEGRAM_TOPIC_CREDIT")          # route to credit topic
     thread_id = int(topic) if topic and topic.lstrip("-").isdigit() else None
-    return bool(sender(token, chat_id, build_rating_message(symbol, h, broadcast_dt), thread_id))
+    return bool(sender(token, chat_id, build_rating_message(symbol, h, broadcast_dt), thread_id,
+                       channel="credit"))
 
 
 # ---- credit context for the signal scorer (Week-16 credit→signal) ----------

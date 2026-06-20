@@ -62,7 +62,7 @@ def test_send_calls_sender(monkeypatch, tmp_path):
     monkeypatch.setattr(pd, "load_telegram_config", lambda: ("TOKEN", "CHAT"))
     captured = {}
 
-    def fake_send(token, chat_id, text, thread_id=None):
+    def fake_send(token, chat_id, text, thread_id=None, **_kw):
         captured.update(token=token, chat_id=chat_id, text=text)
         return True
 

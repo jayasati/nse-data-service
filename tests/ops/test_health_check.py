@@ -94,7 +94,7 @@ class _Recorder:
     def __init__(self):
         self.messages: list[str] = []
 
-    def __call__(self, token, chat_id, text):
+    def __call__(self, token, chat_id, text, **_kw):
         self.messages.append(text)
         return True
 
@@ -136,7 +136,7 @@ def test_no_persist_when_send_fails(monkeypatch, tmp_path: Path):
     state = tmp_path / "state.json"
     failing_report = {"collectors": [_collector("oi_spurts", lag_seconds=1200)]}
 
-    def failing_sender(token, chat_id, text):
+    def failing_sender(token, chat_id, text, **_kw):
         return False
 
     r = _run(monkeypatch, failing_report, state, failing_sender)

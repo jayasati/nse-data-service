@@ -171,7 +171,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_market_movers
-    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
+    enabled: true    # re-wired into brief/EOD 2026-06-20
 
   losers:
     collector: nse_data.collectors.market_movers:Losers
@@ -179,7 +179,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_market_movers
-    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
+    enabled: true    # re-wired into brief/EOD 2026-06-20
 
   most_active_volume:
     collector: nse_data.collectors.most_active:MostActiveByVolume
@@ -187,7 +187,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_most_active
-    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
+    enabled: true    # re-wired into brief/EOD 2026-06-20
 
   most_active_value:
     collector: nse_data.collectors.most_active:MostActiveByValue
@@ -195,7 +195,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_most_active
-    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
+    enabled: true    # re-wired into brief/EOD 2026-06-20
 
   high_52w:
       collector: nse_data.collectors.high_low_52w:High52W
@@ -240,7 +240,7 @@ endpoints:
     run_at: "09:08"          # one-shot; pre-open book settles 09:00–09:15 IST
     trading_day_only: true   # daily cron fires every day; gate skips holidays/weekends
     table: raw_pre_open
-    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
+    enabled: true    # re-wired into brief/EOD 2026-06-20
 
   call_auction:
     collector: nse_data.collectors.call_auction:CallAuction

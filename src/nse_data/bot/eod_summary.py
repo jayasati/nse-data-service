@@ -44,6 +44,39 @@ def _sectors(conn: sqlite3.Connection) -> str:
             f"Worst {worst[0]} ({_pct(worst[1])})")
 
 
+def _top_movers(conn: sqlite3.Connection) -> str:
+    """Day's biggest gainer + loser from raw_market_movers (re-wired W-audit orphan)."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol, direction, pct_change FROM raw_market_movers "
+            "WHERE as_of=(SELECT MAX(as_of) FROM raw_market_movers) AND pct_change IS NOT NULL"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    gain = [r for r in rows if r[1] == "gainer"]
+    loss = [r for r in rows if r[1] == "loser"]
+    parts = []
+    if gain:
+        g = max(gain, key=lambda r: r[2])
+        parts.append(f"↑{g[0]} {g[2]:+.1f}%")
+    if loss:
+        lo = min(loss, key=lambda r: r[2])
+        parts.append(f"↓{lo[0]} {lo[2]:+.1f}%")
+    return f"Movers: {' | '.join(parts)}" if parts else ""
+
+
+def _most_active(conn: sqlite3.Connection) -> str:
+    """Top names by traded volume from raw_most_active (re-wired orphan)."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol FROM raw_most_active WHERE list_type='volume' "
+            "AND as_of=(SELECT MAX(as_of) FROM raw_most_active WHERE list_type='volume') "
+            "ORDER BY rank LIMIT 3").fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    return f"Most active: {', '.join(r[0] for r in rows)}" if rows else ""
+
+
 def _signals_today(conn: sqlite3.Connection, today: str) -> str:
     try:
         rows = conn.execute(
@@ -104,11 +137,14 @@ def build_eod_summary(conn: sqlite3.Connection, now: datetime | None = None) -> 
     nifty = state.get("nifty_return_pct")
     vix = state.get("vix_level")
     vix_txt = f"{vix:.1f}" if vix is not None else "n/a"
+    market = "\n".join(x for x in (_top_movers(conn), _most_active(conn)) if x)
+    market_block = f"{market}\n" if market else ""
     return (
         f"📊 EOD Summary — {today.isoformat()}\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         f"Nifty: {_pct(nifty)} | VIX: {vix_txt}\n"
         f"{_sectors(conn)}\n"
+        f"{market_block}"
         f"{_smart_money(conn)}\n\n"
         f"{_signals_today(conn, today.isoformat())}\n"
         f"{_paper_today(conn, today.isoformat())}\n\n"
@@ -135,7 +171,7 @@ def send_eod_summary(db_path: str, *, sender=send_telegram) -> dict:
         text = build_eod_summary(conn)
     finally:
         conn.close()
-    return {"sent": sender(token, chat_id, text), "chars": len(text)}
+    return {"sent": sender(token, chat_id, text, channel="digest"), "chars": len(text)}
 
 
 def register_eod_summary(scheduler: BlockingScheduler, db_path: str) -> str:

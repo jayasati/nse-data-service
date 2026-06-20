@@ -313,7 +313,7 @@ def run_pre_screen_pass(
             text = expectation.build_flag_message(symbol, event_date, setup)
             if bfsi_note:
                 text += f"\n⚠️ BFSI macro risk into result: {bfsi_note}"
-            if sender(token, chat_id, text, thread_id):
+            if sender(token, chat_id, text, thread_id, channel="market"):
                 flagged_at = ts
                 flagged += 1
         _upsert_setup(conn, setup, ts, flagged_at)

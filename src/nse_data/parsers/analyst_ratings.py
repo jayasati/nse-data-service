@@ -500,7 +500,7 @@ def _emit_analyst_signal(
     text = build_analyst_message(
         symbol, brokerage, sig_type, old_call, new_call, old_target, new_target,
     )
-    return bool(sender(token, chat_id, text, thread_id))
+    return bool(sender(token, chat_id, text, thread_id, channel="market"))
 
 
 # ============================================================================

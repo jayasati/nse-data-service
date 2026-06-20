@@ -68,7 +68,7 @@ def test_send_uses_injected_sender():
     conn = _seed()
     sent = {}
 
-    def fake_sender(token, chat_id, text):
+    def fake_sender(token, chat_id, text, **_kw):
         sent["text"] = text
         return True
 

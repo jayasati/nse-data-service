@@ -85,7 +85,8 @@ def send_paper_digest(db_path: str, *, sender=send_telegram) -> dict:
     finally:
         conn.close()
     thread = os.environ.get("TELEGRAM_TOPIC_SWING")        # reuse the swing topic if set
-    sent = sender(token, chat_id, text, int(thread) if (thread and thread.isdigit()) else None)
+    sent = sender(token, chat_id, text, int(thread) if (thread and thread.isdigit()) else None,
+                  channel="digest")
     return {"sent": sent, "chars": len(text)}
 
 

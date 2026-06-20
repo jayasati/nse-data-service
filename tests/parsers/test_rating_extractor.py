@@ -147,7 +147,7 @@ def test_backfill_inserts_without_alerting():
                  "('fp1','ZED','Credit Rating- Revision','01-Jan-2025 18:00:00', ?)", (_TEXT,))
     conn.commit()
     sent = []
-    rep = rx.run_rating_extraction(conn, emit=True, sender=lambda *a: sent.append(a) or True,
+    rep = rx.run_rating_extraction(conn, emit=True, sender=lambda *a, **k: sent.append(a) or True,
                                    now=datetime(2026, 6, 7, 20, 0, tzinfo=_IST))
     assert rep["inserted"] == 1 and rep["signaled"] == 0     # old → no alert
     assert sent == []
@@ -159,7 +159,7 @@ def test_recent_downgrade_alerts_and_signals():
                  "('fp2','ZED','Credit Rating- Revision','06-Jun-2026 18:00:00', ?)", (_TEXT,))
     conn.commit()
     sent = []
-    rep = rx.run_rating_extraction(conn, emit=True, sender=lambda *a: sent.append(a) or True,
+    rep = rx.run_rating_extraction(conn, emit=True, sender=lambda *a, **k: sent.append(a) or True,
                                    now=datetime(2026, 6, 7, 20, 0, tzinfo=_IST))
     assert rep["inserted"] == 1 and rep["signaled"] == 1
     assert len(sent) == 1
@@ -174,7 +174,7 @@ def test_idempotent_rerun():
     conn.commit()
     now = datetime(2026, 6, 7, 20, 0, tzinfo=_IST)
     rx.run_rating_extraction(conn, emit=False, now=now)
-    rep2 = rx.run_rating_extraction(conn, emit=True, sender=lambda *a: True, now=now)
+    rep2 = rx.run_rating_extraction(conn, emit=True, sender=lambda *a, **k: True, now=now)
     assert rep2["inserted"] == 0          # already present → no duplicate, no alert
 
 

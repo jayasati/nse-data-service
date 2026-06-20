@@ -9,7 +9,7 @@ from .conftest import NOW, FakeRedis, seed_signal, set_high_confidence
 def _collecting_sender():
     sent = []
 
-    def sender(token, chat_id, text, thread_id=None):
+    def sender(token, chat_id, text, thread_id=None, **_kw):
         sent.append(text)
         return True
 

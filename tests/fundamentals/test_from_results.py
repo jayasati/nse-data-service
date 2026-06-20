@@ -197,7 +197,7 @@ def test_reconcile_xbrl_overwrites_and_alerts(conn, monkeypatch):
     sent = []
     rep = fr.reconcile_xbrl_pass(
         conn, session=object(), limit=10, now=1700100000,
-        sender=lambda tok, ch, txt, thr=None: sent.append(txt) or True)
+        sender=lambda tok, ch, txt, thr=None, **_kw: sent.append(txt) or True)
 
     assert rep["corrected"] == 1 and rep["rows"][0]["material"] is True
     row = conn.execute(

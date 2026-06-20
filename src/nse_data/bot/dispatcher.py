@@ -218,7 +218,7 @@ def dispatch_pass(
                 else:
                     counts["low_confidence"] += 1
                 continue
-            if sender(token, chat_id, _stamp_heading(text, head), _topic_for(sig)):
+            if sender(token, chat_id, _stamp_heading(text, head), _topic_for(sig), channel="signals"):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
             else:
@@ -254,7 +254,7 @@ def dispatch_pass(
                 else:
                     counts["low_confidence"] += 1
                 continue
-            if sender(token, chat_id, _stamp_heading(text, head), _topic_for(sig)):
+            if sender(token, chat_id, _stamp_heading(text, head), _topic_for(sig), channel="signals"):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
             else:
@@ -284,7 +284,7 @@ def dispatch_pass(
             if _claim_buy_rumor_warning(conn, sig["symbol"], now):
                 sender(token, chat_id,
                        _stamp_heading(build_buy_rumor_warning(sig, pre_days, pre_run10), head),
-                       _topic_for(sig))
+                       _topic_for(sig), channel="signals")
             continue
 
         # Horizon decides timing. Intraday respects the time-of-day gate
@@ -338,7 +338,7 @@ def dispatch_pass(
                 )
                 if surprise:
                     text += "\n" + surprise
-            if sender(token, chat_id, _stamp_heading(text, head), _topic_for(sig)):
+            if sender(token, chat_id, _stamp_heading(text, head), _topic_for(sig), channel="signals"):
                 _mark_dispatched(conn, sig["id"], now)
                 counts["sent"] += 1
             else:
@@ -703,10 +703,11 @@ def _fmt(value) -> str:
 # ============================================================================
 
 def send_telegram(token: str | None, chat_id: str | None, text: str,
-                  thread_id: int | None = None) -> bool:
+                  thread_id: int | None = None, *, channel: str | None = None) -> bool:
     """Deliver one message: POST to Telegram AND mirror to ntfy (notify.ntfy_send), so an
     India-blocked Telegram still reaches you. Returns True if EITHER channel delivered; no
-    raise. `thread_id` routes to a Telegram topic when the chat has topics."""
+    raise. `thread_id` routes to a Telegram topic; `channel` (signals / credit / market /
+    digest) routes to a per-category ntfy topic, falling back to the catch-all NTFY_TOPIC."""
     from .notify import ntfy_send
 
     tg_ok = False
@@ -725,7 +726,7 @@ def send_telegram(token: str | None, chat_id: str | None, text: str,
             log.exception("telegram_send_error")
     else:
         log.warning("telegram_not_configured")
-    ntfy_ok = ntfy_send(text)                            # mirror to ntfy (no-op if NTFY_TOPIC unset)
+    ntfy_ok = ntfy_send(text, channel=channel)          # per-channel ntfy mirror (no-op if unset)
     return tg_ok or ntfy_ok
 
 

@@ -35,6 +35,19 @@ def test_ascii_title_strips_non_latin():
     assert notify._ascii_title("") == "Stock-Bot"
 
 
+def test_channel_routes_to_per_channel_topic(monkeypatch):
+    monkeypatch.setenv("NTFY_TOPIC", "catchall")
+    monkeypatch.setenv("NTFY_TOPIC_CREDIT", "credit-topic")
+    monkeypatch.delenv("NTFY_TOPIC_SIGNALS", raising=False)
+    cap = {}
+    monkeypatch.setattr("requests.post",
+                        lambda url, **k: cap.update(url=url) or _Resp())
+    notify.ntfy_send("rating action", channel="credit")
+    assert cap["url"].endswith("/credit-topic")            # routed to its own topic
+    notify.ntfy_send("a signal", channel="signals")        # no signals topic set
+    assert cap["url"].endswith("/catchall")                # falls back to catch-all
+
+
 def test_send_telegram_mirrors_to_ntfy_when_telegram_unconfigured(monkeypatch):
     monkeypatch.setenv("NTFY_TOPIC", "t")
     monkeypatch.setattr("requests.post", lambda *a, **k: _Resp())

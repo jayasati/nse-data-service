@@ -58,7 +58,7 @@ def test_swing_fires_while_intraday_suppressed_after_1520(bot_db):
     set_high_confidence(r, "ACME")
     set_high_confidence(r, "ZEDX")
     sent = []
-    sender = lambda tok, chat, text, thread=None: sent.append(text) or True
+    sender = lambda tok, chat, text, thread=None, **_kw: sent.append(text) or True
 
     after_close = NOW.replace(hour=15, minute=25)
     report = dispatcher.dispatch_pass(bot_db, token="tok", chat_id="chat",

@@ -210,12 +210,12 @@ def run_check(
 
     action = "none"
     if failing_names and failing_names != previous:
-        if sender(token, chat_id, format_alert(failing, now)):
+        if sender(token, chat_id, format_alert(failing, now), channel="market"):
             action = "alerted"
             if persist:
                 _save_state(state_path, failing_names)
     elif not failing_names and previous:
-        if sender(token, chat_id, format_recovery(now)):
+        if sender(token, chat_id, format_recovery(now), channel="market"):
             action = "recovered"
             if persist:
                 _save_state(state_path, set())

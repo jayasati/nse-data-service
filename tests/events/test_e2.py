@@ -183,7 +183,7 @@ def test_pre_screen_builds_setup_and_flags_once(conn):
     conn.commit()
 
     sent = []
-    def fake_sender(token, chat_id, text, thread_id):
+    def fake_sender(token, chat_id, text, thread_id, **_kw):
         sent.append(text)
         return True
 

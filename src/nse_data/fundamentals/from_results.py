@@ -564,7 +564,7 @@ def _send_correction(sender, token, chat_id, symbol: str, period: str, scope_dif
     thread = os.environ.get("TELEGRAM_TOPIC_EARNINGS")
     thread_id = int(thread) if thread and thread.lstrip("-").isdigit() else None
     try:
-        sender(token, chat_id, "\n".join(lines), thread_id)
+        sender(token, chat_id, "\n".join(lines), thread_id, channel="signals")
     except Exception:  # noqa: BLE001 — an alert failure must not abort reconciliation
         log.exception("correction_alert_failed", symbol=symbol)
 

@@ -19,6 +19,24 @@ import structlog
 
 log = structlog.get_logger()
 
+# Alert channels → per-channel ntfy topic env var. Each is a separate ntfy topic the user
+# subscribes to independently (so they can mute/prioritise). Unset channel topic → falls back
+# to NTFY_TOPIC (the catch-all), so partial config still delivers.
+_CHANNEL_ENV = {
+    "signals": "NTFY_TOPIC_SIGNALS",   # 🔔 swing / result / squeeze trade cards
+    "credit": "NTFY_TOPIC_CREDIT",     # 💳 credit / rating actions
+    "market": "NTFY_TOPIC_MARKET",     # 📈 moves / surveillance / analyst / ops
+    "digest": "NTFY_TOPIC_DIGEST",     # 📊 morning brief / EOD / weekly digest
+}
+
+
+def _topic_for(channel: str | None) -> str | None:
+    if channel:
+        t = os.environ.get(_CHANNEL_ENV.get(channel, ""))
+        if t:
+            return t
+    return os.environ.get("NTFY_TOPIC")          # catch-all fallback
+
 
 def _ascii_title(text: str | None) -> str:
     """ntfy's Title is an HTTP header (latin-1) — strip emoji/non-ASCII from the first line."""
@@ -27,9 +45,10 @@ def _ascii_title(text: str | None) -> str:
     return t[:90] or "Stock-Bot"
 
 
-def ntfy_send(text: str, *, title: str | None = None) -> bool:
-    """POST one notification to ntfy. False (no raise) if NTFY_TOPIC unset or the post fails."""
-    topic = os.environ.get("NTFY_TOPIC")
+def ntfy_send(text: str, *, channel: str | None = None, title: str | None = None) -> bool:
+    """POST one notification to ntfy on `channel`'s topic (or the catch-all NTFY_TOPIC).
+    False (no raise) if no topic configured or the post fails."""
+    topic = _topic_for(channel)
     if not topic:
         return False
     server = os.environ.get("NTFY_SERVER", "https://ntfy.sh").rstrip("/")

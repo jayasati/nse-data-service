@@ -110,7 +110,7 @@ def test_pass_idempotent_on_refetch(conn):
 def test_tier1_downgrade_fires_signal_and_alert(conn):
     sent = []
 
-    def sender(token, chat_id, text, thread_id=None):
+    def sender(token, chat_id, text, thread_id=None, **_kw):
         sent.append(text)
         return True
 
@@ -144,7 +144,7 @@ def test_tier1_downgrade_fires_signal_and_alert(conn):
 def test_tier2_change_stored_but_silent(conn):
     sent = []
 
-    def sender(token, chat_id, text, thread_id=None):
+    def sender(token, chat_id, text, thread_id=None, **_kw):
         sent.append(text)
         return True
 

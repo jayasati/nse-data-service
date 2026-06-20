@@ -106,7 +106,7 @@ def test_result_beat_dispatches_card(conn):
     }
     sent = []
 
-    def sender(token, chat_id, text, thread_id=None):
+    def sender(token, chat_id, text, thread_id=None, **_kw):
         sent.append(text)
         return True
 
