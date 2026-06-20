@@ -54,6 +54,7 @@ from .market.regime_job import register_regime_job
 from .research.snapshot_job import register_factor_snapshot_job
 from .research.paper_trade import register_paper_trade_job
 from .market.sector_radar_job import register_sector_radar_job
+from .options.job import register_options_job
 from .signals.detect import register_signal_job
 from .signals.watchlist import register_watchlist_job
 from .signals.outcome_labeler import register_outcome_labeler
@@ -149,6 +150,10 @@ def main() -> int:
     # sectoral indices by relative strength vs NIFTY 50 into sector_state; the
     # confidence scorer reads a signal's sector rank/trend (Phase 2, Week 8).
     registered.append(register_sector_radar_job(scheduler, db_path))
+    # Options analytics (every 5 min, market hours) → options_metrics + index GEX onto
+    # market_state: GEX (mean-revert vs trending tape), max-pain, PCR over the nearest
+    # expiry, plus PCR-extreme / max-pain-drift signals (Week 23; gated dispatch).
+    registered.append(register_options_job(scheduler, db_path))
     # Morning brief: 09:00 IST on trading days — one Telegram message with global
     # cues, GIFT-implied open, regime + posture, overnight events, expiry and
     # Nifty pivot S/R (Phase 2, Week 9).
