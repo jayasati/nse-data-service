@@ -22,7 +22,8 @@ def _conn(rows_pb=(), prices=()):
                   "stop_px,trail_stop,qty,risk_rupees,net_pct,r_multiple,exit_reason,exit_date) "
                   "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows_pb)
     c.executemany("INSERT INTO raw_intraday_candles VALUES (?,?,?,?)",
-                  [(s, "day", _TS, px) for s, px in prices])
+                  [(s, "day", _TS, px) for s, px in prices]
+                  + [("NIFTYBEES", "day", _TS, 280.0)])     # reference for the as-of date
     c.commit()
     return c
 

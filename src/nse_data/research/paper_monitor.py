@@ -24,10 +24,12 @@ def _d(s: str) -> _dt.date:
 
 
 def _as_of(conn) -> str | None:
+    # query a reference symbol so the (symbol, interval, ts) index is used — scanning all
+    # of raw_intraday_candles (tens of millions of rows) is far too slow.
     r = conn.execute(
-        "SELECT date(ts,'unixepoch','+05:30') FROM raw_intraday_candles "
-        "WHERE interval='day' AND close IS NOT NULL ORDER BY ts DESC LIMIT 1").fetchone()
-    return r[0] if r else None
+        "SELECT date(MAX(ts),'unixepoch','+05:30') FROM raw_intraday_candles "
+        "WHERE symbol='NIFTYBEES' AND interval='day' AND close IS NOT NULL").fetchone()
+    return r[0] if r and r[0] else None
 
 
 def _price(conn, sym):
@@ -47,8 +49,7 @@ def monitor_snapshot(conn: sqlite3.Connection, *, target: int = _SIG_TARGET) -> 
     if not _table_exists(conn, "paper_book"):
         return {"as_of": None, "strategies": {}, "totals": {"open": 0, "closed": 0}}
     rep = report(conn)
-    as_of = _as_of(conn)
-    today = _as_of(conn)
+    as_of = today = _as_of(conn)        # one indexed lookup, reused
 
     open_rows = conn.execute(
         "SELECT strategy, symbol, entry_date, entry_px, last_score, stop_px, trail_stop, "
