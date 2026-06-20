@@ -180,7 +180,8 @@ def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
         f"Crude: ${_fmt(brent_price)} ({_pct(brent_pct)})\n\n"
         f"Today's regime: {regime or 'n/a'}"
         f"{(' ' + warnings) if warnings else ''}\n"
-        f"→ {posture}\n\n"
+        f"→ {posture}\n"
+        f"{_gex_line(conn)}\n"
         f"Overnight events:\n{ev_lines}\n"
         f"{_psych_watch(conn)}\n"
         f"Expiry: {expiry_note}\n"
@@ -210,6 +211,21 @@ def _psych_watch(conn: sqlite3.Connection) -> str:
     if capit:
         lines.append(f"• Capitulation (reversal watch): {', '.join(capit)}")
     return "\n".join(lines) + "\n"
+
+
+def _gex_line(conn: sqlite3.Connection) -> str:
+    """Index GEX tape note (Week 23.5): positive = mean-revert, negative = trending. '' if absent."""
+    try:
+        r = conn.execute(
+            "SELECT gex_sign, gex_flip_level FROM market_state WHERE gex_sign IS NOT NULL "
+            "ORDER BY as_of DESC LIMIT 1").fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    if not r or not r[0]:
+        return ""
+    tape = "mean-reverting" if r[0] == "positive" else "trending"
+    flip = f" · flip ~{r[1]:.0f}" if r[1] else ""
+    return f"Tape (GEX): {r[0]} → {tape}{flip}\n"
 
 
 def _expiry_note(flags: dict) -> str:
