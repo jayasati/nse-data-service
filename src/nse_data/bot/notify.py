@@ -52,7 +52,7 @@ def ntfy_send(text: str, *, channel: str | None = None, title: str | None = None
     if not topic:
         return False
     server = os.environ.get("NTFY_SERVER", "https://ntfy.sh").rstrip("/")
-    headers = {"Title": title or _ascii_title(text)}
+    headers = {"Title": _ascii_title(title or text)}      # sanitise even an explicit title (header is latin-1)
     tok = os.environ.get("NTFY_TOKEN")
     if tok:
         headers["Authorization"] = f"Bearer {tok}"

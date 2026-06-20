@@ -30,6 +30,15 @@ def test_ntfy_posts_when_configured(monkeypatch):
     assert cap["headers"]["Title"] == "Brief"                  # emoji stripped from the header
 
 
+def test_explicit_emoji_title_is_sanitised(monkeypatch):
+    monkeypatch.setenv("NTFY_TOPIC", "t")
+    cap = {}
+    monkeypatch.setattr("requests.post", lambda url, **k: cap.update(k) or _Resp())
+    notify.ntfy_send("body", title="🔔 Swing buy — TATAMOTORS")
+    cap["headers"]["Title"].encode("latin-1")              # must not raise
+    assert cap["headers"]["Title"] == "Swing buy  TATAMOTORS"
+
+
 def test_ascii_title_strips_non_latin():
     assert notify._ascii_title("🌅 Market Brief — 2026") == "Market Brief  2026"
     assert notify._ascii_title("") == "Stock-Bot"
