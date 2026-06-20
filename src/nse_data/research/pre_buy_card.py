@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from ..collectors.fno_ban import is_fno_banned
 from ..fundamentals import strength_scores as ss
 from .paper_report import trade_metrics
 from .ownership_flow import ownership_flow
@@ -114,7 +115,10 @@ def _surveillance(conn, sym):
     # any table present means we could check; absence of hits = clean
     checked = any(_has(conn, t) for t in
                   ("raw_surveillance_gsm", "raw_surveillance_asm_lt", "raw_surveillance_asm_st"))
-    return {"checked": checked, "hits": hits}
+    banned = is_fno_banned(conn, sym)        # R13 — F&O ban (risk flag for a delivery book)
+    if banned:
+        hits.append("F&O-BAN")
+    return {"checked": checked or _has(conn, "raw_fno_ban"), "hits": hits, "fno_banned": banned}
 
 
 def _risk_plan(conn, sym, price, atr_pct, params):
@@ -274,7 +278,7 @@ def format_card(c: dict) -> str:
     sv = c["surveillance"]
     if sv and sv["checked"]:
         L.append(_line("GOVERNANCE", _g(not sv["hits"]),
-                       (", ".join(sv["hits"]) if sv["hits"] else "not in ASM/GSM") + " · F&O-ban n/a (R13)"))
+                       ", ".join(sv["hits"]) if sv["hits"] else "not in ASM/GSM/F&O-ban"))
 
     rp = c["risk_plan"]
     if rp:

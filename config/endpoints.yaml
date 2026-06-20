@@ -377,6 +377,14 @@ endpoints:
       table: raw_fno_list
       enabled: true
 
+  fno_ban:
+    collector: nse_data.collectors.fno_ban:FnoBan
+    response: text
+    cadence: daily
+    run_at: "09:00"          # ban list is set pre-market for the day
+    table: raw_fno_ban
+    enabled: true
+
   index_members:
     collector: nse_data.collectors.index_members:IndexMembers
     response: json
