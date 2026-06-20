@@ -42,6 +42,8 @@ from .events.pre_event_risk import register_pre_event_risk_job
 from .events.pre_screen import register_pre_screen_job
 from .parsers.analyst_ratings import register_analyst_ratings_job
 from .psychology.state_classifier import register_state_classifier_job
+from .psychology.exhaustion_detector import register_exhaustion_detector_job
+from .psychology.stop_hunt_detector import register_stop_hunt_detector_job
 from .collectors.angel_live_equity import register_angel_live_job
 from .fundamentals.from_results import (
     register_extract_runner,
@@ -204,6 +206,11 @@ def main() -> int:
     # symbol FOMO_EUPHORIA/BUY_RUMOR/CAPITULATION/... on indicator_live + Redis;
     # the confidence scorer (Layer 7) and alert line read it — Week 19.
     registered.append(register_state_classifier_job(scheduler, db_path))
+    # Psychology alerts on top of the classifier (Week 20/21): FOMO-warning +
+    # capitulation-watch (every minute, 2h dedup) and the stop-hunt / liquidity-grab
+    # detector (every 5 min on 5-min closes). Compute + log; gated dispatch (G12).
+    registered.append(register_exhaustion_detector_job(scheduler, db_path))
+    registered.append(register_stop_hunt_detector_job(scheduler, db_path))
     # Analyst broker recommendations: every 30 min (trading days, 08:30–15:35),
     # Moneycontrol broker-recos feed → raw_analyst_ratings + tier-1
     # upgrade/downgrade alerts — Week 18.7/18.8.
