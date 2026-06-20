@@ -156,6 +156,53 @@ def _preopen(conn: sqlite3.Connection, now: datetime) -> str:
     return f"Pre-open: ↑ {up} · ↓ {dn}\n"
 
 
+def _smart_money(conn: sqlite3.Connection) -> str:
+    """Smart-money composite (W22/27.5): > 0.70 accumulating, < 0.40 distributing. '' if none."""
+    try:
+        r = conn.execute(
+            "SELECT score FROM smart_money_daily ORDER BY as_of_date DESC LIMIT 1").fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    if not r or r[0] is None:
+        return ""
+    lean = "accumulating" if r[0] > 0.70 else "distributing" if r[0] < 0.40 else "mixed"
+    return f"Smart money: {r[0]:.2f} ({lean})\n"
+
+
+def _overnight_ratings(conn: sqlite3.Connection, now: datetime) -> str:
+    """Rating actions filed since ~prior close (27.5). Parses NSE 'DD-Mon-YYYY HH:MM:SS'."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol, worst_action, min_lt_grade, agencies, broadcast_dt "
+            "FROM raw_rating_actions ORDER BY id DESC LIMIT 60").fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    cutoff = now - timedelta(hours=18)            # ~15:00 prior day → covers the evening rating window
+    out = []
+    for sym, action, grade, agencies, bdt in rows:
+        try:
+            ts = datetime.strptime(bdt, "%d-%b-%Y %H:%M:%S").replace(tzinfo=IST)
+        except (ValueError, TypeError):
+            continue
+        if ts < cutoff:
+            continue
+        ag = (agencies or "").split(",")[0]
+        out.append(f"• {sym}: {(action or '').replace('_', ' ')} {grade or ''} ({ag})".rstrip())
+    return ("Overnight rating actions:\n" + "\n".join(out[:6]) + "\n") if out else ""
+
+
+def _results_today(conn: sqlite3.Connection, today: date) -> str:
+    """Companies expected to report results today (27.5), from pending_events."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol FROM pending_events WHERE event_type='result' AND expected_date=? "
+            "AND status NOT IN ('filed','expired') ORDER BY symbol LIMIT 15", (today.isoformat(),)
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    return f"Results today: {', '.join(r[0] for r in rows)}\n" if rows else ""
+
+
 def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
     now = now or market_hours.now_ist()
     today = now.date()
@@ -202,9 +249,12 @@ def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
         f"Today's regime: {regime or 'n/a'}"
         f"{(' ' + warnings) if warnings else ''}\n"
         f"→ {posture}\n"
-        f"{_gex_line(conn)}\n"
+        f"{_gex_line(conn)}"
+        f"{_smart_money(conn)}\n"
         f"Overnight events:\n{ev_lines}\n"
+        f"{_overnight_ratings(conn, now)}"
         f"{_psych_watch(conn)}\n"
+        f"{_results_today(conn, today)}"
         f"Expiry: {expiry_note}\n"
         f"Nifty support: {s1} | Resistance: {r1}\n"
         "━━━━━━━━━━━━━━━━━━━"

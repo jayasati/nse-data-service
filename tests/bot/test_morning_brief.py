@@ -26,7 +26,15 @@ def _seed() -> sqlite3.Connection:
                                    nifty_direction TEXT, vix_direction TEXT);
         CREATE TABLE raw_announcements (fingerprint TEXT PRIMARY KEY, symbol TEXT,
                                         subject TEXT, created_at INTEGER, deleted_at INTEGER);
+        CREATE TABLE smart_money_daily (as_of_date TEXT, score REAL);
+        CREATE TABLE raw_rating_actions (id INTEGER PRIMARY KEY, symbol TEXT, worst_action TEXT,
+                                         min_lt_grade TEXT, agencies TEXT, broadcast_dt TEXT);
+        CREATE TABLE pending_events (symbol TEXT, event_type TEXT, expected_date TEXT, status TEXT);
     """)
+    conn.execute("INSERT INTO smart_money_daily VALUES ('2026-06-04', 0.61)")
+    conn.execute("INSERT INTO raw_rating_actions VALUES "
+                 "(1,'VEDL','downgrade','A+','CRISIL,ICRA','04-Jun-2026 16:30:00')")
+    conn.execute("INSERT INTO pending_events VALUES ('INFY','result','2026-06-05','pending')")
     conn.execute("INSERT INTO raw_macro VALUES ('SP500','2026-06-04',7500,1.5)")
     conn.execute("INSERT INTO raw_macro VALUES ('NASDAQ','2026-06-04',26000,2.1)")
     conn.execute("INSERT INTO raw_macro VALUES ('BRENT','2026-06-04',93.4,-1.2)")
@@ -51,6 +59,9 @@ def test_brief_has_all_sections():
     assert "Today's regime: risk_on" in text
     assert "Lean long" in text                  # posture for risk_on
     assert "TCS: Board meeting outcome" in text  # overnight event
+    assert "Smart money: 0.61 (mixed)" in text                    # 27.5 smart money
+    assert "Overnight rating actions:" in text and "VEDL: downgrade A+ (CRISIL)" in text  # 27.5
+    assert "Results today: INFY" in text                          # 27.5 results schedule
     assert "Nifty support: 90 | Resistance: 110" in text
     assert "Not expiry day" in text             # 2026-06-05 is a Friday
 
