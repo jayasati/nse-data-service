@@ -18,6 +18,7 @@ import sqlite3
 from ..fundamentals import strength_scores as ss
 from .paper_report import trade_metrics
 from .paper_trade import PaperTradeParams, _size_position
+from .valuation_history import valuation_percentile
 
 
 def _has(conn, name) -> bool:
@@ -47,11 +48,16 @@ def _valuation(conn, sym):
     r = _one(conn, "SELECT valuation, sector_rank, sector_n, grade, composite FROM factor_snapshot "
                    "WHERE symbol=? ORDER BY snapshot_date DESC LIMIT 1", (sym,))
     f = _one(conn, "SELECT pe_ratio FROM stock_fundamentals WHERE symbol=?", (sym,))
-    if not r and not f:
+    vh = valuation_percentile(conn, sym) if _has(conn, "extracted_financials") else None
+    if not r and not f and not vh:
         return None
     return {"score": r[0] if r else None, "sector_rank": r[1] if r else None,
             "sector_n": r[2] if r else None, "composite": r[4] if r else None,
-            "pe": f[0] if f else None, "own_history_pctile": None}   # R6 not built
+            "pe": f[0] if f else None,                              # R6: cheap vs own history
+            "own_history_pctile": vh["pctile"] if vh else None,
+            "own_history_span": vh["span_years"] if vh else None,
+            "own_cheap": vh["cheap"] if vh else None,
+            "own_expensive": vh["expensive"] if vh else None}
 
 
 def _quality(conn, sym):
@@ -197,9 +203,16 @@ def format_card(c: dict) -> str:
     v = c["valuation"]
     if v:
         rank = (f"#{v['sector_rank']}/{v['sector_n']} in sector" if v["sector_rank"] else "n/a")
-        cheap = v["sector_rank"] is not None and v["sector_n"] and v["sector_rank"] <= v["sector_n"] / 3
-        L.append(_line("VALUATION", _g(cheap if v["sector_rank"] else None),
-                       f"PE {v['pe'] or 'n/a'} · {rank} · own-history n/a (R6)"))
+        own, span = v.get("own_history_pctile"), v.get("own_history_span")
+        own_txt = (f"own-hist {own}th pctile ({span}y)" if own is not None else "own-history n/a")
+        # glyph prefers the (span-gated) own-history verdict; falls back to sector rank
+        if own is not None:
+            glyph = "✓" if v.get("own_cheap") else ("✗" if v.get("own_expensive") else "·")
+        elif v["sector_rank"]:
+            glyph = _g(v["sector_n"] and v["sector_rank"] <= v["sector_n"] / 3)
+        else:
+            glyph = "·"
+        L.append(_line("VALUATION", glyph, f"PE {v['pe'] or 'n/a'} · {rank} · {own_txt}"))
 
     q = c["quality"]
     if q and q["score"] is not None:
