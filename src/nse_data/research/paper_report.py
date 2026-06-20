@@ -17,6 +17,10 @@ from __future__ import annotations
 
 import datetime as _dt
 import sqlite3
+import statistics as _st
+
+from .deflated_sharpe import promotion_verdict
+from .deflated_sharpe import sharpe as _sharpe
 
 
 def _d(s: str) -> _dt.date:
@@ -118,6 +122,16 @@ def report(conn: sqlite3.Connection) -> dict:
     for strat, srows in by_strat.items():
         out["strategies"][strat] = _strategy_block(srows)
 
+    # R9 — honest validation: trial count = #strategies tried; sr_variance estimated from
+    # the dispersion of their realised Sharpes (so DSR deflates for the multi-strategy search).
+    returns_by_strat = {s: [r[1] for r in rows_] for s, rows_ in by_strat.items()}
+    strat_sharpes = [v for v in (_sharpe(r) for r in returns_by_strat.values()) if v is not None]
+    n_trials = max(len(returns_by_strat), 1)
+    sr_var = _st.pvariance(strat_sharpes) if len(strat_sharpes) >= 2 else None
+    for strat, rets in returns_by_strat.items():
+        out["strategies"][strat]["validation"] = promotion_verdict(
+            rets, n_trials=n_trials, sr_variance=sr_var)
+
     for strat, n in conn.execute(
         "SELECT strategy, COUNT(*) FROM paper_book WHERE status='open' GROUP BY strategy"
     ).fetchall():
@@ -180,6 +194,14 @@ def format_report(rep: dict) -> str:
         verdict = ("POSITIVE expectancy" if (m["expectancy"] or 0) > 0 else "NEGATIVE expectancy")
         warn = "" if m["n"] >= 30 else "  ⚠ < 30 trades — not yet significant"
         lines.append(f"    → {verdict}{warn}")
+        val = m.get("validation")
+        if val:
+            extra = ""
+            if val["psr"] is not None:
+                extra += f"  PSR {val['psr']:.2f}"
+            extra += f"  DSR {val['dsr']:.2f}" if val["dsr"] is not None else "  DSR n/a"
+            lines.append(f"    Validation : {val['verdict'].upper()}  "
+                         f"Sharpe {val['sharpe']}{extra}  (trials={val['n_trials']})")
         if m["by_reason"]:
             lines.append("    by exit reason:")
             for k, r in m["by_reason"].items():

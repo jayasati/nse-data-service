@@ -80,6 +80,8 @@ def test_report_groups_by_strategy_and_handles_open():
     assert rep["open"]["lean"] == 1                   # the open C
     assert "stop" in lean["by_reason"] and "t_out" in lean["by_reason"]
     assert lean["avg_hold_days"] == 6.0              # (9 + 3) / 2
+    assert lean["validation"]["verdict"] == "insufficient"   # R9: only 2 trades
+    assert lean["validation"]["n"] == 2
 
 
 def test_report_empty_book():
