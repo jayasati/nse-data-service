@@ -26,6 +26,7 @@ gated — after EOD candles land and after the 18:45 factor snapshot).
 from __future__ import annotations
 
 import datetime as _dt
+import sqlite3
 import statistics as st
 import time
 from dataclasses import dataclass, replace
@@ -78,6 +79,13 @@ class PaperTradeParams:
     # stop (the R floor). Research [R5]: wider trails survive costs — validate k on NSE data.
     trail_atr_k: float = 3.0      # trailing stop distance = k · ATR
     trail_window: int = 22        # highest-close lookback (bars)
+    # W27.6 — paper risk rules (applied at the buy step, per strategy book)
+    risk_rules: bool = True
+    daily_kill_pct: float = -2.0  # book down this % today → stop opening new trades
+    consec_loss_n: int = 3        # this many losses in a row → halve new-trade size
+    consec_size_mult: float = 0.5
+    vix_high: float = 22.0        # VIX above this → cut new-trade size
+    vix_size_mult: float = 0.6
 
 
 def _d(s):
@@ -155,10 +163,10 @@ def _effective_params(key: str, params: PaperTradeParams) -> PaperTradeParams:
     return replace(params, **applied) if applied else params
 
 
-def _size_position(entry_px, atr_pct, params: PaperTradeParams):
+def _size_position(entry_px, atr_pct, params: PaperTradeParams, *, size_mult: float = 1.0):
     """(stop_px, qty, risk_rupees) for a long entry sized to risk params.risk_pct of
-    capital to a k·ATR stop. Falls back to a flat stop when ATR% is missing; never sizes
-    a single name above the full book notional."""
+    capital to a k·ATR stop. `size_mult` (< 1) trims qty for the W27.6 risk rules. Falls
+    back to a flat stop when ATR% is missing; never sizes a single name above the book."""
     if not entry_px or entry_px <= 0:
         return None, None, None
     frac = (params.atr_k * atr_pct / 100.0) if (atr_pct and atr_pct > 0) else DEFAULT_STOP_FRAC
@@ -167,8 +175,27 @@ def _size_position(entry_px, atr_pct, params: PaperTradeParams):
     stop_px = round(entry_px - risk_per_share, 2)
     qty = int((params.capital * params.risk_pct / 100.0) // risk_per_share)
     qty = min(qty, int(params.capital // entry_px))      # cap at full-book notional
-    qty = max(1, qty)
+    qty = max(1, int(qty * size_mult))
     return stop_px, qty, round(qty * risk_per_share, 2)
+
+
+def _risk_state(conn, key, today, params: PaperTradeParams, vix):
+    """W27.6 — (kill_switch, size_mult) for new buys: daily −2% kill, consec-loss + VIX size cuts."""
+    if not params.risk_rules:
+        return False, 1.0
+    today_pnl = conn.execute(
+        "SELECT COALESCE(SUM(net_pnl), 0) FROM paper_book WHERE strategy=? AND exit_date=? "
+        "AND net_pnl IS NOT NULL", (key, today)).fetchone()[0]
+    kill = bool(params.capital) and today_pnl < params.daily_kill_pct / 100.0 * params.capital
+    last = [r[0] for r in conn.execute(
+        "SELECT net_pct FROM paper_book WHERE strategy=? AND status='closed' AND net_pct IS NOT NULL "
+        "ORDER BY exit_date DESC, id DESC LIMIT ?", (key, params.consec_loss_n)).fetchall()]
+    mult = 1.0
+    if len(last) >= params.consec_loss_n and all(x < 0 for x in last):
+        mult *= params.consec_size_mult
+    if vix is not None and vix > params.vix_high:
+        mult *= params.vix_size_mult
+    return kill, round(mult, 3)
 
 
 def _chandelier(conn, sym, atr_pct, params: PaperTradeParams):
@@ -188,7 +215,7 @@ def _chandelier(conn, sym, atr_pct, params: PaperTradeParams):
 
 
 def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
-                  price_now, risk_tag, atr_of, sector_of, chand_of) -> dict:
+                  price_now, risk_tag, atr_of, sector_of, chand_of, vix=None) -> dict:
     """Drive one strategy's paper_book positions through the state machine.
 
     Writes BUY/SELL/peak updates to paper_book (unless params.dry_run) and returns a
@@ -253,21 +280,22 @@ def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
     for r in survivors:
         sector_counts[sector_of(r[1])] = sector_counts.get(sector_of(r[1]), 0) + 1
     heat_cap = params.capital * params.heat_pct / 100.0
+    kill, size_mult = _risk_state(conn, key, today, params, vix)    # W27.6 paper risk rules
     eligible = capped = 0
 
     for sym, sc in sorted(score.items(), key=lambda kv: -kv[1]):
         if sc < params.t_in or sym in held:
             continue
         eligible += 1
-        if n_open >= params.max_positions or heat >= heat_cap:
-            capped += 1
+        if kill or n_open >= params.max_positions or heat >= heat_cap:
+            capped += 1                                            # daily kill-switch blocks new buys
             continue
         sec = sector_of(sym)
         if sector_counts.get(sec, 0) >= params.sector_max:
             capped += 1
             continue
         entry_px = price_now(sym)
-        stop_px, qty, risk_rupees = _size_position(entry_px, atr_of(sym), params)
+        stop_px, qty, risk_rupees = _size_position(entry_px, atr_of(sym), params, size_mult=size_mult)
         if risk_rupees and heat + risk_rupees > heat_cap:
             capped += 1
             continue
@@ -303,6 +331,7 @@ def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
         "n_open": len(cur), "holdings": holdings,
         "eligible_buys": eligible, "capped": capped,        # R5 — no silent caps
         "heat_used_pct": round(heat / params.capital * 100, 1) if params.capital else None,
+        "kill_switch": kill, "size_mult": size_mult,         # W27.6 risk telemetry
         "closed_n": len(closed),
         "win_pct": round(100 * len(wins) / len(closed), 0) if closed else None,
         "avg_pct": round(sum(closed) / len(closed), 2) if closed else None,
@@ -375,6 +404,18 @@ def run_paper_trade(conn, *, strategies=None, params: PaperTradeParams | None = 
     def chand_of(sym):
         return _chandelier(conn, sym, atr_cache.get(sym), params)   # R10 trailing level
 
+    def _vix():
+        for sql in ("SELECT vix_level FROM market_state ORDER BY as_of DESC LIMIT 1",
+                    "SELECT close FROM raw_india_vix ORDER BY as_of DESC LIMIT 1"):
+            try:
+                r = conn.execute(sql).fetchone()
+                if r and r[0]:
+                    return r[0]
+            except sqlite3.OperationalError:
+                continue
+        return None
+
+    vix = _vix()
     eligible = _eligible_universe(conn)
 
     _rk: dict = {}
@@ -395,7 +436,7 @@ def run_paper_trade(conn, *, strategies=None, params: PaperTradeParams | None = 
         sp = _effective_params(key, params)        # lean → coverage caps; others → portfolio caps
         summaries.append(
             _run_strategy(conn, key, label, score, today, sp, price_now, risk_tag,
-                          atr_of, sector_of, chand_of))
+                          atr_of, sector_of, chand_of, vix))
     return {"today": today, "eligible": len(eligible), "strategies": summaries}
 
 

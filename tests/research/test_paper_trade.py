@@ -188,6 +188,36 @@ def test_explicit_flag_overrides_coverage_default():
     assert p.max_positions == 5 and p.heat_pct == 100.0 and p.sector_max == 25
 
 
+def test_risk_kill_switch_blocks_new_buys():
+    conn = _conn()
+    # book down ₹30k today (> 2% of ₹1M capital) → kill switch
+    conn.execute("INSERT INTO paper_book (symbol,strategy,status,entry_date,exit_date,net_pnl,net_pct) "
+                 "VALUES ('L','lean','closed','2026-06-01','2026-06-20',-30000,-30)")
+    conn.commit()
+    summ = _run(conn, {"AAA": 90.0}, "2026-06-20", {"AAA": 100.0})
+    assert summ["kill_switch"] is True and summ["buys"] == []
+
+
+def test_risk_consecutive_losses_halve_size():
+    conn = _conn()
+    for i, d in enumerate(["2026-06-17", "2026-06-18", "2026-06-19"]):     # 3 losses in a row
+        conn.execute("INSERT INTO paper_book (symbol,strategy,status,entry_date,exit_date,net_pct,net_pnl) "
+                     "VALUES (?, 'lean','closed','2026-06-01',?,-2,-100)", (f"X{i}", d))
+    conn.commit()
+    summ = _run(conn, {"AAA": 90.0}, "2026-06-20", {"AAA": 100.0}, atr=2.0)
+    assert summ["kill_switch"] is False and summ["size_mult"] == 0.5
+    assert conn.execute("SELECT qty FROM paper_book WHERE symbol='AAA'").fetchone()[0] == 1000  # half of 2000
+
+
+def test_risk_vix_and_toggle():
+    conn = _conn()
+    p = pt.PaperTradeParams()
+    assert pt._risk_state(conn, "lean", "2026-06-20", p, 25.0) == (False, 0.6)   # VIX>22 → 0.6
+    assert pt._risk_state(conn, "lean", "2026-06-20", p, 15.0) == (False, 1.0)
+    off = pt.PaperTradeParams(risk_rules=False)
+    assert pt._risk_state(conn, "lean", "2026-06-20", off, 99.0) == (False, 1.0)  # disabled
+
+
 def test_max_positions_cap_prefers_top_scores():
     conn = _conn()
     score = {f"S{i}": 90.0 - i for i in range(5)}        # S0=90 … S4=86, all ≥ t_in

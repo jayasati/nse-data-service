@@ -21,8 +21,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 def _print_strategy(today: str, params, s: dict) -> None:
     dry = "[DRY-RUN]" if params.dry_run else ""
     print(f"\n=== {s['label']} [{s['key']}]  as-of {today}  scored={s['scored']} {dry} ===")
+    risk = (" · ⛔KILL-SWITCH" if s.get("kill_switch")
+            else f" · size ×{s['size_mult']}" if s.get("size_mult", 1) < 1 else "")
     print(f"caps: opened {len(s['buys'])} of {s['eligible_buys']} eligible "
-          f"(capped {s['capped']})  ·  heat {s['heat_used_pct']}% of cap")
+          f"(capped {s['capped']})  ·  heat {s['heat_used_pct']}% of cap{risk}")
     print("BUY ({}):  ".format(len(s["buys"]))
           + (", ".join(f"{sym}({sc:.0f})" for sym, sc in s["buys"][:20]) or "—"))
     print("SELL ({}): ".format(len(s["sells"]))
