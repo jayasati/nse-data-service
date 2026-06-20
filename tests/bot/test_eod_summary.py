@@ -16,7 +16,9 @@ def _db():
         "CREATE TABLE sector_state (sector_name TEXT, as_of TEXT, rs_rank INTEGER, sector_return_pct REAL);"
         "CREATE TABLE signals (signal_type TEXT, detected_at TEXT);"
         "CREATE TABLE paper_book (status TEXT, entry_date TEXT, exit_date TEXT, net_pct REAL);"
-        "CREATE TABLE pending_events (symbol TEXT, event_type TEXT, expected_date TEXT, status TEXT);")
+        "CREATE TABLE pending_events (symbol TEXT, event_type TEXT, expected_date TEXT, status TEXT);"
+        "CREATE TABLE smart_money_daily (as_of_date TEXT, score REAL);")
+    conn.execute("INSERT INTO smart_money_daily VALUES ('2026-06-19', 0.61)")
     conn.execute("INSERT INTO market_state VALUES ('2026-06-19T15:30', 0.85, 13.2, 'x')")
     conn.executemany("INSERT INTO sector_state VALUES (?, '2026-06-19', ?, ?)",
                      [("NIFTY IT", 1, 1.9), ("NIFTY PHARMA", 6, 0.1), ("NIFTY METAL", 11, -1.4)])
@@ -33,6 +35,7 @@ def test_build_eod_summary_sections():
     assert "EOD Summary — 2026-06-19" in out
     assert "Nifty: +0.85% | VIX: 13.2" in out
     assert "Best NIFTY IT (+1.90%)" in out and "Worst NIFTY METAL (-1.40%)" in out
+    assert "Smart money: 0.61 (mixed)" in out              # W22 score wired in
     assert "credit_upgrade 1" in out                       # today's signals
     assert "1 opened · 1 closed (net +4.5%)" in out        # paper activity
     assert "INFY (result)" in out                          # next trading day's event (Mon 22nd)

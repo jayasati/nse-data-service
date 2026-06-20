@@ -34,7 +34,7 @@ endpoints:
     cadence: 30m
     active_hours: "08:00-19:00"
     table: raw_nonequity_announcements
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   announcements_mf:
     collector: nse_data.collectors.announcements:MfAnnouncements
@@ -46,7 +46,7 @@ endpoints:
     cadence: 1h
     active_hours: "08:00-19:00"
     table: raw_nonequity_announcements
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   oi_spurts:
     collector: nse_data.collectors.oi_spurts:OiSpurts
@@ -116,7 +116,7 @@ endpoints:
     run_at: "20:15"          # after GSM/ASM surveillance pulls
     trading_day_only: true
     table: raw_unsolicited_watchlist
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   option_chain:
     collector: nse_data.collectors.option_chain:OptionChain
@@ -171,7 +171,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_market_movers
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   losers:
     collector: nse_data.collectors.market_movers:Losers
@@ -179,7 +179,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_market_movers
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   most_active_volume:
     collector: nse_data.collectors.most_active:MostActiveByVolume
@@ -187,7 +187,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_most_active
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   most_active_value:
     collector: nse_data.collectors.most_active:MostActiveByValue
@@ -195,7 +195,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_most_active
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   high_52w:
       collector: nse_data.collectors.high_low_52w:High52W
@@ -219,7 +219,7 @@ endpoints:
     cadence: 3m
     market_hours_only: true
     table: raw_band_hits
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   price_band_lower:
     collector: nse_data.collectors.price_band:LowerBandHits
@@ -227,7 +227,7 @@ endpoints:
     cadence: 3m
     market_hours_only: true
     table: raw_band_hits
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   pre_open:
     collector: nse_data.collectors.pre_open:PreOpen
@@ -240,7 +240,7 @@ endpoints:
     run_at: "09:08"          # one-shot; pre-open book settles 09:00–09:15 IST
     trading_day_only: true   # daily cron fires every day; gate skips holidays/weekends
     table: raw_pre_open
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   call_auction:
     collector: nse_data.collectors.call_auction:CallAuction
@@ -251,7 +251,7 @@ endpoints:
     run_at: "15:45"          # after the day's six call-auction sessions close
     trading_day_only: true
     table: raw_call_auction
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   most_active_fno_volume:
     collector: nse_data.collectors.most_active_fno:MostActiveFnoByVolume
@@ -259,7 +259,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_most_active_fno
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   most_active_fno_value:
     collector: nse_data.collectors.most_active_fno:MostActiveFnoByValue
@@ -267,7 +267,7 @@ endpoints:
     cadence: 5m
     market_hours_only: true
     table: raw_most_active_fno
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   board_meetings:
       collector: nse_data.collectors.board_meetings:BoardMeetings
@@ -358,7 +358,7 @@ endpoints:
     run_at: "20:30"       # EOD — after NSDL posts the day's provisional FPI flow
     trading_day_only: true
     table: raw_nsdl_fpi_daily
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   gift_nifty:
     collector: nse_data.collectors.gift_nifty:GiftNifty
@@ -415,7 +415,7 @@ endpoints:
     cadence: daily
     run_at: "07:00"
     table: raw_primary_issues
-    enabled: true
+    enabled: false   # W22 audit: 0 consumers — disabled 2026-06-20
 
   quote_metadata:
     collector: nse_data.collectors.quote_metadata:QuoteMetadata

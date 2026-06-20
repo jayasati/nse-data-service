@@ -244,4 +244,4 @@ def test_register_against_real_endpoints_yaml():
     enabled = [n for n, c in endpoints.items() if c.get("enabled")]
     # At least one job per enabled endpoint (multi-time entries yield more).
     assert len(ids) >= len(enabled)
-    assert "pre_open" in ids
+    assert "bhavcopy_cm" in ids        # a representative enabled collector registers

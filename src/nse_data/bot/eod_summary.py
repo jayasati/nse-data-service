@@ -57,6 +57,20 @@ def _signals_today(conn: sqlite3.Connection, today: str) -> str:
     return f"Today's signals: {sum(n for _, n in rows)} ({parts})"
 
 
+def _smart_money(conn: sqlite3.Connection) -> str:
+    """Latest smart-money composite (W22): > 0.70 accumulating, < 0.40 distributing."""
+    try:
+        r = conn.execute(
+            "SELECT score FROM smart_money_daily ORDER BY as_of_date DESC LIMIT 1").fetchone()
+    except sqlite3.OperationalError:
+        return "Smart money: n/a"
+    if not r or r[0] is None:
+        return "Smart money: n/a"
+    s = r[0]
+    lean = "accumulating" if s > 0.70 else "distributing" if s < 0.40 else "mixed"
+    return f"Smart money: {s:.2f} ({lean})"
+
+
 def _paper_today(conn: sqlite3.Connection, today: str) -> str:
     try:
         closed = conn.execute(
@@ -94,7 +108,8 @@ def build_eod_summary(conn: sqlite3.Connection, now: datetime | None = None) -> 
         f"📊 EOD Summary — {today.isoformat()}\n"
         "━━━━━━━━━━━━━━━━━━━\n"
         f"Nifty: {_pct(nifty)} | VIX: {vix_txt}\n"
-        f"{_sectors(conn)}\n\n"
+        f"{_sectors(conn)}\n"
+        f"{_smart_money(conn)}\n\n"
         f"{_signals_today(conn, today.isoformat())}\n"
         f"{_paper_today(conn, today.isoformat())}\n\n"
         f"{_tomorrow_events(conn, tomorrow.isoformat())}\n"
