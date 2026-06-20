@@ -253,9 +253,11 @@ def format_card(c: dict) -> str:
         bg = "✓" if net > 0 else ("✗" if net < 0 else "·")
         ins = fl["insider"]
         ins_txt = (f"insider net ₹{ins['net_value_cr']:+.0f}Cr" if ins else "insider n/a")
+        t1 = b.get("tier1_net_cr") or 0
+        tier_txt = f" · tier-1 ₹{t1:+.0f}Cr" if t1 else ""        # W24 institution tiering
         L.append(_line("FLOWS", bg,
                        f"block/bulk {b['days']}d: net ₹{net:+.0f}Cr "
-                       f"({b['buy_deals']}B/{b['sell_deals']}S) · {ins_txt} · FII/DII n/a"))
+                       f"({b['buy_deals']}B/{b['sell_deals']}S){tier_txt} · {ins_txt}"))
 
     cat = c["catalyst"]
     if cat:

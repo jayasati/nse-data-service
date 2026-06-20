@@ -56,6 +56,7 @@ from .research.paper_trade import register_paper_trade_job
 from .market.sector_radar_job import register_sector_radar_job
 from .options.job import register_options_job
 from .smart_money.score import register_smart_money_job
+from .smart_money.short_squeeze import register_short_squeeze_job
 from .signals.detect import register_signal_job
 from .signals.watchlist import register_watchlist_job
 from .signals.outcome_labeler import register_outcome_labeler
@@ -159,6 +160,9 @@ def main() -> int:
     # tiered block-deal flow → smart_money_daily (Week 22; gated dispatch). The
     # participant_oi collector (19:00, endpoints.yaml) feeds the derivatives leg.
     registered.append(register_smart_money_job(scheduler, db_path))
+    # Short-squeeze detector (daily 18:40): deep 15d fall + rising delivery + price turning
+    # up → short_squeeze candidates (Week 24; SLB confirmer deferred). Gated dispatch.
+    registered.append(register_short_squeeze_job(scheduler, db_path))
     # Morning brief: 09:00 IST on trading days — one Telegram message with global
     # cues, GIFT-implied open, regime + posture, overnight events, expiry and
     # Nifty pivot S/R (Phase 2, Week 9).

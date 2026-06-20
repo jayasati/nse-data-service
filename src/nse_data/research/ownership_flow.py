@@ -50,29 +50,38 @@ def block_flow(conn: sqlite3.Connection, symbol: str, *, days: int = 90) -> dict
     ref = _ref_date(conn)
     if ref is None:
         return None
+    from ..smart_money.tiers import load_tiers, tier_of
     cutoff = ref - timedelta(days=days)
     rows = conn.execute(
-        "SELECT deal_date, buy_sell, quantity, weighted_avg_price FROM raw_large_deals "
+        "SELECT deal_date, buy_sell, quantity, weighted_avg_price, client_name FROM raw_large_deals "
         "WHERE symbol=? AND deal_type IN ('block','bulk') AND buy_sell IN ('BUY','SELL')",
         (symbol,)).fetchall()
-    buy_v = sell_v = 0.0
+    tiers = load_tiers()
+    buy_v = sell_v = tier1_net = tier2_net = 0.0
     buy_n = sell_n = 0
-    for dd, bs, qty, watp in rows:
+    for dd, bs, qty, watp, client in rows:
         d = _nse_date(dd)
         if d is None or d < cutoff:
             continue
         val = (qty * watp / 1e7) if (qty and watp) else 0.0      # ₹ crore
+        signed = val if bs == "BUY" else -val
         if bs == "BUY":
             buy_n += 1
             buy_v += val
         else:
             sell_n += 1
             sell_v += val
+        t = tier_of(client, tiers)                               # W24 tiering
+        if t == "tier1":
+            tier1_net += signed
+        elif t == "tier2":
+            tier2_net += signed
     if buy_n + sell_n == 0:
         return None
     return {"days": days, "buy_deals": buy_n, "sell_deals": sell_n,
             "buy_value_cr": round(buy_v, 1), "sell_value_cr": round(sell_v, 1),
-            "net_value_cr": round(buy_v - sell_v, 1)}
+            "net_value_cr": round(buy_v - sell_v, 1),
+            "tier1_net_cr": round(tier1_net, 1), "tier2_net_cr": round(tier2_net, 1)}
 
 
 def insider_flow(conn: sqlite3.Connection, symbol: str, *, days: int = 180) -> dict | None:
