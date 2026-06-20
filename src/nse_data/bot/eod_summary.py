@@ -49,7 +49,8 @@ def _top_movers(conn: sqlite3.Connection) -> str:
     try:
         rows = conn.execute(
             "SELECT symbol, direction, pct_change FROM raw_market_movers "
-            "WHERE as_of=(SELECT MAX(as_of) FROM raw_market_movers) AND pct_change IS NOT NULL"
+            "WHERE as_of=(SELECT MAX(as_of) FROM raw_market_movers) AND pct_change IS NOT NULL "
+            "AND symbol NOT LIKE '%-%'"          # drop rights-entitlements / odd series (±40% noise)
         ).fetchall()
     except sqlite3.OperationalError:
         return ""
