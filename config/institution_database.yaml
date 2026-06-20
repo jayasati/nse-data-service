@@ -1,0 +1,34 @@
+# Institution tiers (FEATURE_CHECKLIST Week 22, task 22.6) — used to tier block/bulk deals
+# (R11 ownership flows + smart-money score). Matched case-insensitively as substrings of the
+# deal client_name. Not exhaustive — extend as patterns recur in raw_large_deals.client_name.
+tier1:
+  - LIC
+  - SBI Mutual Fund
+  - HDFC Mutual Fund
+  - ICICI Prudential
+  - Kotak Mahindra Mutual
+  - Nippon Life
+  - Axis Mutual Fund
+  - Goldman Sachs
+  - Morgan Stanley
+  - BofA Securities
+  - Citigroup
+  - Jefferies
+  - Nomura
+  - Temasek
+  - GIC
+  - Norges Bank
+  - CPPIB
+  - Government Pension Fund
+  - Vanguard
+  - BlackRock
+tier2:
+  - Motilal Oswal
+  - DSP Mutual Fund
+  - Mirae Asset
+  - Tata Mutual Fund
+  - Franklin Templeton
+  - Aditya Birla Sun Life
+  - Edelweiss
+  - Whiteoak
+  - Quant Mutual Fund

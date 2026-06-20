@@ -385,6 +385,14 @@ endpoints:
     table: raw_fno_ban
     enabled: true
 
+  participant_oi:
+    collector: nse_data.collectors.participant_oi:ParticipantOi
+    response: text
+    cadence: daily
+    run_at: "19:00"          # NSE publishes the participant report after close
+    table: raw_participant_oi
+    enabled: true
+
   index_members:
     collector: nse_data.collectors.index_members:IndexMembers
     response: json
