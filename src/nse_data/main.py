@@ -36,6 +36,7 @@ from .profile.builder import register_profile_builder
 from .indicators.pre_market_loader import register_pre_market_loader
 from .bot.morning_brief import register_morning_brief
 from .bot.paper_digest import register_paper_digest_job
+from .bot.eod_summary import register_eod_summary
 from .events.calendar import register_calendar_job
 from .events.consensus_job import register_consensus_job
 from .events.pre_event_risk import register_pre_event_risk_job
@@ -167,6 +168,9 @@ def main() -> int:
     # cues, GIFT-implied open, regime + posture, overnight events, expiry and
     # Nifty pivot S/R (Phase 2, Week 9).
     registered.append(register_morning_brief(scheduler, db_path))
+    # EOD summary: 18:00 IST on trading days — close, sectors, today's signals + paper
+    # activity, tomorrow's events. Sends directly (ungated), the bookend to the brief (W27).
+    registered.append(register_eod_summary(scheduler, db_path))
     # Weekly paper-book digest to Telegram (Mon 08:30 IST) — pushes the P4 forward
     # track record (open positions / expectancy / R9 verdict / progress) so the loop
     # can be monitored without SSHing in (PROFITABILITY_PLAN P4).

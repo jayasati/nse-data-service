@@ -102,7 +102,20 @@ def _strategy_block(rows: list[tuple]) -> dict:
             "win_rate": round(sum(1 for x in v if x > 0) / len(v), 2)}
         for k, v in sorted(by_reason.items())
     }
+    m["health"] = _health(m)        # P9.1 green/amber/red scorecard
     return m
+
+
+def _health(m: dict) -> str:
+    """Strategy-health scorecard (P9.1): green win>55%+PF>1.3 · red win<45% or PF<1.0 · else amber."""
+    n, wr, pf = m["n"], m["win_rate"], m["profit_factor"]
+    if n < 10:
+        return "insufficient"
+    if (wr is not None and wr < 0.45) or (pf is not None and pf < 1.0):
+        return "red"
+    if (wr is not None and wr > 0.55) and (pf is None or pf > 1.3):
+        return "green"
+    return "amber"
 
 
 def report(conn: sqlite3.Connection) -> dict:
@@ -121,6 +134,9 @@ def report(conn: sqlite3.Connection) -> dict:
         by_strat.setdefault(strat or "?", []).append((reason, net, ed, xd, r))
     for strat, srows in by_strat.items():
         out["strategies"][strat] = _strategy_block(srows)
+    # P9.1 kill list — strategies in the red zone with a meaningful sample
+    out["kill_list"] = [s for s, b in out["strategies"].items()
+                        if b.get("health") == "red" and b.get("n", 0) >= 50]
 
     # R9 — honest validation: trial count = #strategies tried; sr_variance estimated from
     # the dispersion of their realised Sharpes (so DSR deflates for the multi-strategy search).
@@ -193,7 +209,9 @@ def format_report(rep: dict) -> str:
                      f"Max DD: {m['max_drawdown']:.2f}%")
         verdict = ("POSITIVE expectancy" if (m["expectancy"] or 0) > 0 else "NEGATIVE expectancy")
         warn = "" if m["n"] >= 30 else "  ⚠ < 30 trades — not yet significant"
-        lines.append(f"    → {verdict}{warn}")
+        health = m.get("health", "")
+        glyph = {"green": "🟢", "amber": "🟡", "red": "🔴"}.get(health, "⚪")
+        lines.append(f"    → {verdict}  {glyph} {health}{warn}")
         val = m.get("validation")
         if val:
             extra = ""

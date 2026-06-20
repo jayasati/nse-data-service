@@ -84,6 +84,19 @@ def test_report_groups_by_strategy_and_handles_open():
     assert lean["validation"]["n"] == 2
 
 
+def test_health_scorecard_and_kill_list():
+    # a clearly losing strategy with a meaningful sample → red + on the kill list
+    rows = [("L%d" % i, "qvm", "closed", -2.0 if i % 3 else 1.0, "stop", "2026-01-01",
+             "2026-01-05", -0.5) for i in range(60)]                       # ~33% win, PF < 1
+    conn = _book(rows)
+    rep = pr.report(conn)
+    qvm = rep["strategies"]["qvm"]
+    assert qvm["health"] == "red" and "qvm" in rep["kill_list"]
+    # too few trades → insufficient, never on the kill list
+    rep2 = pr.report(_book([("A", "lean", "closed", 5.0, "t_out", "2026-01-01", "2026-01-03", 1.0)]))
+    assert rep2["strategies"]["lean"]["health"] == "insufficient" and rep2["kill_list"] == []
+
+
 def test_report_empty_book():
     conn = sqlite3.connect(":memory:")
     conn.executescript(_DDL)
