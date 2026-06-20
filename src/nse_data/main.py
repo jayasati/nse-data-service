@@ -35,6 +35,7 @@ from .parsers.rating_extractor import register_rating_job
 from .profile.builder import register_profile_builder
 from .indicators.pre_market_loader import register_pre_market_loader
 from .bot.morning_brief import register_morning_brief
+from .bot.paper_digest import register_paper_digest_job
 from .events.calendar import register_calendar_job
 from .events.consensus_job import register_consensus_job
 from .events.pre_event_risk import register_pre_event_risk_job
@@ -150,6 +151,10 @@ def main() -> int:
     # cues, GIFT-implied open, regime + posture, overnight events, expiry and
     # Nifty pivot S/R (Phase 2, Week 9).
     registered.append(register_morning_brief(scheduler, db_path))
+    # Weekly paper-book digest to Telegram (Mon 08:30 IST) — pushes the P4 forward
+    # track record (open positions / expectancy / R9 verdict / progress) so the loop
+    # can be monitored without SSHing in (PROFITABILITY_PLAN P4).
+    registered.append(register_paper_digest_job(scheduler, db_path))
     # Live watchlist: every 15 min, refreshes the dynamic watchlist (rating/news/
     # OI-spurt/52wh triggers) that the live universe adds to the F&O core (Phase 4).
     registered.append(register_watchlist_job(scheduler, db_path))
