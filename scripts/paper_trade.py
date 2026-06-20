@@ -1,152 +1,46 @@
-"""Daily paper-trade / live-signal engine. Runs one or more strategies in parallel,
-each accumulating an INDEPENDENT forward, out-of-sample track record in paper_book
-(tagged by `strategy`) — the gate no backtest can replace.
+"""Daily paper-trade / live-signal CLI. Thin wrapper over
+`nse_data.research.paper_trade` — runs one or more strategies, each accumulating an
+INDEPENDENT forward, out-of-sample track record in paper_book (tagged by `strategy`).
 
-Strategies:
-  qvm                — the validated Q+V+Momentum dynamic (survivorship-corrected
-                       +30% CAGR / Sharpe ~1.5); the live default.
-  buyscore_adaptive  — the regime-adaptive integrated Buy Score (grand-prompt v2);
-                       backtest leaned positive in the practical range but NOT certified
-                       (worse drawdown, lost 1/3 sub-periods) → tracked forward to settle it.
-
-Each run (after the EOD candle update): rebuild the point-in-time eligible universe,
-score each strategy over it, then drive ITS positions through the same state machine —
-  BUY  : eligible name not held whose score ≥ T_in
-  SELL : held name whose score < T_out, OR trails `trail` off its held-peak,
-         OR hit max-hold / stop / dropped from the eligible+scored set.
+The service runs this automatically every trading day at 19:15 IST
+(`register_paper_trade_job`); this CLI is for manual/ad-hoc runs and dry-runs.
 
     PYTHONPATH=src .venv/bin/python -u scripts/paper_trade.py                 # all strategies
-    PYTHONPATH=src .venv/bin/python -u scripts/paper_trade.py --strategies qvm
+    PYTHONPATH=src .venv/bin/python -u scripts/paper_trade.py --strategies lean
+    PYTHONPATH=src .venv/bin/python -u scripts/paper_trade.py --dry-run       # report only
 """
 from __future__ import annotations
 
 import argparse
-import datetime as _dt
-import statistics as st
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-WIN, MIN_DAYS, MIN_TURN_CR, MAX_VOL = 252, 200, 5.0, 50.0
-QVM_ENGINES = ("quality", "valuation", "momentum")
 
-
-def _d(s):
-    return _dt.date.fromisoformat(s)
-
-
-def _score_qvm(conn, eligible, ep, sector_of) -> dict:
-    """Q+V+Mom composite (mean of percentile-within-sector engine scores), point-in
-    -time. Requires a fundamental (Q or V) so funds/ETFs (momentum-only) are excluded."""
-    import importlib
-    engs = [importlib.import_module(f"nse_data.research.{e}_engine") for e in QVM_ENGINES]
-    per = [m.score_universe(conn, eligible, ep, sector_of) for m in engs]
-    fund_idx = [i for i, n in enumerate(QVM_ENGINES) if n in ("quality", "valuation")]
-    out = {}
-    for sym in eligible:
-        vals = [p[sym]["score"] for p in per if sym in p]
-        if vals and any(sym in per[i] for i in fund_idx):
-            out[sym] = round(sum(vals) / len(vals), 1)
-    return out
-
-
-def _score_buyscore_adaptive(conn, eligible, ep, sector_of) -> dict:
-    """Regime-adaptive integrated Buy Score (already fund/ETF-guarded)."""
-    from nse_data.research import buy_score_engine_adaptive as bsa
-    return {s: round(r["score"], 1) for s, r in bsa.score_universe(conn, eligible, ep, sector_of).items()}
-
-
-def _score_lean(conn, eligible, ep, sector_of) -> dict:
-    """OOS-VALIDATED Lean score = equal-weight mean of Valuation + Surprise — the only two
-    factors that survived cross-regime OOS (2023-24 + 2025-26; composite IC +0.095/+0.058).
-    This is the forward, out-of-sample test the whole investigation pointed to. Requires
-    Valuation present (so funds/ETFs are excluded)."""
-    from nse_data.research import valuation_engine as ve, surprise_engine as se
-    from nse_data.research.buy_score import lean_raw
-    val = ve.score_universe(conn, eligible, ep, sector_of)
-    sur = se.score_universe(conn, eligible, ep, sector_of)
-    out = {}
-    for sym in eligible:
-        s, parts = lean_raw({"valuation": val.get(sym, {}).get("score"),
-                             "surprise": sur.get(sym, {}).get("score")})
-        if s is not None and "valuation" in parts:
-            out[sym] = round(s, 1)
-    return out
-
-
-STRATEGIES = {
-    "qvm": (_score_qvm, "Q+V+Mom"),
-    "buyscore_adaptive": (_score_buyscore_adaptive, "BuyScore-Adaptive"),
-    "lean": (_score_lean, "Lean (Val+Surprise · OOS-validated)"),
-}
-
-
-def _run_strategy(conn, key, label, score, today, args, price_now, risk_tag):
-    """Drive one strategy's paper_book positions through the state machine + report."""
-    open_rows = conn.execute(
-        "SELECT id, symbol, entry_date, entry_px, peak_score FROM paper_book "
-        "WHERE status='open' AND strategy=?", (key,)).fetchall()
-    held = {r[1] for r in open_rows}
-    now = int(time.time())
-    sells, buys = [], []
-
-    for pid, sym, entry_date, entry_px, peak in open_rows:
-        px = price_now(sym)
-        sc = score.get(sym)
-        peak = max(peak or 0.0, sc if sc is not None else (peak or 0.0))
-        hd = (_d(today) - _d(entry_date)).days
-        gross = ((px / entry_px - 1) * 100) if (px and entry_px) else 0.0
-        reason = ("dropped" if sc is None else "t_out" if sc < args.t_out
-                  else "trail" if peak - sc >= args.trail else "stop" if gross <= args.stop
-                  else "max_hold" if hd >= args.max_hold else None)
-        if reason:
-            net = gross - args.cost
-            sells.append((sym, hd, net, reason, sc))
-            if not args.dry_run:
-                conn.execute(
-                    "UPDATE paper_book SET status='closed', exit_date=?, exit_px=?, exit_reason=?, "
-                    "net_pct=?, last_score=?, peak_score=?, updated_at=? WHERE id=?",
-                    (today, px, reason, round(net, 2), sc, round(peak, 1), now, pid))
-        elif not args.dry_run:
-            conn.execute("UPDATE paper_book SET peak_score=?, last_score=?, updated_at=? WHERE id=?",
-                         (round(peak, 1), sc, now, pid))
-
-    for sym, sc in sorted(score.items(), key=lambda kv: -kv[1]):
-        if sc >= args.t_in and sym not in held:
-            buys.append((sym, sc, price_now(sym)))
-            if not args.dry_run:
-                conn.execute(
-                    "INSERT INTO paper_book (symbol, entry_date, entry_px, entry_score, "
-                    "peak_score, last_score, status, strategy, updated_at) "
-                    "VALUES (?,?,?,?,?,?, 'open', ?, ?)",
-                    (sym, today, price_now(sym), sc, sc, sc, key, now))
-    if not args.dry_run:
-        conn.commit()
-
-    print(f"\n=== {label} [{key}]  as-of {today}  scored={len(score)} "
-          f"{'[DRY-RUN]' if args.dry_run else ''} ===")
-    print(f"BUY ({len(buys)}):  " + (", ".join(f"{s}({sc:.0f}){risk_tag(s)}" for s, sc, _ in buys[:20]) or "—"))
-    print(f"SELL ({len(sells)}): " + (", ".join(f"{s} {net:+.1f}% [{r}]" for s, _h, net, r, _sc in sells) or "—"))
-    cur = conn.execute(
-        "SELECT symbol, entry_date, entry_px, last_score FROM paper_book "
-        "WHERE status='open' AND strategy=? ORDER BY entry_date", (key,)).fetchall()
-    print(f"HOLDINGS ({len(cur)}):")
-    for sym, ed, epx, ls in cur[:40]:
-        px = price_now(sym)
-        unr = ((px / epx - 1) * 100) if (px and epx) else 0.0
-        print(f"  {sym:12s} in {ed} ({(_d(today)-_d(ed)).days:>3}d)  {unr:+6.1f}%  score={ls}{risk_tag(sym)}")
-    closed = [r[0] for r in conn.execute(
-        "SELECT net_pct FROM paper_book WHERE status='closed' AND net_pct IS NOT NULL "
-        "AND strategy=?", (key,)).fetchall()]
-    if closed:
-        wins = [x for x in closed if x > 0]
-        print(f"CLOSED: {len(closed)} trades  win={100*len(wins)/len(closed):.0f}%  "
-              f"avg={sum(closed)/len(closed):+.2f}%  total={sum(closed):+.1f}%")
+def _print_strategy(today: str, params, s: dict) -> None:
+    dry = "[DRY-RUN]" if params.dry_run else ""
+    print(f"\n=== {s['label']} [{s['key']}]  as-of {today}  scored={s['scored']} {dry} ===")
+    print(f"caps: opened {len(s['buys'])} of {s['eligible_buys']} eligible "
+          f"(capped {s['capped']})  ·  heat {s['heat_used_pct']}% of cap")
+    print("BUY ({}):  ".format(len(s["buys"]))
+          + (", ".join(f"{sym}({sc:.0f})" for sym, sc in s["buys"][:20]) or "—"))
+    print("SELL ({}): ".format(len(s["sells"]))
+          + (", ".join(f"{sym} {net:+.1f}% [{r}]" for sym, net, r in s["sells"]) or "—"))
+    print(f"HOLDINGS ({s['n_open']}):")
+    for sym, ed, days, unr, ls, rtag in s["holdings"][:40]:
+        print(f"  {sym:12s} in {ed} ({days:>3}d)  {unr:+6.1f}%  score={ls}{rtag}")
+    if s["closed_n"]:
+        print(f"CLOSED: {s['closed_n']} trades  win={s['win_pct']:.0f}%  "
+              f"avg={s['avg_pct']:+.2f}%  total={s['total_pct']:+.1f}%")
 
 
 def main() -> int:
+    from nse_data.research.paper_trade import (
+        STRATEGIES, PaperTradeParams, run_paper_trade,
+    )
+    from nse_data.storage.db import open_db, apply_migrations
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="data/nse.db")
     ap.add_argument("--strategies", default=",".join(STRATEGIES),
@@ -157,65 +51,31 @@ def main() -> int:
     ap.add_argument("--max-hold", type=int, default=120)
     ap.add_argument("--stop", type=float, default=-15.0)
     ap.add_argument("--cost", type=float, default=1.0)
+    ap.add_argument("--capital", type=float, default=1_000_000.0)
+    ap.add_argument("--risk-pct", type=float, default=1.0, help="%% of capital risked per trade")
+    ap.add_argument("--atr-k", type=float, default=2.5, help="stop distance = k x ATR")
+    ap.add_argument("--max-positions", type=int, default=10)
+    ap.add_argument("--heat-pct", type=float, default=10.0, help="max total open risk %% of capital")
+    ap.add_argument("--sector-max", type=int, default=3, help="max concurrent positions per sector")
     ap.add_argument("--dry-run", action="store_true", help="report signals, don't write the book")
     args = ap.parse_args()
-
-    from nse_data.storage.db import open_db, apply_migrations
-    from nse_data.fundamentals.sectors import sector_class_for
-    from nse_data.research.risk_engine import risk_raw
 
     conn = open_db(args.db)
     conn.execute("PRAGMA busy_timeout=60000")
     apply_migrations(conn)
 
-    today, ep = conn.execute(
-        "SELECT date(ts,'unixepoch','+05:30') d, MAX(ts) FROM raw_intraday_candles "
-        "WHERE symbol='NIFTYBEES' AND interval='day' GROUP BY d ORDER BY d DESC LIMIT 1").fetchone()
+    params = PaperTradeParams(
+        t_in=args.t_in, t_out=args.t_out, trail=args.trail, max_hold=args.max_hold,
+        stop=args.stop, cost=args.cost, dry_run=args.dry_run,
+        capital=args.capital, risk_pct=args.risk_pct, atr_k=args.atr_k,
+        max_positions=args.max_positions, heat_pct=args.heat_pct, sector_max=args.sector_max,
+    )
+    keys = [s.strip() for s in args.strategies.split(",") if s.strip() in STRATEGIES]
+    report = run_paper_trade(conn, strategies=keys, params=params)
 
-    sec_cache: dict = {}
-    def sector_of(s):
-        if s not in sec_cache:
-            sec_cache[s] = sector_class_for(s).value
-        return sec_cache[s]
-
-    def price_now(sym):
-        r = conn.execute(
-            "SELECT close FROM raw_intraday_candles WHERE symbol=? AND interval='day' "
-            "AND close IS NOT NULL ORDER BY ts DESC LIMIT 1", (sym,)).fetchone()
-        return r[0] if r else None
-
-    # point-in-time eligible universe AS OF today (trailing liquidity + vol), ETFs out.
-    eligible = []
-    for (sym,) in conn.execute("SELECT symbol FROM tradeable_universe WHERE grade != 'etf'"):
-        bars = conn.execute(
-            "SELECT close, volume FROM raw_intraday_candles WHERE symbol=? AND interval='day' "
-            "ORDER BY ts DESC LIMIT ?", (sym, WIN)).fetchall()
-        if len(bars) < MIN_DAYS:
-            continue
-        tov = [(c * v / 1e7) for c, v in bars if c and v]
-        if not tov or st.median(tov) < MIN_TURN_CR:
-            continue
-        cl = [c for c, _ in bars if c]
-        rets = [cl[i] / cl[i + 1] - 1 for i in range(len(cl) - 1) if cl[i + 1]]
-        if len(rets) > 5 and st.pstdev(rets) * (252 ** 0.5) * 100 >= MAX_VOL:
-            continue
-        eligible.append(sym)
-
-    _rk: dict = {}
-    def risk_tag(sym):
-        if sym not in _rk:
-            _rk[sym] = risk_raw(conn, sym, ep)
-        r = _rk[sym]
-        if r["score"] >= 100 or not r["components"]:
-            return ""
-        top = max(r["components"], key=r["components"].get)
-        return f" ⚠risk{r['score']:.0f}[{top}]"
-
-    print(f"paper-trade as-of {today}  eligible={len(eligible)}")
-    for key in [s.strip() for s in args.strategies.split(",") if s.strip() in STRATEGIES]:
-        scorer, label = STRATEGIES[key]
-        score = scorer(conn, eligible, ep, sector_of)
-        _run_strategy(conn, key, label, score, today, args, price_now, risk_tag)
+    print(f"paper-trade as-of {report['today']}  eligible={report['eligible']}")
+    for s in report["strategies"]:
+        _print_strategy(report["today"], params, s)
     conn.close()
     return 0
 

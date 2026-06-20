@@ -54,3 +54,26 @@ def test_slippage_tick_floor_vs_bps():
 def test_invalid_trade_type():
     with pytest.raises(ValueError):
         compute_costs(100.0, 110.0, 10, "sideways")
+
+
+def test_invalid_segment():
+    with pytest.raises(ValueError):
+        compute_costs(100.0, 110.0, 10, "long", segment="futures")
+
+
+def test_delivery_segment_stt_and_stamp():
+    # delivery: STT 0.10% on BOTH legs; stamp 0.015% on buy only.
+    c = compute_costs(500.0, 520.0, 100, "long", segment="delivery")
+    buy_val, sell_val = 50_000.0, 52_000.0
+    assert c.stt == pytest.approx(0.001 * (buy_val + sell_val))   # both legs
+    assert c.stamp_duty == pytest.approx(0.00015 * buy_val)
+    # exchange/sebi/gst formulas are segment-independent
+    assert c.exchange == pytest.approx(0.0000345 * (buy_val + sell_val))
+
+
+def test_delivery_costs_more_than_intraday():
+    # the whole point of R2: a positional book is judged on a higher cost schedule
+    intraday = compute_costs(500.0, 520.0, 100, "long", segment="intraday")
+    delivery = compute_costs(500.0, 520.0, 100, "long", segment="delivery")
+    assert delivery.total_costs > intraday.total_costs
+    assert delivery.gross_pnl == pytest.approx(intraday.gross_pnl)   # gross unchanged

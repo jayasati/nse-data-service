@@ -48,6 +48,7 @@ from .fundamentals.from_results import (
 )
 from .market.regime_job import register_regime_job
 from .research.snapshot_job import register_factor_snapshot_job
+from .research.paper_trade import register_paper_trade_job
 from .market.sector_radar_job import register_sector_radar_job
 from .signals.detect import register_signal_job
 from .signals.watchlist import register_watchlist_job
@@ -161,6 +162,12 @@ def main() -> int:
     # engine's score + composite + sector rank + regime, point-in-time, plus a
     # top-up of matured forward-return labels (P8 — the ML/factor-research matrix).
     registered.append(register_factor_snapshot_job(scheduler, db_path))
+    # Daily 19:15 paper-trade pass (after candles + the 18:45 snapshot): drives each
+    # ranking strategy's positions (lean / qvm / buyscore_adaptive) through the
+    # state machine into paper_book, so the forward, out-of-sample track record
+    # advances every session with no human in the loop (P4 — accumulate a quarter,
+    # then promote). Writes paper_book only; dispatches nothing live (G12 stays shut).
+    registered.append(register_paper_trade_job(scheduler, db_path))
     # Per-minute intraday pattern scan (inside bar, divergence, S/R proximity…)
     # → patterns table, feeding the confidence scorer (Week 15).
     registered.append(register_patterns_job(scheduler, db_path))

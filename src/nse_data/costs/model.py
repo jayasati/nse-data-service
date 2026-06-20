@@ -1,26 +1,29 @@
 """
-Intraday equity cost model (FEATURE_CHECKLIST Week 5, task 5.2).
+Equity cost model (FEATURE_CHECKLIST Week 5, task 5.2; delivery segment added in
+PROFITABILITY_PLAN R2).
 
 A pure function: given the two legs of a round-trip trade it returns gross P&L,
 total costs broken down by component, and net P&L. No DB, no I/O — the paper
-tracker (task 5.3) calls this when it closes a trade, and the backtester can
-reuse it for apples-to-apples comparisons.
+tracker (task 5.3) and the swing/positional paper_trade loop call this when they
+close a trade, and the backtester reuses it for apples-to-apples comparisons.
 
-The numbers are the standard Indian discount-broker intraday-equity schedule
-(Zerodha-style), which is what the checklist specifies:
+Two segments, because the statutory schedule differs (this is why a flat % cost
+mis-judges a positional book): the deltas are STT and stamp duty.
 
-  Brokerage       min(₹20, 0.03% × turnover) per leg
-  STT             0.025% of the SELL value only (intraday equity)
-  Exchange (NSE)  0.00345% of turnover per leg
-  SEBI            ₹10 per crore (0.0001%) of total turnover
-  Stamp duty      0.003% of the BUY value only
-  GST             18% of (brokerage + exchange + SEBI)
-  Slippage        max(1 tick, 1 bps × price) per share, charged on both legs
+  Component       intraday                     delivery (CNC, multi-day hold)
+  Brokerage       min(₹20, 0.03%) per leg      min(₹20, 0.03%) per leg (conservative)
+  STT             0.025% of SELL only          0.10% of BOTH legs
+  Exchange (NSE)  0.00345% per leg             0.00345% per leg
+  SEBI            ₹10 per crore                ₹10 per crore
+  Stamp duty      0.003% of BUY only           0.015% of BUY only
+  GST             18% of (brokerage+exch+SEBI) 18% of (brokerage+exch+SEBI)
+  Slippage        max(1 tick, 1 bps) per share, both legs (same)
 
 Both LONG (buy-then-sell) and SHORT (sell-then-buy) round trips are supported;
 they pay the same statutory charges but the gross P&L sign flips. "Buy value"
-and "sell value" are leg roles, not time order — STT (sell) and stamp duty
-(buy) always attach to the correct economic leg regardless of direction.
+and "sell value" are leg roles, not time order — STT and stamp duty always
+attach to the correct economic leg regardless of direction. `segment` defaults
+to 'intraday' so existing callers are unchanged; swing/positional pass 'delivery'.
 """
 
 from __future__ import annotations
@@ -31,9 +34,11 @@ from dataclasses import dataclass
 BROKERAGE_RATE = 0.0003          # 0.03% per leg
 BROKERAGE_CAP = 20.0             # ₹20 per leg cap
 STT_RATE = 0.00025              # 0.025% of sell value (intraday)
+STT_DELIVERY_RATE = 0.001       # 0.10% of EACH leg (delivery equity)
 EXCHANGE_RATE = 0.0000345       # 0.00345% per leg (NSE)
 SEBI_RATE = 0.000001            # ₹10 per crore = 10 / 1e7 of turnover
-STAMP_RATE = 0.00003            # 0.003% of buy value
+STAMP_RATE = 0.00003            # 0.003% of buy value (intraday)
+STAMP_DELIVERY_RATE = 0.00015   # 0.015% of buy value (delivery)
 GST_RATE = 0.18                 # 18% on brokerage + exchange + SEBI
 
 # --- slippage ---
@@ -62,17 +67,22 @@ def compute_costs(
     exit_price: float,
     quantity: int,
     trade_type: str = "long",
+    segment: str = "intraday",
 ) -> TradeCosts:
-    """Cost-and-P&L breakdown for a round-trip intraday equity trade.
+    """Cost-and-P&L breakdown for a round-trip equity trade.
 
     `trade_type` is 'long' (buy at entry, sell at exit) or 'short' (sell at
     entry, buy back at exit). The statutory charges are direction-independent;
     only which leg is the "sell" (STT) and which is the "buy" (stamp duty) — and
-    the gross-P&L sign — depend on it.
+    the gross-P&L sign — depend on it. `segment` is 'intraday' or 'delivery'
+    (CNC, multi-day holds) and changes the STT and stamp-duty schedule.
     """
     direction = trade_type.lower()
     if direction not in ("long", "short"):
         raise ValueError(f"trade_type must be 'long' or 'short', got {trade_type!r}")
+    seg = segment.lower()
+    if seg not in ("intraday", "delivery"):
+        raise ValueError(f"segment must be 'intraday' or 'delivery', got {segment!r}")
 
     entry_value = entry_price * quantity
     exit_value = exit_price * quantity
@@ -86,10 +96,14 @@ def compute_costs(
 
     # Brokerage is per leg, each leg capped independently.
     brokerage = _leg_brokerage(buy_value) + _leg_brokerage(sell_value)
-    stt = STT_RATE * sell_value
+    if seg == "delivery":
+        stt = STT_DELIVERY_RATE * (buy_value + sell_value)   # 0.10% both legs
+        stamp_duty = STAMP_DELIVERY_RATE * buy_value         # 0.015% buy
+    else:
+        stt = STT_RATE * sell_value                          # 0.025% sell only
+        stamp_duty = STAMP_RATE * buy_value                  # 0.003% buy
     exchange = EXCHANGE_RATE * (buy_value + sell_value)
     sebi = SEBI_RATE * (buy_value + sell_value)
-    stamp_duty = STAMP_RATE * buy_value
     gst = GST_RATE * (brokerage + exchange + sebi)
     slippage = _slippage(entry_price, quantity) + _slippage(exit_price, quantity)
 
