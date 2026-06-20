@@ -172,6 +172,22 @@ def test_dry_run_writes_nothing():
     assert conn.execute("SELECT COUNT(*) FROM paper_book").fetchone()[0] == 0
 
 
+def test_lean_runs_in_coverage_mode():
+    p = pt._effective_params("lean", pt.PaperTradeParams())
+    assert p.max_positions == 75 and p.heat_pct == 100.0 and p.sector_max == 25   # broad coverage
+
+
+def test_other_strategies_keep_portfolio_caps():
+    p = pt._effective_params("qvm", pt.PaperTradeParams())
+    assert p.max_positions == 10 and p.heat_pct == 10.0 and p.sector_max == 3      # R5 defaults
+
+
+def test_explicit_flag_overrides_coverage_default():
+    # a caller who sets max_positions explicitly wins; the other coverage caps still apply
+    p = pt._effective_params("lean", pt.PaperTradeParams(max_positions=5))
+    assert p.max_positions == 5 and p.heat_pct == 100.0 and p.sector_max == 25
+
+
 def test_max_positions_cap_prefers_top_scores():
     conn = _conn()
     score = {f"S{i}": 90.0 - i for i in range(5)}        # S0=90 … S4=86, all ≥ t_in

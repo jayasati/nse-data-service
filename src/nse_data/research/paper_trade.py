@@ -28,7 +28,7 @@ from __future__ import annotations
 import datetime as _dt
 import statistics as st
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import structlog
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -133,6 +133,26 @@ STRATEGIES = {
     "buyscore_adaptive": (_score_buyscore_adaptive, "BuyScore-Adaptive"),
     "lean": (_score_lean, "Lean (Val+Surprise · OOS-validated)"),
 }
+
+# Per-strategy cap overrides. `lean` is the OOS-validated signal under live observation, so it
+# runs in COVERAGE mode — track every qualifying name (broad coverage → more samples, faster
+# significance, no top-10 selection bias) rather than a constrained 10-name portfolio. Per-trade
+# ATR sizing is unchanged (R-multiples still measured); only the count/heat/sector caps relax.
+# qvm/buyscore stay in realistic portfolio mode (the R5 defaults).
+STRATEGY_OVERRIDES: dict[str, dict] = {
+    "lean": {"max_positions": 75, "heat_pct": 100.0, "sector_max": 25},
+}
+
+
+def _effective_params(key: str, params: PaperTradeParams) -> PaperTradeParams:
+    """Apply a strategy's coverage override — but only to cap fields the caller left at the
+    default, so an explicit CLI flag (e.g. --max-positions) still wins."""
+    ov = STRATEGY_OVERRIDES.get(key)
+    if not ov:
+        return params
+    defaults = PaperTradeParams()
+    applied = {k: v for k, v in ov.items() if getattr(params, k) == getattr(defaults, k)}
+    return replace(params, **applied) if applied else params
 
 
 def _size_position(entry_px, atr_pct, params: PaperTradeParams):
@@ -372,8 +392,9 @@ def run_paper_trade(conn, *, strategies=None, params: PaperTradeParams | None = 
     for key in keys:
         scorer, label = STRATEGIES[key]
         score = scorer(conn, eligible, ep, sector_of)
+        sp = _effective_params(key, params)        # lean → coverage caps; others → portfolio caps
         summaries.append(
-            _run_strategy(conn, key, label, score, today, params, price_now, risk_tag,
+            _run_strategy(conn, key, label, score, today, sp, price_now, risk_tag,
                           atr_of, sector_of, chand_of))
     return {"today": today, "eligible": len(eligible), "strategies": summaries}
 
