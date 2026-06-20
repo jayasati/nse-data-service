@@ -25,6 +25,7 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=True)
 import structlog
 
 from .fundamentals.quality_score import register_quality_job
+from .fundamentals.strength_scores import register_strength_job
 from .indicators.delivery_tracker import register_delivery_job
 from .indicators.levels import register_levels_job
 from .indicators.live_job import register_live_job
@@ -158,6 +159,10 @@ def main() -> int:
     registered.append(register_delivery_job(scheduler, db_path))
     # Nightly fundamentals quality score (18:00) — gates + nudges signals (Week 14).
     registered.append(register_quality_job(scheduler, db_path))
+    # Nightly financial-strength screens (18:05) → stock_strength: Piotroski F-score
+    # + balance-sheet score (interest coverage / current ratio / D-E / debt trend) +
+    # distress flags, for the pre-buy conviction card (PROFITABILITY_PLAN R7+R8).
+    registered.append(register_strength_job(scheduler, db_path))
     # Daily 18:45 factor snapshot → factor_snapshot feature store: every ranking
     # engine's score + composite + sector rank + regime, point-in-time, plus a
     # top-up of matured forward-return labels (P8 — the ML/factor-research matrix).

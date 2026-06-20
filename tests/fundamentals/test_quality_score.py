@@ -86,3 +86,36 @@ def test_run_quality_pass_persists():
         "SELECT quality_score FROM stock_fundamentals WHERE symbol='GOOD'"
     ).fetchone()[0]
     assert score and score > 70
+
+
+def test_run_quality_pass_reads_pledge_and_deducts():
+    # R3: pledge lives in raw_shareholding_quarterly; gather_metrics must read it,
+    # persist it, and the score must drop vs the same name with no pledge.
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE raw_fundamentals_screener (symbol TEXT, as_of_date TEXT,
+            roce REAL, roe REAL, stock_pe REAL, market_cap REAL,
+            debt_to_equity REAL, sales_cagr_3y REAL);
+        CREATE TABLE raw_shareholding_quarterly (symbol TEXT, qe_date TEXT,
+            promoter_pledge_pct REAL);
+        CREATE TABLE stock_fundamentals (symbol TEXT PRIMARY KEY, quality_score REAL,
+            revenue_growth_yoy REAL, roe REAL, roce REAL, debt_equity REAL,
+            pe_ratio REAL, market_cap REAL, promoter_holding REAL,
+            promoter_pledge REAL, loss_making INT, high_debt INT, updated_date TEXT);
+        INSERT INTO raw_fundamentals_screener VALUES
+            ('CLEAN','2026-06-01', 25, 18, 15, 50000, 0.2, 20),
+            ('PLEDGED','2026-06-01', 25, 18, 15, 50000, 0.2, 20);
+        -- newest pledged quarter should win; an older clean quarter is ignored
+        INSERT INTO raw_shareholding_quarterly VALUES
+            ('PLEDGED','2026-03-31', 40),
+            ('PLEDGED','2025-12-31', 0);
+    """)
+    conn.commit()
+    qs.run_quality_pass(conn, ["CLEAN", "PLEDGED"])
+    clean, pledged, pledge_col = conn.execute(
+        "SELECT (SELECT quality_score FROM stock_fundamentals WHERE symbol='CLEAN'), "
+        "(SELECT quality_score FROM stock_fundamentals WHERE symbol='PLEDGED'), "
+        "(SELECT promoter_pledge FROM stock_fundamentals WHERE symbol='PLEDGED')"
+    ).fetchone()
+    assert pledge_col == 40                       # the column is no longer always NULL
+    assert pledged < clean                        # >25% pledge deducts from the score

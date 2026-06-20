@@ -8,9 +8,10 @@ so a symbol with only P/E + market-cap still gets a score rather than a phantom 
 nor nudges on it).
 
 Sources: raw_fundamentals_screener (ROE/ROCE/D-E/PE/mcap/3y-sales-CAGR),
-raw_quote_metadata (PE/mcap/sector — for the sector-relative PE), and
-raw_shareholding_pattern (promoter holding). Pledge isn't collected (no column),
-so it's always None for now.
+raw_quote_metadata (PE/mcap/sector — for the sector-relative PE),
+raw_shareholding_pattern (promoter holding), and raw_shareholding_quarterly
+(promoter PLEDGE % from the SHP XBRL — feeds the >25% deduction, mirroring the
+Risk engine). Pledge stays None for symbols the SHP backfill hasn't filled yet.
 
 Pure `compute_quality_score` is unit-tested; the readers + nightly job glue it
 to SQLite.
@@ -207,7 +208,18 @@ def gather_metrics(conn: sqlite3.Connection, symbol: str) -> tuple[dict, str | N
         if row:
             m["promoter_holding"] = row[0]
 
-    m.setdefault("pledge", None)        # not collected yet
+    # Promoter pledge % from the SHP XBRL (same source the Risk engine reads).
+    # Latest quarter with a non-null value; stays None until the backfill fills it.
+    if _has(conn, "raw_shareholding_quarterly"):
+        row = conn.execute(
+            "SELECT promoter_pledge_pct FROM raw_shareholding_quarterly "
+            "WHERE symbol = ? AND promoter_pledge_pct IS NOT NULL "
+            "ORDER BY qe_date DESC LIMIT 1", (symbol,),
+        ).fetchone()
+        if row:
+            m["pledge"] = row[0]
+
+    m.setdefault("pledge", None)
     return m, sector
 
 
