@@ -704,28 +704,29 @@ def _fmt(value) -> str:
 
 def send_telegram(token: str | None, chat_id: str | None, text: str,
                   thread_id: int | None = None) -> bool:
-    """POST one message to Telegram. False (no raise) if unconfigured/failed.
-    `thread_id` routes to a topic (message_thread_id) when the chat has topics."""
-    if not token or not chat_id:
+    """Deliver one message: POST to Telegram AND mirror to ntfy (notify.ntfy_send), so an
+    India-blocked Telegram still reaches you. Returns True if EITHER channel delivered; no
+    raise. `thread_id` routes to a Telegram topic when the chat has topics."""
+    from .notify import ntfy_send
+
+    tg_ok = False
+    if token and chat_id:
+        try:
+            import requests
+            payload: dict = {"chat_id": chat_id, "text": text}
+            if thread_id is not None:
+                payload["message_thread_id"] = thread_id
+            resp = requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=10)
+            tg_ok = resp.status_code == 200
+            if not tg_ok:
+                log.warning("telegram_send_failed", status=resp.status_code, body=resp.text[:200])
+        except Exception:
+            log.exception("telegram_send_error")
+    else:
         log.warning("telegram_not_configured")
-        return False
-    try:
-        import requests
-        payload: dict = {"chat_id": chat_id, "text": text}
-        if thread_id is not None:
-            payload["message_thread_id"] = thread_id
-        resp = requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json=payload,
-            timeout=10,
-        )
-        if resp.status_code != 200:
-            log.warning("telegram_send_failed", status=resp.status_code, body=resp.text[:200])
-            return False
-        return True
-    except Exception:
-        log.exception("telegram_send_error")
-        return False
+    ntfy_ok = ntfy_send(text)                            # mirror to ntfy (no-op if NTFY_TOPIC unset)
+    return tg_ok or ntfy_ok
 
 
 # ============================================================================
