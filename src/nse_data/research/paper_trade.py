@@ -73,6 +73,11 @@ class PaperTradeParams:
     max_positions: int = 10       # max concurrent open positions
     heat_pct: float = 10.0        # max total open risk (Σ risk_rupees) as % of capital
     sector_max: int = 3           # max concurrent positions in one sector
+    # R10 — chandelier trailing exit (close-based): stop ratchets up to HH(window) − k·ATR
+    # as the position gains, locking it in; never moves down. Sits above the initial ATR
+    # stop (the R floor). Research [R5]: wider trails survive costs — validate k on NSE data.
+    trail_atr_k: float = 3.0      # trailing stop distance = k · ATR
+    trail_window: int = 22        # highest-close lookback (bars)
 
 
 def _d(s):
@@ -146,31 +151,53 @@ def _size_position(entry_px, atr_pct, params: PaperTradeParams):
     return stop_px, qty, round(qty * risk_per_share, 2)
 
 
+def _chandelier(conn, sym, atr_pct, params: PaperTradeParams):
+    """Close-based chandelier level = highest close over trail_window × (1 − k·ATR%).
+    None when ATR% or price history is missing. Read each pass; the stored trail_stop
+    ratchets it (never down)."""
+    if not atr_pct or atr_pct <= 0:
+        return None
+    row = conn.execute(
+        "SELECT MAX(close) FROM (SELECT close FROM raw_intraday_candles WHERE symbol=? "
+        "AND interval='day' AND close IS NOT NULL ORDER BY ts DESC LIMIT ?)",
+        (sym, params.trail_window)).fetchone()
+    hh = row[0] if row else None
+    if not hh:
+        return None
+    return round(hh * (1 - min(params.trail_atr_k * atr_pct / 100.0, MAX_STOP_FRAC)), 2)
+
+
 def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
-                  price_now, risk_tag, atr_of, sector_of) -> dict:
+                  price_now, risk_tag, atr_of, sector_of, chand_of) -> dict:
     """Drive one strategy's paper_book positions through the state machine.
 
     Writes BUY/SELL/peak updates to paper_book (unless params.dry_run) and returns a
     structured summary (no printing) for the CLI to render or the job to log. New buys
-    are risk-sized (R4); exits book real net P&L via the delivery cost model (R2). Rows
-    opened before sizing existed (NULL qty) fall back to the flat-% cost path.
+    are risk-sized (R4); a chandelier trailing stop ratchets up to lock gains (R10);
+    exits book real net P&L via the delivery cost model (R2). Rows opened before sizing
+    existed (NULL qty) fall back to the flat-% cost path.
     """
     open_rows = conn.execute(
-        "SELECT id, symbol, entry_date, entry_px, peak_score, stop_px, qty, risk_rupees "
-        "FROM paper_book WHERE status='open' AND strategy=?", (key,)).fetchall()
+        "SELECT id, symbol, entry_date, entry_px, peak_score, stop_px, qty, risk_rupees, "
+        "trail_stop FROM paper_book WHERE status='open' AND strategy=?", (key,)).fetchall()
     held = {r[1] for r in open_rows}
     now = int(time.time())
     sells, buys = [], []
 
-    for pid, sym, entry_date, entry_px, peak, stop_px, qty, risk_rupees in open_rows:
+    for pid, sym, entry_date, entry_px, peak, stop_px, qty, risk_rupees, trail_stop in open_rows:
         px = price_now(sym)
         sc = score.get(sym)
         peak = max(peak or 0.0, sc if sc is not None else (peak or 0.0))
         hd = (_d(today) - _d(entry_date)).days
         gross = ((px / entry_px - 1) * 100) if (px and entry_px) else 0.0
-        hit_stop = (stop_px is not None and px is not None and px <= stop_px) or gross <= params.stop
+        # R10 — chandelier trailing stop, ratcheted (never down) above the initial ATR stop
+        chand = chand_of(sym)
+        eff_trail = max([s for s in (trail_stop, chand) if s is not None], default=None)
+        hit_init = (stop_px is not None and px is not None and px <= stop_px) or gross <= params.stop
+        hit_trail = eff_trail is not None and px is not None and px <= eff_trail
         reason = ("dropped" if sc is None else "t_out" if sc < params.t_out
-                  else "trail" if peak - sc >= params.trail else "stop" if hit_stop
+                  else "trail" if peak - sc >= params.trail else "stop" if hit_init
+                  else "chandelier" if hit_trail
                   else "max_hold" if hd >= params.max_hold else None)
         if reason:
             if qty and entry_px and px:
@@ -189,8 +216,12 @@ def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
                     "WHERE id=?",
                     (today, px, reason, net_pct, net_pnl, r_multiple, sc, round(peak, 1), now, pid))
         elif not params.dry_run:
-            conn.execute("UPDATE paper_book SET peak_score=?, last_score=?, updated_at=? WHERE id=?",
-                         (round(peak, 1), sc, now, pid))
+            new_trail = eff_trail                          # ratchet up, keep at/below price
+            if new_trail is not None and px is not None:
+                new_trail = round(min(new_trail, px), 2)
+            conn.execute(
+                "UPDATE paper_book SET peak_score=?, last_score=?, trail_stop=?, updated_at=? "
+                "WHERE id=?", (round(peak, 1), sc, new_trail, now, pid))
 
     # R5 — live-book state from positions that did NOT close this pass, then gate new
     # buys on max-positions / portfolio-heat / per-sector caps (best scores first).
@@ -321,6 +352,9 @@ def run_paper_trade(conn, *, strategies=None, params: PaperTradeParams | None = 
     def atr_of(sym):
         return atr_cache.get(sym)        # ATR% for R4 sizing; None → flat-stop fallback
 
+    def chand_of(sym):
+        return _chandelier(conn, sym, atr_cache.get(sym), params)   # R10 trailing level
+
     eligible = _eligible_universe(conn)
 
     _rk: dict = {}
@@ -340,7 +374,7 @@ def run_paper_trade(conn, *, strategies=None, params: PaperTradeParams | None = 
         score = scorer(conn, eligible, ep, sector_of)
         summaries.append(
             _run_strategy(conn, key, label, score, today, params, price_now, risk_tag,
-                          atr_of, sector_of))
+                          atr_of, sector_of, chand_of))
     return {"today": today, "eligible": len(eligible), "strategies": summaries}
 
 

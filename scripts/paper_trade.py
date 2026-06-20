@@ -57,6 +57,8 @@ def main() -> int:
     ap.add_argument("--max-positions", type=int, default=10)
     ap.add_argument("--heat-pct", type=float, default=10.0, help="max total open risk %% of capital")
     ap.add_argument("--sector-max", type=int, default=3, help="max concurrent positions per sector")
+    ap.add_argument("--trail-atr-k", type=float, default=3.0, help="chandelier trail = k x ATR")
+    ap.add_argument("--trail-window", type=int, default=22, help="chandelier highest-close lookback")
     ap.add_argument("--dry-run", action="store_true", help="report signals, don't write the book")
     args = ap.parse_args()
 
@@ -69,6 +71,7 @@ def main() -> int:
         stop=args.stop, cost=args.cost, dry_run=args.dry_run,
         capital=args.capital, risk_pct=args.risk_pct, atr_k=args.atr_k,
         max_positions=args.max_positions, heat_pct=args.heat_pct, sector_max=args.sector_max,
+        trail_atr_k=args.trail_atr_k, trail_window=args.trail_window,
     )
     keys = [s.strip() for s in args.strategies.split(",") if s.strip() in STRATEGIES]
     report = run_paper_trade(conn, strategies=keys, params=params)

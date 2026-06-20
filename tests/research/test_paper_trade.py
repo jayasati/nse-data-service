@@ -18,7 +18,7 @@ CREATE TABLE paper_book (
   status TEXT NOT NULL DEFAULT 'open',
   exit_date TEXT, exit_px REAL, exit_reason TEXT, net_pct REAL,
   updated_at INTEGER, strategy TEXT NOT NULL DEFAULT 'qvm',
-  stop_px REAL, qty INTEGER, risk_rupees REAL, net_pnl REAL, r_multiple REAL
+  stop_px REAL, qty INTEGER, risk_rupees REAL, net_pnl REAL, r_multiple REAL, trail_stop REAL
 );
 """
 
@@ -29,12 +29,13 @@ def _conn():
     return c
 
 
-def _run(conn, score, today, prices, atr=None, sectors=None, **overrides):
+def _run(conn, score, today, prices, atr=None, sectors=None, chand=None, **overrides):
     params = pt.PaperTradeParams(**overrides)
     return pt._run_strategy(conn, "lean", "Lean", score, today, params,
                             price_now=lambda s: prices.get(s),
                             risk_tag=lambda s: "", atr_of=lambda s: atr,
-                            sector_of=lambda s: (sectors or {}).get(s, "x"))
+                            sector_of=lambda s: (sectors or {}).get(s, "x"),
+                            chand_of=lambda s: chand)
 
 
 def test_buy_opens_and_sizes():
@@ -86,6 +87,37 @@ def test_atr_stop_fires_before_catastrophe_stop():
     assert any(s == "AAA" and r == "stop" for s, _net, r in summ["sells"])
     r = conn.execute("SELECT r_multiple FROM paper_book WHERE symbol='AAA'").fetchone()[0]
     assert r < 0                                          # a loss in R
+
+
+def test_chandelier_ratchets_up_and_locks_gain():
+    conn = _conn()
+    _run(conn, {"AAA": 85.0}, "2026-06-20", {"AAA": 100.0}, atr=2.0)        # stop_px 95
+    # price runs to 130; chandelier 122 ratchets the trailing stop up (kept ≤ price)
+    _run(conn, {"AAA": 85.0}, "2026-06-21", {"AAA": 130.0}, atr=2.0, chand=122.0)
+    assert conn.execute("SELECT trail_stop FROM paper_book WHERE symbol='AAA'").fetchone()[0] == 122.0
+    # price falls to 121 (< trailing 122, > initial stop 95) → chandelier exit, gain locked
+    summ = _run(conn, {"AAA": 85.0}, "2026-06-22", {"AAA": 121.0}, atr=2.0, chand=120.0)
+    assert any(s == "AAA" and r == "chandelier" for s, _net, r in summ["sells"])
+    npct, r = conn.execute(
+        "SELECT net_pct, r_multiple FROM paper_book WHERE symbol='AAA'").fetchone()
+    assert npct > 0 and r > 0                                # +21% gross locked, positive R
+
+
+def test_chandelier_never_moves_down():
+    conn = _conn()
+    _run(conn, {"AAA": 85.0}, "2026-06-20", {"AAA": 100.0}, atr=2.0)
+    _run(conn, {"AAA": 85.0}, "2026-06-21", {"AAA": 130.0}, atr=2.0, chand=122.0)  # trail → 122
+    # a later, lower chandelier must NOT lower the stored trail_stop
+    _run(conn, {"AAA": 85.0}, "2026-06-22", {"AAA": 128.0}, atr=2.0, chand=110.0)
+    assert conn.execute("SELECT trail_stop FROM paper_book WHERE symbol='AAA'").fetchone()[0] == 122.0
+
+
+def test_initial_stop_takes_precedence_over_chandelier():
+    conn = _conn()
+    _run(conn, {"AAA": 85.0}, "2026-06-20", {"AAA": 100.0}, atr=2.0)        # stop_px 95
+    # deep drop below the initial stop → 'stop' (the R floor), not 'chandelier'
+    summ = _run(conn, {"AAA": 85.0}, "2026-06-21", {"AAA": 90.0}, atr=2.0, chand=93.0)
+    assert any(s == "AAA" and r == "stop" for s, _net, r in summ["sells"])
 
 
 def test_trail_closes_off_peak():
