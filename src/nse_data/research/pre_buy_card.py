@@ -17,6 +17,7 @@ import sqlite3
 
 from ..fundamentals import strength_scores as ss
 from .paper_report import trade_metrics
+from .ownership_flow import ownership_flow
 from .paper_trade import PaperTradeParams, _size_position
 from .valuation_history import valuation_percentile
 
@@ -81,17 +82,7 @@ def _delivery(conn, sym):
 
 
 def _flows(conn, sym):
-    if not _has(conn, "raw_large_deals"):
-        return None
-    rows = conn.execute(
-        "SELECT buy_sell, COUNT(*) FROM raw_large_deals WHERE symbol=? "
-        "AND deal_date >= date('now','-30 day') GROUP BY buy_sell", (sym,)).fetchall()
-    d = {bs: n for bs, n in rows}
-    buys = d.get("BUY", 0) + d.get("B", 0)
-    sells = d.get("SELL", 0) + d.get("S", 0)
-    if not buys and not sells:
-        return {"block_buys_30d": 0, "block_sells_30d": 0}
-    return {"block_buys_30d": buys, "block_sells_30d": sells}
+    return ownership_flow(conn, sym)        # R11: {block, insider}, sections None when absent
 
 
 def _catalyst(conn, sym):
@@ -252,9 +243,15 @@ def format_card(c: dict) -> str:
                        f"holding {p['holding']:.0f}% · pledge {('%.0f%%' % pl) if pl is not None else 'n/a'}"))
 
     fl = c["flows"]
-    if fl:
-        L.append(_line("FLOWS", "·",
-                       f"block 30d: {fl['block_buys_30d']} buy / {fl['block_sells_30d']} sell · FII/DII n/a (R11)"))
+    b = fl["block"] if fl else None
+    if b:
+        net = b["net_value_cr"]
+        bg = "✓" if net > 0 else ("✗" if net < 0 else "·")
+        ins = fl["insider"]
+        ins_txt = (f"insider net ₹{ins['net_value_cr']:+.0f}Cr" if ins else "insider n/a")
+        L.append(_line("FLOWS", bg,
+                       f"block/bulk {b['days']}d: net ₹{net:+.0f}Cr "
+                       f"({b['buy_deals']}B/{b['sell_deals']}S) · {ins_txt} · FII/DII n/a"))
 
     cat = c["catalyst"]
     if cat:
