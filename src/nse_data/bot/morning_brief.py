@@ -280,7 +280,8 @@ def send_morning_brief(db_path: str, *, sender=send_telegram) -> dict:
 
 
 def register_morning_brief(scheduler: BlockingScheduler, db_path: str) -> str:
-    """Attach the 09:00-IST morning brief (task 9.5). Trading-day gated."""
+    """Attach the 09:10-IST morning brief (task 9.5). Trading-day gated. 09:10 (not 09:00) so
+    the pre-open session (ends ~09:08) has landed and the Pre-open line is live."""
     def _tick():
         if not market_hours.is_trading_day(market_hours.now_ist().date()):
             log.info("morning_brief_skipped_non_trading_day")
@@ -293,7 +294,7 @@ def register_morning_brief(scheduler: BlockingScheduler, db_path: str) -> str:
 
     scheduler.add_job(
         _tick,
-        trigger=CronTrigger(hour=9, minute=0, timezone=IST),
+        trigger=CronTrigger(hour=9, minute=10, timezone=IST),
         id=JOB_ID,
         max_instances=1,
         coalesce=True,
