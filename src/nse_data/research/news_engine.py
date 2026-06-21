@@ -168,3 +168,57 @@ def score_universe(conn, symbols, as_of_ep, sector_of=None) -> dict:
         out[s] = {"score": r["news_score"], "news_risk": r["news_risk"],
                   "top_pos": r["top_pos"], "top_neg": r["top_neg"]}
     return out
+
+
+# ---- nightly persistence (Phase-2 news-impact scores → news_daily) ----------
+def run_news_score_pass(conn, *, symbols=None, as_of_ep=None) -> dict:
+    """Score the tracked universe's news flow and persist to news_daily (point-in-time). Quiet
+    names (no classified events in the window) are skipped to keep the table actionable."""
+    import datetime as _dt
+    import time as _t
+
+    from ..universe import tracked_symbols
+    as_of_ep = as_of_ep or int(_t.time())
+    symbols = sorted(tracked_symbols()) if symbols is None else symbols
+    today = _dt.date.fromtimestamp(as_of_ep).isoformat()
+    now = int(_t.time())
+    drv = lambda x: f"{x[0]}: {str(x[2])[:60]}" if x else None
+    written = 0
+    for s in symbols:
+        try:
+            r = news_raw(conn, s, as_of_ep)
+        except Exception:  # noqa: BLE001
+            continue
+        if not r.get("n_events"):
+            continue
+        conn.execute(
+            "INSERT OR REPLACE INTO news_daily (as_of_date, symbol, news_score, news_risk, "
+            "n_events, top_pos, top_neg, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (today, s, r["news_score"], r["news_risk"], r["n_events"],
+             drv(r["top_pos"]), drv(r["top_neg"]), now))
+        written += 1
+    conn.commit()
+    return {"date": today, "scored": written}
+
+
+def register_news_score_job(scheduler, db_path: str) -> str:
+    """Persist universe news-impact scores nightly at 17:00 IST (after collect_news's 16:30 run)."""
+    import structlog
+    from apscheduler.triggers.cron import CronTrigger
+
+    from ..scheduler import market_hours
+    from ..storage.db import open_db
+    log = structlog.get_logger()
+
+    def _tick():
+        conn = open_db(db_path)
+        try:
+            log.info("news_score", **run_news_score_pass(conn))
+        except Exception:
+            log.exception("news_score_failed")
+        finally:
+            conn.close()
+
+    scheduler.add_job(_tick, trigger=CronTrigger(hour=17, minute=0, timezone=market_hours.IST),
+                      id="news_score", max_instances=1, coalesce=True, replace_existing=True)
+    return "news_score"

@@ -62,6 +62,7 @@ from .smart_money.short_squeeze import register_short_squeeze_job
 # from .strategy.daily_sweep.live import register_daily_sweep_job
 from .research.weekly_positional import register_weekly_positional_job
 from .collectors.global_markets import register_global_markets_job
+from .research.news_engine import register_news_score_job
 from .signals.detect import register_signal_job
 from .signals.watchlist import register_watchlist_job
 from .signals.outcome_labeler import register_outcome_labeler
@@ -178,6 +179,9 @@ def main() -> int:
     # Global / cross-asset context (US, VIX, DXY, crude, gold, Asia + fresh Indian indices via
     # Yahoo) — 08:15 & 17:15 IST. Phase-1 inputs the NSE feeds don't carry.
     registered.append(register_global_markets_job(scheduler, db_path))
+    # News-impact scores (news_engine) persisted nightly 17:00 IST → news_daily (Phase-2 signal
+    # that was computed on-demand but never stored).
+    registered.append(register_news_score_job(scheduler, db_path))
     # Morning brief: 09:00 IST on trading days — one Telegram message with global
     # cues, GIFT-implied open, regime + posture, overnight events, expiry and
     # Nifty pivot S/R (Phase 2, Week 9).
