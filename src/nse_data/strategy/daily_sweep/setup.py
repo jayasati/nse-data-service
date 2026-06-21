@@ -72,6 +72,29 @@ def _daily_state(daily: pd.DataFrame, k: int):
     return prior
 
 
+def _h1_zone(h1: pd.DataFrame, k: int, fib_min: float, fib_max: float):
+    """Step 2 — point-in-time 1H retracement zone. Returns ts,trend → (zone_low, zone_high) | None
+    using only the 1H swing structure CONFIRMED at or before ts (no look-ahead)."""
+    if h1 is None or len(h1) < 2 * k + 1:
+        return lambda ts, trend: None
+    sf = _structure_frame(h1, k=k)
+    idx = h1.index
+    sh, sl = sf["swing_high"].to_numpy(), sf["swing_low"].to_numpy()
+
+    def zone(ts, trend):
+        pos = idx.searchsorted(ts, side="right") - 1
+        if pos < 0:
+            return None
+        a, b = sh[pos], sl[pos]
+        if pd.isna(a) or pd.isna(b) or a <= b:
+            return None
+        rng = float(a - b)
+        if trend == "bullish":                       # 79% (deep) … 38.2% of the up-leg
+            return (float(a) - fib_max * rng, float(a) - fib_min * rng)
+        return (float(b) + fib_min * rng, float(b) + fib_max * rng)   # mirror for downtrend
+    return zone
+
+
 def _daily_gap_pct(daily: pd.DataFrame) -> dict:
     """date → open-vs-prior-close gap %. Step 9 rejects days that gapped too far."""
     out = {}
@@ -91,6 +114,7 @@ def scan_setups(daily: pd.DataFrame, h1: pd.DataFrame, m5: pd.DataFrame, *,
     blocked = blocked_dates or set()
     prior_trend = _daily_state(daily, config.daily_swing_k)
     gap = _daily_gap_pct(daily)
+    h1_zone = _h1_zone(h1, config.h1_swing_k, config.fib_min, config.fib_max)
 
     sw = detect_sweeps(m5, swing_k=config.m5_swing_k, atr_len=config.atr_len,
                        vol_ma_len=config.vol_ma_len, min_pct=config.sweep_min_pct,
@@ -150,6 +174,10 @@ def scan_setups(daily: pd.DataFrame, h1: pd.DataFrame, m5: pd.DataFrame, *,
         entry_ts = m5.index[entry_idx]
         if not in_session(entry_ts, config.sessions):          # Step 8
             continue
+        if config.require_h1_retracement:                      # Step 2: 1H fib confluence
+            z = h1_zone(m5.index[i], dtrend)
+            if z is None or not (z[0] <= entry_px <= z[1]):
+                continue
 
         # Step 7: SL = sweep extreme; target = model A (1:3); size to 1% risk
         sweep_extreme = float(low.iloc[i]) if sdir == "bull" else float(high.iloc[i])
