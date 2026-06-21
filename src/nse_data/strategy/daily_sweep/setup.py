@@ -159,6 +159,8 @@ def scan_setups(daily: pd.DataFrame, h1: pd.DataFrame, m5: pd.DataFrame, *,
         target = entry_px + config.rr_target * risk if sdir == "bull" \
             else entry_px - config.rr_target * risk
         qty = int((config.capital * config.risk_pct / 100.0) / risk)
+        # cap position VALUE to alloc × leverage (₹40k × 5 = ₹200k); the binding constraint
+        qty = min(qty, int(config.max_alloc_per_trade * config.leverage / entry_px))
         if qty < 1:
             continue
 

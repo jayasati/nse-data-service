@@ -9,7 +9,7 @@ const f2 = n => n == null ? "—" : (+n).toFixed(2);
 const dt = ts => ts == null ? "—" : String(ts).slice(0, 16).replace("T", " ");
 const pnlCls = n => (+n) > 0 ? "pos" : (+n) < 0 ? "neg" : "";
 
-const state = { strategy: null, runId: null, dim: "symbol", tfDir: "" };
+const state = { strategy: null, runId: null, dim: "symbol", tfDir: "", tfSymbol: null };
 let chart, series;
 
 async function init() {
@@ -77,17 +77,31 @@ function renderCurve(curve) {
 
 async function loadPnl() {
   const r = await getJSON(`/api/strategy-analytics/runs/${state.runId}/pnl?by=${state.dim}`);
-  $("dimHead").textContent = state.dim;
-  $("pnlBody").innerHTML = (r.buckets || []).map(b =>
-    `<tr><td>${b.bucket}</td><td class="num">${b.trades}</td><td class="num">${b.wins}</td>` +
-    `<td class="num">${b.losses}</td><td class="num">${b.win_rate ?? "—"}</td>` +
-    `<td class="num ${pnlCls(b.pnl)}">${inr(b.pnl)}</td><td class="num">${f2(b.avg_rr)}</td></tr>`).join("");
+  $("dimHead").textContent = state.dim + (state.dim === "symbol" ? "  (click to filter)" : "");
+  $("pnlBody").innerHTML = (r.buckets || []).map(b => {
+    const sel = state.dim === "symbol" && b.bucket === state.tfSymbol ? " rowsel" : "";
+    return `<tr class="pnlrow${sel}" data-bucket="${b.bucket}"><td>${b.bucket}</td>` +
+      `<td class="num">${b.trades}</td><td class="num">${b.wins}</td>` +
+      `<td class="num">${b.losses}</td><td class="num">${b.win_rate ?? "—"}</td>` +
+      `<td class="num ${pnlCls(b.pnl)}">${inr(b.pnl)}</td><td class="num">${f2(b.avg_rr)}</td></tr>`;
+  }).join("");
+  if (state.dim === "symbol") {                       // click a stock → filter the trades table
+    $("pnlBody").querySelectorAll(".pnlrow").forEach(row => {
+      row.style.cursor = "pointer";
+      row.onclick = () => {
+        const sym = row.dataset.bucket;
+        state.tfSymbol = state.tfSymbol === sym ? null : sym;   // toggle
+        loadPnl(); loadTrades();
+      };
+    });
+  }
 }
 
 async function loadTrades() {
-  const q = state.tfDir ? `&direction=${state.tfDir}` : "";
+  const q = (state.tfDir ? `&direction=${state.tfDir}` : "") +
+            (state.tfSymbol ? `&symbol=${encodeURIComponent(state.tfSymbol)}` : "");
   const r = await getJSON(`/api/strategy-analytics/runs/${state.runId}/trades?limit=2000${q}`);
-  $("tradeFilter").textContent = `${r.count} trades`;
+  $("tradeFilter").textContent = `${r.count} trades` + (state.tfSymbol ? ` · ${state.tfSymbol}` : "");
   $("tradesBody").innerHTML = (r.trades || []).map(t =>
     `<tr><td>${dt(t.entry_ts).slice(0, 10)}</td><td>${t.symbol}</td>` +
     `<td>${t.direction === "long" ? "🟢" : "🔴"}</td><td>${dt(t.entry_ts).slice(11)}</td>` +

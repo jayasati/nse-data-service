@@ -31,7 +31,10 @@ class DailySweepConfig:
     vol_ma_len: int = 20            # volume must exceed this many-bar average
 
     # --- Step 7: risk ---
-    risk_pct: float = 1.0           # 1% of capital per trade
+    risk_pct: float = 1.0           # 1% of capital per trade (risk-based qty, before the cap)
+    max_alloc_per_trade: float = 40_000.0   # capital (margin) allocated per trade
+    leverage: float = 5.0                   # intraday leverage → position value = alloc × leverage
+                                            # (₹40k × 5 = ₹200k notional); P&L is on the ₹40k margin
     min_stop_pct: float = 0.0015    # skip if the sweep stop is < 0.15% away (noise → oversized qty)
     rr_target: float = 3.0          # Target Model A: 1:3
     partial_rr: float = 2.0         # Target Model C: 50% at 1:2, trail rest
