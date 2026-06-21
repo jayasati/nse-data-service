@@ -29,3 +29,10 @@
 .llmbadge:hover { border-color: var(--accent); }
 .llmbadge.warn { border-color: var(--stale); color: var(--stale); }
 .llmbadge.hot { border-color: var(--down); color: var(--down); }
+
+/* Shared top nav (js/components/nav.js, mounted on every page) */
+.topnav { display: flex; gap: 3px; flex-wrap: wrap; align-items: center; }
+.topnav .navlink { padding: 5px 9px; border-radius: 6px; color: var(--muted, #9aa3b2);
+  text-decoration: none; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.topnav .navlink:hover { background: rgba(255,255,255,.07); color: var(--fg, #e6e9ef); }
+.topnav .navlink.on { background: var(--accent, #3b82f6); color: #fff; }
