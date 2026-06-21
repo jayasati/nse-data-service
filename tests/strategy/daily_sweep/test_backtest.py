@@ -44,3 +44,19 @@ def test_time_exit_at_session_end():
     m5 = _m5(bars, start="2026-06-12 09:30")
     r = _simulate(_setup(m5), m5, segment="intraday")
     assert r.exit_reason == "time"
+
+
+def test_short_session_exits_same_day_not_future_candle():
+    # Regression: entry on a SHORT session (DR/half-day) with NO 15:25 bar, then a candle days
+    # later at an absurd price. The fallback must exit at the entry day's LAST bar — not the
+    # whole series' iloc[-1] (the bug that produced a fake +72R / ₹75k BHARTIARTL "win").
+    day1 = pd.date_range("2024-05-18 09:15", periods=5, freq="5min", tz="Asia/Kolkata")  # ends 09:35
+    idx = day1.append(pd.DatetimeIndex(["2026-06-05 15:25"], tz="Asia/Kolkata"))
+    rows = [(100, 100, 100)] * 5 + [(1857, 1857, 1857)]      # day1 flat ~100; future spike 1857
+    m5 = pd.DataFrame({"open": [r[2] for r in rows], "high": [r[1] for r in rows],
+                       "low": [r[0] for r in rows], "close": [r[2] for r in rows],
+                       "volume": 1000}, index=idx)
+    r = _simulate(_setup(m5), m5, segment="intraday")
+    assert r.exit_reason == "time"
+    assert r.exit_time.date().isoformat() == "2024-05-18"    # same day, not 2026
+    assert r.exit_price == 100.0 and abs(r.rr_achieved) <= 1  # entry-day close, not 1857

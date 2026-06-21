@@ -41,10 +41,12 @@ def _simulate(s: SweepSetup, m5: pd.DataFrame, *, segment: str) -> TradeResult |
     is_long = s.direction == "long"
     risk = abs(s.entry_price - s.stop)
     exit_px = exit_reason = exit_time = None
+    last_idx = e                                       # last bar seen ON THE ENTRY DAY
     for j in range(e + 1, len(m5)):
         ts = m5.index[j]
         if ts.date() != s.entry_time.date():          # intraday — never cross into the next day
             break
+        last_idx = j
         lo, hi = float(m5["low"].iloc[j]), float(m5["high"].iloc[j])
         if is_long:
             if lo <= s.stop:                            # SL-first when both touched in one bar
@@ -62,8 +64,9 @@ def _simulate(s: SweepSetup, m5: pd.DataFrame, *, segment: str) -> TradeResult |
         if ts.time() >= _FLAT_BY:                        # force flat at session end
             exit_px, exit_reason, exit_time = float(m5["close"].iloc[j]), "time", ts
             break
-    if exit_px is None:                                 # ran out of same-day bars
-        exit_px, exit_reason, exit_time = float(m5["close"].iloc[-1]), "time", m5.index[-1]
+    if exit_px is None:                                 # session ended before 15:25 (short/DR day)
+        exit_px = float(m5["close"].iloc[last_idx])     # → exit at the entry day's LAST bar,
+        exit_reason, exit_time = "time", m5.index[last_idx]   # NOT the whole series' last candle
     tc = compute_costs(s.entry_price, exit_px, s.qty,
                        trade_type="long" if is_long else "short", segment=segment)
     net_pct = tc.net_pnl / (s.entry_price * s.qty) * 100.0
