@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Research — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/backtest.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  .ctrls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+  .ctrls input { background:var(--card,#161a23); color:inherit; border:1px solid var(--border,#333);
+                 border-radius:6px; padding:5px 8px; font-size:13px; }
+  .ctrls button { background:var(--accent,#3b82f6); color:#fff; border:0; border-radius:6px;
+                  padding:6px 14px; cursor:pointer; font-weight:600; }
+  #chart { height:430px; }
+  .layout { display:grid; grid-template-columns:1fr 320px; gap:14px; align-items:start; }
+  .daycard { background:var(--card,#161a23); border:1px solid var(--border,#333); border-radius:8px;
+             padding:12px; font-size:13px; min-height:430px; }
+  .daycard h3 { margin:0 0 6px; font-size:14px; }
+  .leg { display:inline-block; padding:1px 6px; margin:2px 3px 0 0; border-radius:4px; font-size:12px; background:rgba(255,255,255,.08); }
+  .leg.up { background:rgba(22,163,74,.25); } .leg.dn { background:rgba(220,38,38,.25); }
+  .nw { padding:5px 0; border-bottom:1px solid var(--border,#262b36); }
+  .nw a { color:var(--accent,#60a5fa); text-decoration:none; } .nw .src { color:var(--muted,#9aa); font-size:11px; }
+  td.pos { color:#16a34a; } td.neg { color:#dc2626; }
+  .hint { color:var(--muted,#9aa); font-size:12px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Stock Research</h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right"></div>
+  </header>
+
+  <div class="ctrls">
+    <input id="sym" value="ADANIGREEN" size="12" placeholder="SYMBOL">
+    <input id="start" type="date" value="2026-04-01">
+    <input id="end" type="date" value="2026-06-19">
+    <button id="load">Load</button>
+    <span class="hint">click any candle to see that day's moves + news</span>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div id="chart"></div>
+      <div class="hint" style="margin-top:6px">Candles + news markers (▲). Lower band = delivery %; the dashed line is the 35% real-money-conviction mark.</div>
+    </div>
+    <div class="daycard" id="dayCard"><span class="hint">Select a day on the chart…</span></div>
+  </div>
+
+  <section class="splits" style="margin-top:14px">
+    <div class="split">
+      <div class="section-head"><span>Holding trend (promoter / FII / DII)</span></div>
+      <div class="tablewrap"><table id="holdTable"><thead><tr><th>Quarter</th><th class="num">Promoter%</th>
+        <th class="num">FII%</th><th class="num">DII%</th><th class="num">Pledge%</th></tr></thead>
+        <tbody id="holdBody"></tbody></table></div>
+    </div>
+    <div class="split">
+      <div class="section-head"><span>Block / bulk deals</span></div>
+      <div class="tablewrap"><table id="dealTable"><thead><tr><th>Date</th><th>Type</th><th>Side</th>
+        <th class="num">Qty</th><th class="num">Price</th><th>Counterparty</th></tr></thead>
+        <tbody id="dealBody"></tbody></table></div>
+    </div>
+  </section>
+
+  <section class="split" style="margin-top:14px">
+    <div class="section-head"><span>News &amp; catalysts</span><span class="dim" id="newsCount"></span></div>
+    <div class="tablewrap"><table id="newsTable"><thead><tr><th>Date</th><th>Headline</th><th>Source</th></tr></thead>
+      <tbody id="newsBody"></tbody></table></div>
+  </section>
+
+  <script type="module" src="/static/js/components/nav.js"></script>
+  <script type="module" src="/static/js/pages/research.js"></script>
+</body>
+</html>

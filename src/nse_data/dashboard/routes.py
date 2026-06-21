@@ -61,6 +61,11 @@ def rankings() -> FileResponse:
     return _page("rankings.html")
 
 
+@router.get("/research", include_in_schema=False)
+def research() -> FileResponse:
+    return _page("research.html")
+
+
 @router.get("/market", include_in_schema=False)
 def market() -> FileResponse:
     return _page("market.html")

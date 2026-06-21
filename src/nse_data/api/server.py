@@ -49,6 +49,7 @@ from .routes import health as health_routes
 from .routes import llm as llm_routes
 from .routes import market as market_routes
 from .routes import rankings as rankings_routes
+from .routes import research as research_routes
 from .routes import stocks as stocks_routes
 from .routes import strategy_analytics as strategy_analytics_routes
 from .routes import trades as trades_routes
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(llm_routes.router)            # /api/llm/* (spend tracking)
     app.include_router(strategy_analytics_routes.router)  # /api/strategy-analytics/* (backtest study)
     app.include_router(rankings_routes.router)        # /api/rankings/* (weekly positional snapshots)
+    app.include_router(research_routes.router)        # /api/research/* (per-stock catalyst study)
     app.mount("/static", RevalidatingStatic(directory=str(STATIC_DIR)), name="static")
     return app
 
