@@ -20,6 +20,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 GRADES = ("A core", "B tradeable", "C volatile", "illiquid", "etf")
 
+# Spend the limited body-fetch budget on the headlines most likely to move a stock.
+_HI_RELEVANCE = ("result", "earnings", "profit", "quarter", "q1fy", "q2fy", "q3fy", "q4fy",
+                 "rating", "upgrade", "downgrade", "order win", "bags order", "wins order",
+                 "contract", "acquir", "acquisition", "merger", "stake", "block deal",
+                 "bulk deal", "dividend", "buyback", "fund rais", "qip", "guidance", "fraud",
+                 "sebi", "penalty", "resign", "default", "delisting", "open offer")
+
+
+def _relevance(headline: str | None) -> int:
+    h = (headline or "").lower()
+    return sum(1 for k in _HI_RELEVANCE if k in h)
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -30,7 +42,8 @@ def main() -> int:
     ap.add_argument("--limit-symbols", type=int, default=0, help="cap symbols (0=all)")
     ap.add_argument("--headlines", action="store_true", help="run Google-News headline layer")
     ap.add_argument("--fulltext", action="store_true", help="run publisher full-text layer")
-    ap.add_argument("--max-bodies", type=int, default=80, help="cap full-text fetches per run")
+    ap.add_argument("--max-bodies", type=int, default=200,
+                    help="cap full-text fetches per run (relevance-prioritised)")
     ap.add_argument("--sleep", type=float, default=1.0, help="politeness sleep between requests")
     args = ap.parse_args()
     if not args.headlines and not args.fulltext:
@@ -83,7 +96,7 @@ def main() -> int:
         print("== full-text layer: publisher feeds ==", flush=True)
         name_map = ns.build_name_map(conn)
         only = set(syms) if args.symbols else None   # focus filter when --symbols given
-        bodies = new = 0
+        cands = []
         for source, url in ns.PUBLISHER_FEEDS.items():
             try:
                 feed = ns.parse_publisher_feed(client.get(url).text)
@@ -95,16 +108,22 @@ def main() -> int:
                     continue
                 it["symbol"] = sym
                 it["source"] = source
-                if bodies < args.max_bodies:
-                    text, status = ns.fetch_article_text(client, it["url"])
-                    it["article_text"], it["text_status"] = (text or None), status
-                    bodies += 1
-                    time.sleep(args.sleep)
-                else:
-                    it["text_status"] = "headline_only"
-                new += ns.store_news(conn, [it])
+                cands.append(it)
             print(f"  {source}: {len(feed)} items scanned", flush=True)
-        print(f"  full-text layer: {new} new rows, {bodies} bodies fetched", flush=True)
+        # spend the body budget on the highest-relevance headlines first (results/ratings/deals)
+        cands.sort(key=lambda it: -_relevance(it["headline"]))
+        bodies = new = 0
+        for it in cands:
+            if bodies < args.max_bodies:
+                text, status = ns.fetch_article_text(client, it["url"])
+                it["article_text"], it["text_status"] = (text or None), status
+                bodies += 1
+                time.sleep(args.sleep)
+            else:
+                it["text_status"] = "headline_only"
+            new += ns.store_news(conn, [it])
+        print(f"  full-text layer: {new} new rows, {bodies}/{len(cands)} bodies fetched "
+              f"(relevance-prioritised)", flush=True)
         total_new += new
 
     tot = conn.execute("SELECT COUNT(*) FROM raw_news").fetchone()[0]
