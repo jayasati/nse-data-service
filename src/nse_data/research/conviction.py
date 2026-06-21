@@ -18,8 +18,24 @@ from ..strategy.daily_sweep.fvg import detect_fvgs
 from ..strategy.daily_sweep.sweep import detect_sweeps
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
-WEIGHTS = {"catalyst": 0.25, "positioning": 0.20, "options": 0.15, "structure": 0.15,
-           "volume": 0.10, "rel_strength": 0.10, "vol_expansion": 0.05}
+# Re-weighted after validation: catalyst (news) backtested NON-predictive (IC ≈ −0.04..−0.19), so
+# it drops from 25% to 10% (a risk-flag/tiebreaker, not a driver). That weight moves to options
+# (cleanest intraday signal), structure, and positioning.
+WEIGHTS = {"options": 0.22, "structure": 0.20, "positioning": 0.20, "volume": 0.13,
+           "rel_strength": 0.10, "catalyst": 0.10, "vol_expansion": 0.05}
+
+_SECTOR_IDX = {"it": "^CNXIT", "bfsi": "^NSEBANK", "nbfc": "^CNXFIN", "financial": "^CNXFIN"}
+
+
+def _sector_pct(conn, sym):
+    """The stock's sector index day-change (IT/bank/fin only — the indices we collect)."""
+    sec = conn.execute("SELECT sector FROM factor_snapshot WHERE symbol=? ORDER BY snapshot_date "
+                       "DESC LIMIT 1", (sym,)).fetchone()
+    if not sec or sec[0] not in _SECTOR_IDX:
+        return None, None
+    r = conn.execute("SELECT pct_change FROM raw_global_markets WHERE ticker=? ORDER BY as_of "
+                     "DESC LIMIT 1", (_SECTOR_IDX[sec[0]],)).fetchone()
+    return sec[0], (r[0] if r else None)
 GAP = None   # sentinel: a stage returning GAP score is DATA_GAP
 
 
@@ -105,9 +121,13 @@ def stage_volume(conn, sym) -> tuple:
     sd = conn.execute("SELECT MAX(date) FROM raw_bhavcopy_cm WHERE symbol=?", (sym,)).fetchone()[0]
     dlv = compute_symbol_delivery(conn, sym, sd) if sd else None
     conv = (dlv or {}).get("delivery_conviction_score")
-    s = min(10.0, rvol * 3.0 + (conv or 0.5) * 4.0)
-    return round(s, 1), {"src": "ohlcv.rvol + delivery", "rvol": round(float(rvol), 2),
-            "delivery_conviction": conv, "delivery_trend": (dlv or {}).get("delivery_trend")}
+    cv = conv if conv is not None else 0.5
+    # delivery conviction is the core (real money). RVOL amplifies its SIGN — high RVOL on LOW
+    # delivery is distribution/churn (penalise), not accumulation. (Fixes RVOL-only over-reward.)
+    s = cv * 10 + (cv - 0.5) * (min(rvol, 4) - 1) * 2 if rvol > 1.5 else cv * 10
+    return round(max(0.0, min(10.0, s)), 1), {"src": "delivery-conviction × rvol",
+            "rvol": round(float(rvol), 2), "delivery_conviction": conv,
+            "delivery_trend": (dlv or {}).get("delivery_trend")}
 
 
 def stage_rel_strength(conn, sym, nifty_pct) -> tuple:
@@ -157,14 +177,23 @@ def stage_structure(conn, sym) -> tuple:
     last_sweep = sw[sw["sweep_dir"].notna()].tail(1)
     hi20, lo20 = df["high"].iloc[-20:].max(), df["low"].iloc[-20:].min()
     pos = (close - lo20) / (hi20 - lo20) * 100 if hi20 > lo20 else 50
-    # near support (low pos) with a recent bullish sweep = high; near resistance = low
+    # near support (low pos) = higher base; but the SMC DIRECTION it detected matters — a bearish
+    # FVG/sweep is a warning that cuts the score (not ignored as before).
     s = 5 + (50 - pos) / 20.0
     detail = {"src": "bars_daily SMC", "range_pos_pct": round(float(pos), 0),
               "20d_high": round(float(hi20), 1), "20d_low": round(float(lo20), 1)}
-    if not last_fvg.empty:
-        detail["last_fvg"] = f"{last_fvg['fvg_dir'].iloc[0]} {last_fvg['gap_low'].iloc[0]:.1f}-{last_fvg['gap_high'].iloc[0]:.1f}"
     if not last_sweep.empty:
-        detail["last_sweep"] = f"{last_sweep['sweep_dir'].iloc[0]} of {last_sweep['swept_level'].iloc[0]:.1f}"
+        sd = last_sweep["sweep_dir"].iloc[0]
+        s += 1.0 if sd == "bull" else -1.5
+        detail["last_sweep"] = f"{sd} of {last_sweep['swept_level'].iloc[0]:.1f}"
+    if not last_fvg.empty:
+        fd = last_fvg["fvg_dir"].iloc[0]
+        s += 0.5 if fd == "bull" else -1.0
+        detail["last_fvg"] = f"{fd} {last_fvg['gap_low'].iloc[0]:.1f}-{last_fvg['gap_high'].iloc[0]:.1f}"
+    sector, sec_pct = _sector_pct(conn, sym)
+    if sec_pct is not None and sec_pct < -1.5:           # weak sector = structural headwind
+        s -= 1.5
+        detail["sector_weak"] = f"{sector} {sec_pct}%"
     return round(max(0.0, min(10.0, s)), 1), detail
 
 
