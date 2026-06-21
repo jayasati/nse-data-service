@@ -197,7 +197,59 @@ def tier_of(comp, scores) -> str:
     return "A" if comp >= 6.5 else "B" if comp >= 5.0 else "C"
 
 
-def score_stock(conn, sym, *, sm_score, nifty_pct) -> dict:
+def trade_plan(close, atr, stages, macro) -> dict:
+    """STAGE 11/12 — direction + entry/stop/targets from liquidity levels (options walls, 20d H/L)
+    + ATR, plus the pre-market setup bucket. All levels trace to Stage 3/5/6 fields, not round
+    numbers. Honest probability: anchored to the composite, capped (we proved edges are modest)."""
+    if not close or not atr:
+        return {"direction": "DATA_GAP", "note": "no candle/atr"}
+    opt = stages.get("options", {})
+    st = stages.get("structure", {})
+    mp_drift = opt.get("max_pain_drift_pct", 0) or 0
+    cw, pw, mp = opt.get("call_wall"), opt.get("put_wall"), opt.get("max_pain")
+    pos = st.get("range_pos_pct", 50)
+    hi20, lo20 = st.get("20d_high"), st.get("20d_low")
+    rs = stages.get("rel_strength", {}).get("rel_strength", 0) or 0
+    bull = (mp_drift > 0) + (rs > 0) + (pos < 55)
+    bear = (mp_drift < 0) + (rs < 0) + (pos > 75)
+    direction = "LONG" if bull > bear else "SHORT" if bear > bull else ("LONG" if rs >= 0 else "SHORT")
+    r1 = round(1.5 * atr, 1)
+    if direction == "LONG":
+        entry = round(close, 1)
+        stop = round(max(close - 1.3 * atr, (pw or close - 1.3 * atr)), 1)
+        if stop >= entry:
+            stop = round(close - 1.3 * atr, 1)
+        t1, t2 = round(close + r1, 1), round(cw or close + 2.5 * atr, 1)
+        t3 = round(hi20 or close + 3.5 * atr, 1)
+    else:
+        entry = round(close, 1)
+        stop = round(min(close + 1.3 * atr, (cw or close + 1.3 * atr)), 1)
+        if stop <= entry:
+            stop = round(close + 1.3 * atr, 1)
+        t1, t2 = round(close - r1, 1), round(mp or close - 2.5 * atr, 1)
+        t3 = round(lo20 or close - 3.5 * atr, 1)
+    risk = abs(entry - stop)
+    rr = round(abs(t2 - entry) / risk, 1) if risk else None
+    # setup bucket (Stage 12)
+    gap = (macro or {}).get("gap_bias", "FLAT")
+    if direction == "SHORT" and gap == "GAP-UP" and pos > 70:
+        setup = "Gap-up fade"
+    elif direction == "LONG" and gap == "GAP-DOWN" and pos < 40:
+        setup = "Gap-down reversal"
+    elif direction == "LONG" and pos > 80:
+        setup = "Breakout continuation"
+    elif direction == "SHORT" and pos < 25:
+        setup = "Breakdown continuation"
+    elif direction == "LONG":
+        setup = "Pullback / VWAP-reclaim long"
+    else:
+        setup = "Resistance fade short"
+    return {"direction": direction, "entry": entry, "stop": stop, "t1": t1, "t2": t2, "t3": t3,
+            "rr": rr, "setup": setup, "expected_move_pct": round(atr / close * 100, 1),
+            "basis": f"levels: call_wall {cw} / put_wall {pw} / max_pain {mp} / 20dH-L {hi20}-{lo20}, ATR ₹{round(atr,1)}"}
+
+
+def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None) -> dict:
     scores = {
         "catalyst": stage_catalyst(conn, sym),
         "positioning": stage_positioning(conn, sym, sm_score),
@@ -209,9 +261,16 @@ def score_stock(conn, sym, *, sm_score, nifty_pct) -> dict:
     }
     comp, renorm = composite(scores)
     gaps = [s for s, (v, _) in scores.items() if v is GAP]
+    stages = {s: {"score": ("DATA_GAP" if v is GAP else v), **d} for s, (v, d) in scores.items()}
+    df = _daily(conn, sym)
+    close = float(df["close"].iloc[-1]) if df is not None else None
+    atr = float(ta.atr(df["high"], df["low"], df["close"], 14).iloc[-1]) if df is not None else None
+    plan = trade_plan(close, atr, stages, macro)
+    # honest probability: anchored to composite, capped — modest edges (validated this session)
+    prob = round(min(68, 45 + (comp or 5) * 2.6)) if comp else None
     return {"symbol": sym, "composite": comp, "tier": tier_of(comp, scores),
-            "renorm_weights": renorm, "data_gaps": gaps,
-            "stages": {s: {"score": ("DATA_GAP" if v is GAP else v), **d} for s, (v, d) in scores.items()}}
+            "renorm_weights": renorm, "data_gaps": gaps, "trade": plan, "probability_pct": prob,
+            "stages": stages}
 
 
 def run_conviction(conn, symbols=None) -> dict:
@@ -222,7 +281,8 @@ def run_conviction(conn, symbols=None) -> dict:
     if symbols is None:
         symbols = [r[0] for r in conn.execute("SELECT DISTINCT symbol FROM options_metrics "
                    "WHERE symbol NOT IN ('NIFTY','BANKNIFTY','FINNIFTY')")]
-    scored = [score_stock(conn, s, sm_score=sm_score, nifty_pct=nifty_pct) for s in symbols]
+    scored = [score_stock(conn, s, sm_score=sm_score, nifty_pct=nifty_pct, macro=macro)
+              for s in symbols]
     scored = [x for x in scored if x["composite"] is not None]
     scored.sort(key=lambda x: -x["composite"])
     return {"macro": macro, "smart_money_score": sm_score, "n": len(scored), "ranked": scored}
@@ -239,13 +299,17 @@ def run_and_persist(conn) -> dict:
                  "updated_at) VALUES (?,?,?,?)",
                  (today, json.dumps(r["macro"]), r["smart_money_score"], now))
     g = lambda x, s: (None if x["stages"][s]["score"] == "DATA_GAP" else x["stages"][s]["score"])
+    t = lambda x, k: x.get("trade", {}).get(k)
     conn.executemany(
         "INSERT OR REPLACE INTO conviction_daily (as_of_date, symbol, composite, tier, catalyst, "
         "positioning, options, structure, volume, rel_strength, vol_expansion, data_gaps, "
-        "stages_json, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "stages_json, direction, entry, stop, t1, t2, t3, rr, setup, probability, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(today, x["symbol"], x["composite"], x["tier"], g(x, "catalyst"), g(x, "positioning"),
           g(x, "options"), g(x, "structure"), g(x, "volume"), g(x, "rel_strength"),
-          g(x, "vol_expansion"), ",".join(x["data_gaps"]), json.dumps(x["stages"]), now)
+          g(x, "vol_expansion"), ",".join(x["data_gaps"]), json.dumps(x["stages"]),
+          t(x, "direction"), t(x, "entry"), t(x, "stop"), t(x, "t1"), t(x, "t2"), t(x, "t3"),
+          t(x, "rr"), t(x, "setup"), x.get("probability_pct"), now)
          for x in r["ranked"]])
     conn.commit()
     return {"date": today, "persisted": len(r["ranked"])}

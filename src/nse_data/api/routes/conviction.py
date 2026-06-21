@@ -35,10 +35,12 @@ def latest(conn=Depends(_get_conn)) -> JSONResponse:
                        (d,)).fetchone()
     rows = conn.execute(
         "SELECT symbol, composite, tier, catalyst, positioning, options, structure, volume, "
-        "rel_strength, vol_expansion, data_gaps, stages_json FROM conviction_daily "
+        "rel_strength, vol_expansion, data_gaps, direction, entry, stop, t1, t2, t3, rr, setup, "
+        "probability, stages_json FROM conviction_daily "
         "WHERE as_of_date=? ORDER BY composite DESC", (d,)).fetchall()
     cols = ["symbol", "composite", "tier", "catalyst", "positioning", "options", "structure",
-            "volume", "rel_strength", "vol_expansion", "data_gaps", "stages_json"]
+            "volume", "rel_strength", "vol_expansion", "data_gaps", "direction", "entry", "stop",
+            "t1", "t2", "t3", "rr", "setup", "probability", "stages_json"]
     out = []
     for r in rows:
         row = dict(zip(cols, r))
