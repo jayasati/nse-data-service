@@ -51,6 +51,10 @@ class StrategyAnalyticsService:
         return {"run_id": run_id, "count": len(rows), "limit": limit, "offset": offset,
                 "trades": [dict(r) for r in rows]}
 
+    def live_signals(self, limit: int = 100) -> dict:
+        rows = self.repo.live_signals(limit)            # daily_sweep_signals; [] if absent
+        return {"count": len(rows), "signals": [dict(r) for r in rows]}
+
     def pnl_by(self, run_id: int, dimension: str) -> dict:
         self._ready()
         if dimension not in DIMENSIONS:

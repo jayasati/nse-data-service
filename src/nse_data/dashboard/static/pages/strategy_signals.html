@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy Signals — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/backtest.css">
+<style> td.pos{color:#16a34a} td.neg{color:#dc2626} </style>
+</head>
+<body>
+  <header>
+    <h1>Strategy Signals</h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right">
+      <a class="link" href="/strategy">Backtest study →</a>
+      <a class="link" href="/trades">Trades →</a>
+    </div>
+  </header>
+
+  <section class="splits">
+    <div class="split" style="grid-column:1/-1">
+      <div class="section-head"><span>Live system-generated signals (forward-test)</span></div>
+      <div class="tablewrap">
+        <table id="sigTable">
+          <thead><tr><th>Alerted</th><th>Strategy</th><th>Symbol</th><th>Dir</th><th>Trend</th>
+            <th>Sweep</th><th>BOS</th><th>FVG</th><th class="num">Entry</th><th class="num">SL</th>
+            <th class="num">Target</th><th class="num">RR</th><th class="num">Qty</th></tr></thead>
+          <tbody id="sigBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <script type="module" src="/static/js/pages/strategy_signals.js"></script>
+</body>
+</html>

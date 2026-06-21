@@ -82,3 +82,13 @@ class StrategyAnalyticsRepository:
         return self.conn.execute(
             "SELECT exit_ts, net_pnl FROM strategy_trades WHERE run_id=? "
             "AND exit_ts IS NOT NULL ORDER BY exit_ts", (run_id,)).fetchall()
+
+    # ---- live signals (system-generated, forward-test) ----
+    def live_signals(self, limit: int) -> list[sqlite3.Row]:
+        if not table_exists(self.conn, "daily_sweep_signals"):
+            return []
+        return self.conn.execute(
+            "SELECT 'daily_sweep' AS strategy, symbol, direction, daily_trend, sweep_time, "
+            "bos_time, fvg_low, fvg_high, entry_time, entry_price, stop, target, qty, rr, "
+            "alerted_at FROM daily_sweep_signals ORDER BY alerted_at DESC LIMIT ?", (limit,)
+        ).fetchall()

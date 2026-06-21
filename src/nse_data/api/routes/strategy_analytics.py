@@ -72,6 +72,12 @@ def trades(run_id: int, symbol: str | None = Query(None, max_length=40),
                                    exit_reason=exit_reason, limit=limit, offset=offset))
 
 
+@router.get("/signals")
+def signals(limit: int = Query(100, ge=1, le=1000),
+            svc: StrategyAnalyticsService = Depends(_get_service)) -> JSONResponse:
+    return _run(lambda: svc.live_signals(limit))
+
+
 @router.get("/runs/{run_id}/pnl")
 def pnl_by(run_id: int, by: str = Query("symbol", max_length=20),
            svc: StrategyAnalyticsService = Depends(_get_service)) -> JSONResponse:

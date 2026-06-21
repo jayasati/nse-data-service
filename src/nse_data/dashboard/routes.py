@@ -38,6 +38,16 @@ def trades() -> FileResponse:
     return FileResponse(PAGES_DIR / "trades.html")
 
 
+@router.get("/strategy", include_in_schema=False)
+def strategy() -> FileResponse:
+    return FileResponse(PAGES_DIR / "strategy.html")
+
+
+@router.get("/strategy-signals", include_in_schema=False)
+def strategy_signals() -> FileResponse:
+    return FileResponse(PAGES_DIR / "strategy_signals.html")
+
+
 @router.get("/market", include_in_schema=False)
 def market() -> FileResponse:
     return FileResponse(PAGES_DIR / "market.html")

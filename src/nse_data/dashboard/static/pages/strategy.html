@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy Analytics — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/backtest.css">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:8px 0; }
+  .dimbtn { padding:4px 10px; border-radius:6px; border:1px solid var(--border,#333); background:transparent;
+            color:inherit; cursor:pointer; font-size:13px; }
+  .dimbtn.on { background:var(--accent,#3b82f6); color:#fff; border-color:transparent; }
+  td.pos { color:#16a34a; } td.neg { color:#dc2626; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Strategy Analytics</h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right">
+      <select id="stratPicker" class="picker"></select>
+      <select id="runPicker" class="picker"></select>
+      <a class="link" href="/strategy-signals">Signals →</a>
+      <a class="link" href="/backtest">Backtest →</a>
+      <a class="link" href="/trades">Trades →</a>
+    </div>
+  </header>
+
+  <section class="cards" id="cards">
+    <div class="card"><div class="card-label">Trades</div><div class="card-val" id="cTrades">—</div></div>
+    <div class="card"><div class="card-label">Win rate</div><div class="card-val" id="cWin">—</div></div>
+    <div class="card"><div class="card-label">Profit factor</div><div class="card-val" id="cPF">—</div></div>
+    <div class="card"><div class="card-label">Expectancy</div><div class="card-val" id="cExp">—</div></div>
+    <div class="card"><div class="card-label">Net P&amp;L</div><div class="card-val" id="cNet">—</div></div>
+    <div class="card"><div class="card-label">Max DD</div><div class="card-val" id="cDD">—</div></div>
+    <div class="card"><div class="card-label">Sharpe</div><div class="card-val" id="cSharpe">—</div></div>
+    <div class="card"><div class="card-label">Avg RR</div><div class="card-val" id="cRR">—</div></div>
+  </section>
+
+  <section class="curve-wrap">
+    <div class="section-head">Cumulative P&amp;L</div>
+    <div id="curve"></div>
+  </section>
+
+  <section class="splits">
+    <div class="split">
+      <div class="section-head"><span>P&amp;L study — drill down</span></div>
+      <div class="toolbar" id="dimBar">
+        <button class="dimbtn on" data-dim="symbol">Stock</button>
+        <button class="dimbtn" data-dim="day">Day</button>
+        <button class="dimbtn" data-dim="week">Week</button>
+        <button class="dimbtn" data-dim="month">Month</button>
+        <button class="dimbtn" data-dim="regime">Regime</button>
+        <button class="dimbtn" data-dim="direction">Long/Short</button>
+        <button class="dimbtn" data-dim="exit_reason">Exit</button>
+        <button class="dimbtn" data-dim="daily_trend">Trend</button>
+      </div>
+      <div class="tablewrap">
+        <table id="pnlTable">
+          <thead><tr><th id="dimHead">Bucket</th><th class="num">Trades</th><th class="num">W</th>
+            <th class="num">L</th><th class="num">Win%</th><th class="num">P&amp;L</th><th class="num">Avg RR</th></tr></thead>
+          <tbody id="pnlBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="section-head"><span>Trades</span><span class="dim" id="tradeFilter"></span></div>
+      <div class="toolbar">
+        <button class="dimbtn on" data-tf-dir="">All</button>
+        <button class="dimbtn" data-tf-dir="long">Long</button>
+        <button class="dimbtn" data-tf-dir="short">Short</button>
+      </div>
+      <div class="tablewrap">
+        <table id="tradesTable">
+          <thead><tr><th>Date</th><th>Symbol</th><th>Dir</th><th>Entry</th><th class="num">Px</th>
+            <th>Exit</th><th class="num">Px</th><th class="num">SL</th><th class="num">Tgt</th>
+            <th>Reason</th><th class="num">RR</th><th class="num">P&amp;L</th></tr></thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer">
+    Persist a strategy backtest: <code>PYTHONPATH=src python scripts/strategy_backtest.py</code>
+  </div>
+
+  <script type="module" src="/static/js/pages/strategy.js"></script>
+</body>
+</html>
