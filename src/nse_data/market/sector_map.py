@@ -120,13 +120,12 @@ def is_bfsi(symbol: str, path: str = DEFAULT_PATH) -> bool:
     return metadata_class_for(symbol, path) == "bfsi"
 
 
-# Banks/NBFCs the index + metadata routing misses (PSU banks + finance NBFCs are sparsely
-# populated in the sector feeds). Curated from extractor eval misclassifications.
+# BANKS the index + metadata routing misses (PSU + small-finance banks are sparsely populated
+# in the sector feeds). Curated from extractor eval misclassifications. NBFCs are deliberately
+# EXCLUDED: they file a normal Ind-AS P&L (Revenue from operations), not the bank Schedule-III
+# format, so the BFSI schema HURTS them (CGCL 11/13 → 7/13) — they belong on the generic path.
 _BFSI_SYMBOL_OVERRIDES = frozenset({
     "CENTRALBK", "IDBI", "BANKINDIA", "BANKBARODA", "PNB", "CANBK", "UNIONBANK", "INDIANB",
     "UCOBANK", "MAHABANK", "PSB", "IOB", "J&KBANK", "KARURVYSYA", "SOUTHBANK", "DCBBANK",
     "CSBBANK", "RBLBANK", "BANDHANBNK", "EQUITASBNK", "UJJIVANSFB", "SURYODAY", "FINOPB",
-    "BAJFINANCE", "BAJAJFINSV", "CGCL", "CHOLAFIN", "SHRIRAMFIN", "MUTHOOTFIN", "MANAPPURAM",
-    "LICHSGFIN", "PNBHOUSING", "PEL", "IIFL", "ABCAPITAL", "POONAWALLA", "CREDITACC",
-    "SBFC", "FIVESTAR", "MASFIN", "SAMMAANCAP",
 })
