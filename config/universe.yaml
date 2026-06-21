@@ -5,9 +5,59 @@ option_chain:
   indices:
     - NIFTY
     - BANKNIFTY
+    - FINNIFTY
+  # Top-50 F&O equities by turnover — for Phase-4 max-pain / PCR / GEX / OI walls.
   equities:
+    - HDFCBANK
+    - ICICIBANK
     - RELIANCE
+    - BSE
+    - BHARTIARTL
+    - SBIN
+    - ETERNAL
     - TCS
+    - M&M
+    - AXISBANK
+    - LT
+    - BAJFINANCE
+    - VEDL
+    - KOTAKBANK
+    - MCX
+    - IDEA
+    - BEL
+    - DIXON
+    - MARUTI
+    - ITC
+    - INDIGO
+    - HAL
+    - SHRIRAMFIN
+    - TATASTEEL
+    - HINDALCO
+    - HCLTECH
+    - SUNPHARMA
+    - TRENT
+    - JIOFIN
+    - HINDUNILVR
+    - NTPC
+    - MAZDOCK
+    - PAYTM
+    - CANBK
+    - SUZLON
+    - POWERGRID
+    - ADANIPOWER
+    - EICHERMOT
+    - BAJAJ-AUTO
+    - TITAN
+    - COFORGE
+    - ADANIPORTS
+    - HINDZINC
+    - HEROMOTOCO
+    - ULTRACEMCO
+    - ADANIENT
+    - DMART
+    - LUPIN
+    - PRESTIGE
+    - CAMS
 
   # How many expiries to fetch per symbol. 1 = nearest only (cheapest, covers PCR
   # and max-pain). Bump to 2 when traders are mid-rollover and you want both.

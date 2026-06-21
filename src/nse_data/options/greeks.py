@@ -124,6 +124,17 @@ def put_call_ratio(rows: list[dict]) -> float | None:
     return round(pe / ce, 2) if ce > 0 else None
 
 
+def oi_walls(rows: list[dict]) -> dict:
+    """Call wall = strike with the most CE open interest (resistance); put wall = most PE OI
+    (support). Price tends to pin between the two into expiry."""
+    ce, pe = {}, {}
+    for r in rows:
+        d = ce if r["option_type"] == "CE" else pe
+        d[r["strike"]] = d.get(r["strike"], 0) + (r.get("oi") or 0)
+    return {"call_wall": max(ce, key=ce.get) if ce else None,
+            "put_wall": max(pe, key=pe.get) if pe else None}
+
+
 def pcr_signal(pcr: float | None) -> str | None:
     """Contrarian PCR extremes (task 23.7). Low PCR = too many calls = contrarian bearish."""
     if pcr is None:

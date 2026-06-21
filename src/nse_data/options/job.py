@@ -63,8 +63,10 @@ def compute_symbol(conn, symbol: str) -> dict | None:
     gex = gk.gamma_exposure(rows, spot) if spot > 0 else None
     mp = gk.max_pain(rows)
     pcr = gk.put_call_ratio(rows)
+    walls = gk.oi_walls(rows)
     return {"symbol": symbol, "expiry": expiry, "as_of": as_of, "spot": spot,
-            "max_pain": mp, "pcr": pcr,
+            "max_pain": mp, "pcr": pcr, "call_wall": walls["call_wall"],
+            "put_wall": walls["put_wall"],
             "gex_total": (gex or {}).get("gex_total"), "gex_sign": (gex or {}).get("gex_sign"),
             "gex_flip_level": (gex or {}).get("gex_flip_level"),
             "pcr_signal": gk.pcr_signal(pcr), "max_pain_drift": gk.max_pain_drift(spot, mp)}
@@ -86,9 +88,10 @@ def run_options_pass(conn: sqlite3.Connection, *, symbols: list[str] | None = No
             continue
         conn.execute(
             "INSERT OR REPLACE INTO options_metrics (symbol, expiry, as_of, spot, max_pain, pcr, "
-            "gex_total, gex_sign, gex_flip_level, computed_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "call_wall, put_wall, gex_total, gex_sign, gex_flip_level, computed_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (m["symbol"], m["expiry"], m["as_of"], m["spot"], m["max_pain"], m["pcr"],
-             m["gex_total"], m["gex_sign"], m["gex_flip_level"], now))
+             m["call_wall"], m["put_wall"], m["gex_total"], m["gex_sign"], m["gex_flip_level"], now))
         written += 1
         if sym in INDEX_SYMBOLS:
             _mirror_index_gex(conn, m)
