@@ -24,7 +24,7 @@ Rule-based, no subjective interpretation. **Daily trend → 1H retracement → 5
 | `structure.py` | **1** daily trend · **2** retracement zone · **4** BOS | ✅ |
 | `sweep.py` | **3** 5m liquidity sweep (size > 0.1%/0.25·ATR OR-floor, vol-gate skipped for index spot) | ✅ |
 | `fvg.py` | **5** Fair Value Gap (3-candle) | ✅ |
-| `setup.py` | **6** entry · **7** SL/target (A 1:3 / B liquidity / C partial+trail) · **8** session · **9** event/gap filters | ⬜ |
+| `setup.py` | **6** entry · **7** SL/target (A 1:3 ✅; B/C next) · **8** session · **9** gap ✅ (event-day hook) | ✅ |
 | `backtest.py` | **10** metrics · **11** trade report · **12** walk-forward | ⬜ |
 | `live.py` | intraday scan → dedicated alert channel | ⬜ |
 

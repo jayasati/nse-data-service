@@ -19,6 +19,11 @@ class DailySweepConfig:
     fib_min: float = 0.382          # 38.2%–79% retracement band
     fib_max: float = 0.79
 
+    # --- Step 6: sequencing windows (5m bars) ---
+    bos_max_bars: int = 24          # BOS must confirm within ~2h of the sweep
+    entry_wait_bars: int = 24       # FVG must be revisited within ~2h of forming
+    fvg_search_bars: int = 6        # the BOS-impulse FVG forms within a few bars of the sweep
+
     # --- Step 3: 5m liquidity sweep ---
     sweep_min_pct: float = 0.001    # 0.1% of price …
     sweep_min_atr: float = 0.25     # … OR 0.25 × ATR(14) — whichever is larger
@@ -27,6 +32,7 @@ class DailySweepConfig:
 
     # --- Step 7: risk ---
     risk_pct: float = 1.0           # 1% of capital per trade
+    min_stop_pct: float = 0.0015    # skip if the sweep stop is < 0.15% away (noise → oversized qty)
     rr_target: float = 3.0          # Target Model A: 1:3
     partial_rr: float = 2.0         # Target Model C: 50% at 1:2, trail rest
     trail_atr_mult: float = 1.5     # ATR trail for the runner
