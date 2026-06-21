@@ -167,10 +167,15 @@ _COMMON_RULES = """Field definitions & rules:
   the IMMEDIATELY PRECEDING quarter (e.g. 31-12-2025), year_ago_quarter = the SAME
   quarter one year earlier (e.g. 31-03-2025). Do NOT use full-year columns here.
   Leave a value null if that comparative column isn't printed.
-- SCOPE: standalone and consolidated are SEPARATE statements. Return a block ONLY
-  for a statement physically printed in the filing; set the other to null. NEVER
-  fabricate or copy one scope into the other. Consolidated numbers are usually
-  larger (they include subsidiaries).
+- SCOPE: standalone and consolidated are SEPARATE statements, each under its OWN
+  heading. Match each block to the statement whose heading matches: the STANDALONE
+  block comes from the statement headed "Standalone" (or with no "Consolidated"
+  qualifier); the CONSOLIDATED block comes from the statement headed "Consolidated".
+  Most filings print BOTH — find and extract BOTH; their numbers DIFFER (consolidated
+  is usually larger, it includes subsidiaries). If your standalone and consolidated
+  come out IDENTICAL, you mis-read — they are two different tables, go back and find
+  the standalone one. If only ONE statement is printed, put it in "standalone" and set
+  "consolidated" to null. NEVER fabricate or copy one scope into the other.
 - SIGN: numbers in (parentheses) are negative, e.g. "(166.79)" -> -166.79. PAT can
   be a loss (negative) — return it negative.
 - TAX SIGN: report tax as a POSITIVE expense in the normal case. Parentheses on the
