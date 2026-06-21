@@ -26,7 +26,7 @@ Rule-based, no subjective interpretation. **Daily trend → 1H retracement → 5
 | `fvg.py` | **5** Fair Value Gap (3-candle) | ✅ |
 | `setup.py` | **6** entry · **7** SL/target (A 1:3 ✅; B/C next) · **8** session · **9** gap ✅ (event-day hook) | ✅ |
 | `backtest.py` | **10** metrics ✅ · **11** trade report ✅ · **12** walk-forward (next) | ✅ |
-| `live.py` | intraday scan → dedicated alert channel | ⬜ |
+| `live.py` | intraday scan (5min, market hours) → dedicated 'sweep' channel | ✅ |
 
 ## Data note
 Indices (NIFTY/BANKNIFTY/FINNIFTY) store only `minute` bars → Daily/5m/1h are **resampled**;

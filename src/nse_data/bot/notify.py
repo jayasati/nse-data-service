@@ -27,6 +27,7 @@ _CHANNEL_ENV = {
     "credit": "NTFY_TOPIC_CREDIT",     # 💳 credit / rating actions
     "market": "NTFY_TOPIC_MARKET",     # 📈 moves / surveillance / analyst / ops
     "digest": "NTFY_TOPIC_DIGEST",     # 📊 morning brief / EOD / weekly digest
+    "sweep": "NTFY_TOPIC_SWEEP",       # 🌊 Daily Sweep strategy (forward-test, own channel)
 }
 
 
