@@ -99,8 +99,36 @@ def run_options_pass(conn: sqlite3.Connection, *, symbols: list[str] | None = No
             signals.append({"symbol": sym, "type": m["pcr_signal"], "pcr": m["pcr"]})
         if m["max_pain_drift"]:
             signals.append({"symbol": sym, "type": "max_pain_drift", **m["max_pain_drift"]})
+    iv_n = snapshot_iv(conn)
     conn.commit()
-    return {"symbols": len(symbols), "written": written, "signals": signals}
+    return {"symbols": len(symbols), "written": written, "iv_snapshots": iv_n, "signals": signals}
+
+
+def snapshot_iv(conn) -> int:
+    """ATM implied vol per symbol (avg CE+PE IV at the strike nearest spot) → iv_daily, building
+    the percentile history Stage 9 needs. Idempotent per (date, symbol)."""
+    today = time.strftime("%Y-%m-%d")
+    written = 0
+    for (sym,) in conn.execute("SELECT DISTINCT symbol FROM raw_option_chain"):
+        as_of = _latest_as_of(conn, sym)
+        expiry = _nearest_expiry(conn, sym, as_of) if as_of else None
+        if not expiry:
+            continue
+        rows = conn.execute(
+            "SELECT strike, implied_volatility, underlying_value FROM raw_option_chain WHERE "
+            "symbol=? AND as_of=? AND expiry=? AND implied_volatility>0", (sym, as_of, expiry)).fetchall()
+        spot = max((uv for _, _, uv in rows if uv), default=0)
+        if not spot or not rows:
+            continue
+        by: dict = {}
+        for st, iv, _ in rows:
+            by.setdefault(st, []).append(iv)
+        k = min(by, key=lambda s: abs(s - spot))
+        atm = sum(by[k]) / len(by[k])
+        conn.execute("INSERT OR REPLACE INTO iv_daily (as_of_date, symbol, atm_iv, spot, "
+                     "updated_at) VALUES (?,?,?,?,?)", (today, sym, round(atm, 2), spot, int(time.time())))
+        written += 1
+    return written
 
 
 def _mirror_index_gex(conn, m: dict) -> None:

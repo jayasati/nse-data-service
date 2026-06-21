@@ -83,11 +83,18 @@ def stage_options(conn, sym) -> tuple:
 
 
 def stage_positioning(conn, sym, sm_score) -> tuple:
-    # per-stock FII futures not in participant_oi (index-level only) → use the index smart-money lean
-    if sm_score is None:
-        return GAP, {"src": "smart_money=null"}
-    return round(sm_score * 10, 1), {"src": "smart_money_daily (index-level FII deriv+cash)",
-            "smart_money_score": sm_score, "note": "per-stock FII futures = DATA_GAP (index proxy)"}
+    # NSE doesn't publish per-stock participant OI — only aggregate FII stock-futures + index-level
+    # smart-money. Both are MARKET-WIDE proxies (same for every symbol); true per-stock = DATA_GAP.
+    fii = conn.execute("SELECT fut_stk_long, fut_stk_short FROM raw_participant_oi WHERE "
+                       "client_type='FII' ORDER BY report_date DESC LIMIT 1").fetchone()
+    stk_lean = fii[0] / (fii[0] + fii[1]) if (fii and (fii[0] + fii[1])) else None
+    parts = [p for p in (sm_score, stk_lean) if p is not None]
+    if not parts:
+        return GAP, {"src": "smart_money + participant_oi = null"}
+    return round(sum(parts) / len(parts) * 10, 1), {
+        "src": "smart_money + FII-stk-fut(aggregate)", "smart_money_score": sm_score,
+        "fii_stk_long_frac": round(stk_lean, 3) if stk_lean is not None else None,
+        "note": "market-wide proxy; per-stock FII = DATA_GAP (NSE doesn't publish per-symbol)"}
 
 
 def stage_volume(conn, sym) -> tuple:
@@ -125,11 +132,17 @@ def stage_vol_expansion(conn, sym) -> tuple:
     hist = ((bb.iloc[:, 2] - bb.iloc[:, 0]) / bb.iloc[:, 1] * 100).dropna()
     pctile = (hist < width).mean() * 100
     atr_pct = ta.atr(df["high"], df["low"], df["close"], 14).iloc[-1] / df["close"].iloc[-1] * 100
-    # coiled spring = LOW bandwidth percentile → high score (expansion pending). IV pctile = GAP.
-    s = 10 - pctile / 10.0
-    return round(max(0.0, min(10.0, s)), 1), {"src": "bollinger_bandwidth_pctile + atr_pct",
+    # IV percentile from the iv_daily history (Stage 9) — needs ~30+ days to be meaningful.
+    ivh = [r[0] for r in conn.execute("SELECT atm_iv FROM iv_daily WHERE symbol=? AND atm_iv "
+           "IS NOT NULL ORDER BY as_of_date DESC LIMIT 90", (sym,))]
+    iv_pctile = round(sum(1 for x in ivh if x < ivh[0]) / len(ivh) * 100, 0) if len(ivh) >= 30 \
+        else f"DATA_GAP (accumulating n={len(ivh)})"
+    # coiled spring = LOW bandwidth pctile (and low IV pctile when available) → high score.
+    pcts = [pctile] + ([iv_pctile] if isinstance(iv_pctile, (int, float)) else [])
+    s = 10 - (sum(pcts) / len(pcts)) / 10.0
+    return round(max(0.0, min(10.0, s)), 1), {"src": "bollinger_bandwidth_pctile + atr_pct + iv",
             "bb_width_pctile": round(float(pctile), 0), "atr_pct": round(float(atr_pct), 2),
-            "iv_pctile": "DATA_GAP"}
+            "iv_pctile": iv_pctile}
 
 
 def stage_structure(conn, sym) -> tuple:
@@ -213,3 +226,49 @@ def run_conviction(conn, symbols=None) -> dict:
     scored = [x for x in scored if x["composite"] is not None]
     scored.sort(key=lambda x: -x["composite"])
     return {"macro": macro, "smart_money_score": sm_score, "n": len(scored), "ranked": scored}
+
+
+# ---- persistence + pre-market job ------------------------------------------
+def run_and_persist(conn) -> dict:
+    import json
+    import time
+    r = run_conviction(conn)
+    today = dt.datetime.now(IST).date().isoformat()
+    now = int(time.time())
+    conn.execute("INSERT OR REPLACE INTO conviction_macro (as_of_date, macro_json, smart_money, "
+                 "updated_at) VALUES (?,?,?,?)",
+                 (today, json.dumps(r["macro"]), r["smart_money_score"], now))
+    g = lambda x, s: (None if x["stages"][s]["score"] == "DATA_GAP" else x["stages"][s]["score"])
+    conn.executemany(
+        "INSERT OR REPLACE INTO conviction_daily (as_of_date, symbol, composite, tier, catalyst, "
+        "positioning, options, structure, volume, rel_strength, vol_expansion, data_gaps, "
+        "stages_json, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(today, x["symbol"], x["composite"], x["tier"], g(x, "catalyst"), g(x, "positioning"),
+          g(x, "options"), g(x, "structure"), g(x, "volume"), g(x, "rel_strength"),
+          g(x, "vol_expansion"), ",".join(x["data_gaps"]), json.dumps(x["stages"]), now)
+         for x in r["ranked"]])
+    conn.commit()
+    return {"date": today, "persisted": len(r["ranked"])}
+
+
+def register_conviction_job(scheduler, db_path: str) -> str:
+    """Pre-market 08:45 IST — run the engine and persist to conviction_daily for /conviction."""
+    import structlog
+    from apscheduler.triggers.cron import CronTrigger
+
+    from ..scheduler import market_hours
+    from ..storage.db import open_db
+    log = structlog.get_logger()
+
+    def _tick():
+        conn = open_db(db_path)
+        try:
+            log.info("conviction", **run_and_persist(conn))
+        except Exception:
+            log.exception("conviction_failed")
+        finally:
+            conn.close()
+
+    scheduler.add_job(_tick, trigger=CronTrigger(hour=8, minute=45, timezone=market_hours.IST),
+                      id="conviction", max_instances=1, coalesce=True, replace_existing=True)
+    return "conviction"

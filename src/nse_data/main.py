@@ -63,6 +63,7 @@ from .smart_money.short_squeeze import register_short_squeeze_job
 from .research.weekly_positional import register_weekly_positional_job
 from .collectors.global_markets import register_global_markets_job
 from .research.news_engine import register_news_score_job
+from .research.conviction import register_conviction_job
 from .signals.detect import register_signal_job
 from .signals.watchlist import register_watchlist_job
 from .signals.outcome_labeler import register_outcome_labeler
@@ -182,6 +183,8 @@ def main() -> int:
     # News-impact scores (news_engine) persisted nightly 17:00 IST → news_daily (Phase-2 signal
     # that was computed on-demand but never stored).
     registered.append(register_news_score_job(scheduler, db_path))
+    # Intraday high-conviction synthesis engine — pre-market 08:45 IST → conviction_daily (/conviction).
+    registered.append(register_conviction_job(scheduler, db_path))
     # Morning brief: 09:00 IST on trading days — one Telegram message with global
     # cues, GIFT-implied open, regime + posture, overnight events, expiry and
     # Nifty pivot S/R (Phase 2, Week 9).

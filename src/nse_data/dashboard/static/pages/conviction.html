@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conviction — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/backtest.css">
+<style>
+  .macro { background:var(--card,#161a23); border:1px solid var(--border,#333); border-radius:8px; padding:12px; margin:8px 0; font-size:13px; }
+  .tier { padding:1px 7px; border-radius:4px; font-weight:700; font-size:12px; }
+  .tier.Ap, .tier.A { background:rgba(22,163,74,.25); } .tier.B { background:rgba(245,158,11,.22); } .tier.C, .tier.D { background:rgba(220,38,38,.2); }
+  td.gap { color:#dc2626; font-size:11px; } td.num.hi { color:#16a34a; font-weight:600; }
+  .hint { color:var(--muted,#9aa); font-size:12px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Conviction</h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right"></div>
+  </header>
+
+  <div class="macro" id="macro"></div>
+  <div class="hint" id="bias"></div>
+
+  <div class="tablewrap" style="margin-top:10px">
+    <table id="tbl"><thead><tr>
+      <th class="num">#</th><th>Symbol</th><th class="num">Comp</th><th>Tier</th>
+      <th class="num">Cat</th><th class="num">Pos</th><th class="num">Opt</th><th class="num">Str</th>
+      <th class="num">Vol</th><th class="num">RS</th><th class="num">VX</th><th>Data gaps</th>
+    </tr></thead><tbody id="body"></tbody></table>
+  </div>
+  <div class="hint" style="margin-top:8px">Synthesis over collected data only. Empty cell = DATA_GAP (excluded from the composite, weights renormalised). A+ requires zero gaps in catalyst/positioning/options — note per-stock FII positioning is a market-wide proxy (NSE publishes no per-symbol participant OI), so A+ is intentionally hard to reach.</div>
+
+  <script type="module" src="/static/js/components/nav.js"></script>
+  <script type="module" src="/static/js/pages/conviction.js"></script>
+</body>
+</html>

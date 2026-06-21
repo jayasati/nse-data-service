@@ -66,6 +66,11 @@ def research() -> FileResponse:
     return _page("research.html")
 
 
+@router.get("/conviction", include_in_schema=False)
+def conviction() -> FileResponse:
+    return _page("conviction.html")
+
+
 @router.get("/market", include_in_schema=False)
 def market() -> FileResponse:
     return _page("market.html")

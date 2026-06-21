@@ -8,6 +8,7 @@ const NAV = [
   ["Stocks", "/stocks"],
   ["Rankings", "/rankings"],          // weekly positional book
   ["Research", "/research"],           // per-stock catalyst study
+  ["Conviction", "/conviction"],       // 13-stage intraday synthesis
   ["Backtest", "/backtest"],
   ["Trades", "/trades"],
   ["Earnings", "/earnings"],
