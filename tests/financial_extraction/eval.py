@@ -51,8 +51,28 @@ def _close(got: float, want: float, field: str) -> bool:
     return abs(got - want) <= max(abs(want) * REL_TOL, AMOUNT_ABS_FLOOR)
 
 
+# Corpus filter: many mined "Outcome of Board Meeting" PDFs are intimation cover-letters
+# that DON'T contain the financial statement (the results are a separate attachment). The
+# extractor correctly returns nothing for those, so they must be excluded — otherwise the
+# eval measures corpus quality, not extraction accuracy.
+_PL_MARKERS = ("profit before tax", "profit for the period", "profit after tax",
+               "total income", "net profit", "interest earned", "total comprehensive income")
+
+
+def _has_financials(pdf_path) -> bool:
+    from nse_data.parsers.pdf_text import extract_text
+    try:
+        r = extract_text(open(pdf_path, "rb").read())
+        txt = (r[0] if isinstance(r, tuple) else r) or ""
+    except Exception:  # noqa: BLE001 — unreadable → let extract try anyway
+        return True
+    low = txt.lower()
+    return sum(m in low for m in _PL_MARKERS) >= 2      # ≥2 markers = a real statement
+
+
 def evaluate(only_field: str | None = None, verbose: bool = False,
-             use_llm: bool = False, limit: int | None = None) -> int:
+             use_llm: bool = False, limit: int | None = None,
+             require_financials: bool = True) -> int:
     fixtures = [f for f in loader.load_fixtures() if f.ground_truth]
     if not fixtures:
         print("No labeled fixtures found. Run scripts/rehydrate_corpus.py first.")
@@ -60,9 +80,18 @@ def evaluate(only_field: str | None = None, verbose: bool = False,
     if limit:
         fixtures = fixtures[:limit]
 
+    # Score ONLY the fields the extractor is designed to produce. The XBRL ground truth
+    # is exhaustive (full balance sheet + NPA + ratios); scoring all of it would penalise
+    # the P&L extractor for fields it never targets. Restrict to the canonical set.
+    import yaml as _yaml
+    _al = _yaml.safe_load((ROOT / "config/financial_aliases.yaml").read_text())
+    scored_fields = (set(_al.get("canonical_fields", [])) | set(_al.get("bfsi_fields", []))
+                     | set(_al.get("non_bfsi_fields", [])))
+
     per_field = defaultdict(lambda: {"correct": 0, "total": 0, "missing": 0})
     per_strategy = defaultdict(lambda: {"correct": 0, "total": 0})
     failures: list[str] = []
+    skipped: list[str] = []
     total_llm_cost = 0.0
 
     mode = "HYBRID (ensemble + LLM fallback)" if use_llm else "ensemble-only"
@@ -71,6 +100,15 @@ def evaluate(only_field: str | None = None, verbose: bool = False,
     for i, fx in enumerate(fixtures, 1):
         gt = (fx.ground_truth or {}).get("standalone") or {}
         if not gt:
+            continue
+        # Skip fixtures whose PDF isn't present or doesn't contain a financial statement
+        # (intimation cover-letters). The extractor isn't responsible for those.
+        if not Path(fx.pdf_path).exists():
+            skipped.append(f"{fx.symbol} (pdf absent)")
+            continue
+        if require_financials and not _has_financials(fx.pdf_path):
+            skipped.append(f"{fx.symbol} (no financial statement in PDF)")
+            print(f"[{i}/{len(fixtures)}] {fx.symbol:14s} skip — intimation, no P&L", flush=True)
             continue
         # Print BEFORE extract so the slow camelot pass (≈100s on big PDFs) shows
         # as live progress instead of a frozen screen.
@@ -87,6 +125,8 @@ def evaluate(only_field: str | None = None, verbose: bool = False,
 
         def score(gt_block: dict, got_block: dict, scope: str) -> None:
             for fname, want in gt_block.items():
+                if fname not in scored_fields:
+                    continue                       # extractor doesn't target this field
                 if only_field and fname != only_field:
                     continue
                 if want is None:
@@ -106,9 +146,11 @@ def evaluate(only_field: str | None = None, verbose: bool = False,
                 per_strategy[res.strategy]["total"] += 1
 
         score(gt, res.fields, "standalone")
-        # Score consolidated only when the label provides it (most are null).
+        # Score consolidated only when BOTH the label AND the extractor provide it. The XBRL
+        # label carries consolidated (a separate filing); the result PDF is usually one scope,
+        # so penalising the extractor for a consolidated block the PDF never contained is unfair.
         gt_cons = (fx.ground_truth or {}).get("consolidated")
-        if isinstance(gt_cons, dict) and gt_cons:
+        if isinstance(gt_cons, dict) and gt_cons and res.consolidated:
             score(gt_cons, res.consolidated, "consolidated")
 
         if fixture_fails:
@@ -139,6 +181,10 @@ def evaluate(only_field: str | None = None, verbose: bool = False,
           f"(gate: 90%, target: 95%)")
     if total_llm_cost:
         print(f"  LLM fallback cost: ${total_llm_cost:.4f}")
+    if skipped:
+        print(f"\n  SKIPPED {len(skipped)} fixtures (no financial statement in the PDF / absent):")
+        for s in skipped:
+            print(f"    - {s}")
 
     print("\n" + "=" * 60)
     print("ACCURACY PER WINNING STRATEGY")
@@ -165,5 +211,8 @@ if __name__ == "__main__":
     ap.add_argument("--llm", action="store_true",
                     help="Enable GPT-4o fallback for low-confidence PDFs (costs API $)")
     ap.add_argument("--limit", type=int, default=None, help="Evaluate only the first N fixtures")
+    ap.add_argument("--all", action="store_true",
+                    help="Don't skip intimation PDFs (score every labeled fixture)")
     args = ap.parse_args()
-    sys.exit(evaluate(args.field, args.verbose, args.llm, args.limit))
+    sys.exit(evaluate(args.field, args.verbose, args.llm, args.limit,
+                      require_financials=not args.all))
