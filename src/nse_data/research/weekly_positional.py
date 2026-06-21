@@ -49,19 +49,20 @@ JOB_ID = "weekly_positional"
 
 # ---- slow-data accessors (each degrades to None/{} if its table/column is absent) ----
 def _shp(conn, sym: str) -> dict:
+    """Latest promoter-pledge LEVEL (delta when ≥2 quarters exist) + FII-ownership delta. Pledge
+    history is mostly single-quarter, so the LEVEL is the usable risk signal, not the delta."""
+    out: dict = {}
     try:
-        rows = conn.execute(
-            "SELECT promoter_pledge_pct, fii_pct FROM raw_shareholding_quarterly "
-            "WHERE symbol=? ORDER BY qe_date DESC LIMIT 2", (sym,)).fetchall()
+        for key, col in (("pledge", "promoter_pledge_pct"), ("fii", "fii_pct")):
+            rows = conn.execute(
+                f"SELECT {col} FROM raw_shareholding_quarterly WHERE symbol=? AND {col} IS NOT NULL "
+                "ORDER BY qe_date DESC LIMIT 2", (sym,)).fetchall()
+            if rows:
+                out[f"{key}_pct"] = rows[0][0]
+                out[f"{key}_delta"] = round(rows[0][0] - rows[1][0], 2) if len(rows) > 1 else None
     except Exception:  # noqa: BLE001
-        return {}
-    if not rows:
-        return {}
-    pl0, fii0 = rows[0]
-    pl1, fii1 = rows[1] if len(rows) > 1 else (None, None)
-    d = lambda a, b: round(a - b, 2) if (a is not None and b is not None) else None
-    return {"pledge_pct": pl0, "pledge_delta": d(pl0, pl1),
-            "fii_pct": fii0, "fii_delta": d(fii0, fii1)}
+        return out
+    return out
 
 
 def _credit(conn, sym: str) -> dict | None:
@@ -123,16 +124,19 @@ def _overlay(row: dict, shp: dict, deliv: dict | None, credit: dict | None,
     elif credit and credit.get("action") == "downgrade":
         adj -= 5; flags.append("downgrade")
     pp, pd_ = shp.get("pledge_pct"), shp.get("pledge_delta")
-    if pp and pp > 50 and (pd_ or 0) > 2:                      # hard exclude — high & rising pledge
-        excluded = True; flags.append("pledge-high↑")
-    elif (pd_ or 0) > 1:
+    if pp is not None and pp > 50:                             # hard exclude — very high pledge
+        excluded = True; flags.append("pledge>50%")
+    elif (pd_ or 0) > 1:                                       # rising pledge (when delta available)
         adj -= 6; flags.append("pledge↑")
+    elif pp is not None and pp > 25:                           # elevated pledge LEVEL (risk)
+        adj -= 4; flags.append("pledge-high")
     elif pd_ is not None and pd_ < -1:
         adj += 3; flags.append("pledge↓")
-    conv = (deliv or {}).get("conviction")
-    if conv is not None and conv >= 0.6:
+    # delivery conviction (compute_symbol_delivery): 0.8 accumulation … 0.3 distribution
+    conv = (deliv or {}).get("delivery_conviction_score")
+    if conv is not None and conv >= 0.65:
         adj += 4; flags.append("deliv↑")
-    elif conv is not None and conv < 0.3:
+    elif conv is not None and conv <= 0.35:
         adj -= 3; flags.append("deliv↓")
     if block and block > 5:
         adj += 3; flags.append("block-buy")
@@ -156,7 +160,7 @@ def rank_week(conn, *, params: PaperTradeParams, top_n: int, session_date: str |
                        "excluded": excluded, "pledge_pct": shp.get("pledge_pct"),
                        "pledge_delta": shp.get("pledge_delta"), "fii_pct": shp.get("fii_pct"),
                        "fii_delta": shp.get("fii_delta"),
-                       "delivery_conviction": (deliv or {}).get("conviction"),
+                       "delivery_conviction": (deliv or {}).get("delivery_conviction_score"),
                        "block_net_cr": block, "credit_action": (credit or {}).get("action"),
                        "atr_pct": atr_pct, "entry_px": close, "selected": 0, "final_rank": None})
     ranked.sort(key=lambda r: -r["adj_score"])

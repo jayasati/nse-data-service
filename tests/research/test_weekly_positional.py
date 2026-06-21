@@ -13,12 +13,14 @@ def _row(sym="X", comp=80.0, sector="it"):
 
 
 def test_overlay_boosts_and_penalties():
-    # pledge falling + high delivery + block buying → lifts above the composite base
-    adj, flags, excl = _overlay(_row(comp=80), {"pledge_delta": -2.0}, {"conviction": 0.7}, None, 8.0)
+    # pledge falling + high-delivery accumulation + block buying → lifts above the composite base
+    adj, flags, excl = _overlay(_row(comp=80), {"pledge_pct": 5, "pledge_delta": -2.0},
+                                {"delivery_conviction_score": 0.8}, None, 8.0)
     assert not excl and adj > 80 and "pledge↓" in flags and "deliv↑" in flags and "block-buy" in flags
-    # rising pledge + weak delivery → drops below base
-    adj2, flags2, _ = _overlay(_row(comp=80), {"pledge_delta": 3.0}, {"conviction": 0.2}, None, None)
-    assert adj2 < 80 and "pledge↑" in flags2 and "deliv↓" in flags2
+    # elevated pledge LEVEL + distribution delivery → drops below base
+    adj2, flags2, _ = _overlay(_row(comp=80), {"pledge_pct": 30},
+                               {"delivery_conviction_score": 0.3}, None, None)
+    assert adj2 < 80 and "pledge-high" in flags2 and "deliv↓" in flags2
 
 
 def test_overlay_does_not_reapply_fii():
@@ -30,8 +32,8 @@ def test_overlay_does_not_reapply_fii():
 def test_overlay_hard_excludes():
     _, f1, e1 = _overlay(_row(), {}, None, {"action": "downgrade", "junk": True}, None)
     assert e1 and "junk-downgrade" in f1                                # junk downgrade
-    _, f2, e2 = _overlay(_row(), {"pledge_pct": 60, "pledge_delta": 3}, None, None, None)
-    assert e2 and "pledge-high↑" in f2                                  # high & rising pledge
+    _, f2, e2 = _overlay(_row(), {"pledge_pct": 60}, None, None, None)
+    assert e2 and "pledge>50%" in f2                                    # very high pledge level
 
 
 def test_rank_week_sizes_and_sector_caps():
