@@ -31,7 +31,7 @@ def macro_regime(conn) -> dict:
     if not g:
         return {"status": "DATA_GAP", "note": "global macro collector not active. Regime withheld."}
     gn = conn.execute("SELECT pct_change FROM raw_gift_nifty ORDER BY as_of DESC LIMIT 1").fetchone()
-    iv = conn.execute("SELECT curr_value, pct_change FROM raw_india_vix ORDER BY as_of DESC "
+    iv = conn.execute("SELECT vix, vix_pct_change FROM raw_india_vix ORDER BY as_of DESC "
                       "LIMIT 1").fetchone()
     spx = g.get("^GSPC"); vix = g.get("^VIX"); nifty = g.get("^NSEI")
     gift_gap = gn[0] if gn else None
