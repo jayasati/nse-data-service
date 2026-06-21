@@ -61,6 +61,7 @@ from .smart_money.short_squeeze import register_short_squeeze_job
 # Daily Sweep live job SHELVED 2026-06-21 (no edge — see strategy/daily_sweep/README.md):
 # from .strategy.daily_sweep.live import register_daily_sweep_job
 from .research.weekly_positional import register_weekly_positional_job
+from .collectors.global_markets import register_global_markets_job
 from .signals.detect import register_signal_job
 from .signals.watchlist import register_watchlist_job
 from .signals.outcome_labeler import register_outcome_labeler
@@ -174,6 +175,9 @@ def main() -> int:
     # Weekly positional book — Monday 09:00 IST: rank (validated lean + slow-data overlay) →
     # snapshot to weekly_ranking (UI history) → ATR-size + paper-rebalance the basket (forward edge).
     registered.append(register_weekly_positional_job(scheduler, db_path))
+    # Global / cross-asset context (US, VIX, DXY, crude, gold, Asia + fresh Indian indices via
+    # Yahoo) — 08:15 & 17:15 IST. Phase-1 inputs the NSE feeds don't carry.
+    registered.append(register_global_markets_job(scheduler, db_path))
     # Morning brief: 09:00 IST on trading days — one Telegram message with global
     # cues, GIFT-implied open, regime + posture, overnight events, expiry and
     # Nifty pivot S/R (Phase 2, Week 9).
