@@ -1,9 +1,12 @@
 """HTML page routes — serve the static dashboard shells.
 
-One route per page; each returns a shell from static/pages/. The shells pull
-their data from the api/ surface over fetch(), so there's no logic here.
-"""
+One route per page; each returns a shell from static/pages/. The shells pull their data from
+the api/ surface over fetch(), so there's no logic here.
 
+All shells are served `Cache-Control: no-cache` (same policy as the /static bundle) so the
+browser always revalidates the page HTML — otherwise a cached shell can keep an old header/nav
+after a deploy. Cheap 304s when unchanged; instant pickup when it changes.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -14,55 +17,60 @@ from fastapi.responses import FileResponse
 # The static bundle lives alongside this package; the app mounts it at /static.
 STATIC_DIR = Path(__file__).parent / "static"
 PAGES_DIR = STATIC_DIR / "pages"
+_NO_CACHE = {"Cache-Control": "no-cache"}
 
 router = APIRouter()
 
 
+def _page(name: str) -> FileResponse:
+    return FileResponse(PAGES_DIR / name, headers=_NO_CACHE)
+
+
 @router.get("/", include_in_schema=False)
 def index() -> FileResponse:
-    return FileResponse(PAGES_DIR / "health.html")
+    return _page("health.html")
 
 
 @router.get("/stocks", include_in_schema=False)
 def stocks() -> FileResponse:
-    return FileResponse(PAGES_DIR / "stocks.html")
+    return _page("stocks.html")
 
 
 @router.get("/backtest", include_in_schema=False)
 def backtest() -> FileResponse:
-    return FileResponse(PAGES_DIR / "backtest.html")
+    return _page("backtest.html")
 
 
 @router.get("/trades", include_in_schema=False)
 def trades() -> FileResponse:
-    return FileResponse(PAGES_DIR / "trades.html")
+    return _page("trades.html")
 
 
 @router.get("/strategy", include_in_schema=False)
 def strategy() -> FileResponse:
-    return FileResponse(PAGES_DIR / "strategy.html")
+    return _page("strategy.html")
 
 
 @router.get("/strategy-signals", include_in_schema=False)
 def strategy_signals() -> FileResponse:
-    return FileResponse(PAGES_DIR / "strategy_signals.html")
+    return _page("strategy_signals.html")
 
 
 @router.get("/market", include_in_schema=False)
 def market() -> FileResponse:
-    return FileResponse(PAGES_DIR / "market.html")
+    return _page("market.html")
 
 
 @router.get("/earnings", include_in_schema=False)
 def earnings() -> FileResponse:
-    return FileResponse(PAGES_DIR / "earnings.html")
+    return _page("earnings.html")
 
 
 @router.get("/llm", include_in_schema=False)
 def llm() -> FileResponse:
-    return FileResponse(PAGES_DIR / "llm.html")
+    return _page("llm.html")
 
 
 @router.get("/gates", include_in_schema=False)
 def gates() -> FileResponse:
-    return FileResponse(PAGES_DIR / "gates.html")
+    return _page("gates.html")
