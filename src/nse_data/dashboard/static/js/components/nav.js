@@ -6,6 +6,7 @@ const NAV = [
   ["Health", "/"],
   ["Market", "/market"],
   ["Stocks", "/stocks"],
+  ["Rankings", "/rankings"],          // weekly positional book
   ["Backtest", "/backtest"],
   ["Trades", "/trades"],
   ["Earnings", "/earnings"],

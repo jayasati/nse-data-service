@@ -60,6 +60,7 @@ from .smart_money.score import register_smart_money_job
 from .smart_money.short_squeeze import register_short_squeeze_job
 # Daily Sweep live job SHELVED 2026-06-21 (no edge — see strategy/daily_sweep/README.md):
 # from .strategy.daily_sweep.live import register_daily_sweep_job
+from .research.weekly_positional import register_weekly_positional_job
 from .signals.detect import register_signal_job
 from .signals.watchlist import register_watchlist_job
 from .signals.outcome_labeler import register_outcome_labeler
@@ -170,6 +171,9 @@ def main() -> int:
     # Step-2 1H-retracement fix) shows NO edge: every parameter set is PF < 1 (best 0.98, net
     # −₹2.8k, not regime-robust). Live job disabled — see strategy/daily_sweep/README.md postmortem.
     # registered.append(register_daily_sweep_job(scheduler, db_path))
+    # Weekly positional book — Monday 09:00 IST: rank (validated lean + slow-data overlay) →
+    # snapshot to weekly_ranking (UI history) → ATR-size + paper-rebalance the basket (forward edge).
+    registered.append(register_weekly_positional_job(scheduler, db_path))
     # Morning brief: 09:00 IST on trading days — one Telegram message with global
     # cues, GIFT-implied open, regime + posture, overnight events, expiry and
     # Nifty pivot S/R (Phase 2, Week 9).

@@ -56,6 +56,11 @@ def strategy_signals() -> FileResponse:
     return _page("strategy_signals.html")
 
 
+@router.get("/rankings", include_in_schema=False)
+def rankings() -> FileResponse:
+    return _page("rankings.html")
+
+
 @router.get("/market", include_in_schema=False)
 def market() -> FileResponse:
     return _page("market.html")
