@@ -52,11 +52,13 @@ def _close(got: float, want: float, field: str) -> bool:
 
 
 def evaluate(only_field: str | None = None, verbose: bool = False,
-             use_llm: bool = False) -> int:
+             use_llm: bool = False, limit: int | None = None) -> int:
     fixtures = [f for f in loader.load_fixtures() if f.ground_truth]
     if not fixtures:
         print("No labeled fixtures found. Run scripts/rehydrate_corpus.py first.")
         return 1
+    if limit:
+        fixtures = fixtures[:limit]
 
     per_field = defaultdict(lambda: {"correct": 0, "total": 0, "missing": 0})
     per_strategy = defaultdict(lambda: {"correct": 0, "total": 0})
@@ -162,5 +164,6 @@ if __name__ == "__main__":
     ap.add_argument("--verbose", action="store_true", help="Per-fixture pass/fail")
     ap.add_argument("--llm", action="store_true",
                     help="Enable GPT-4o fallback for low-confidence PDFs (costs API $)")
+    ap.add_argument("--limit", type=int, default=None, help="Evaluate only the first N fixtures")
     args = ap.parse_args()
-    sys.exit(evaluate(args.field, args.verbose, args.llm))
+    sys.exit(evaluate(args.field, args.verbose, args.llm, args.limit))

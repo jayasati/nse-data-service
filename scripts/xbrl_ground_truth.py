@@ -66,13 +66,22 @@ def _fetch(url: str) -> bytes | None:
 
 
 def _xbrl_urls(conn: sqlite3.Connection, symbol: str, qend: dt.date) -> list[str]:
+    # Primary: raw_integrated_filings — the current feed that actually carries 2026 Q4
+    # (raw_financial_results is frozen at Dec-2024, so it never matches a 2026 fixture).
     urls = []
-    for to_date, url in conn.execute(
+    for qe_date, url in conn.execute(
+        "SELECT qe_date, xbrl_url FROM raw_integrated_filings "
+        "WHERE symbol=? AND xbrl_url IS NOT NULL AND xbrl_url<>''", (symbol,)
+    ):
+        if _d(qe_date) == qend:
+            urls.append(url)
+    if urls:
+        return urls
+    for to_date, url in conn.execute(          # fallback: older per-result feed
         "SELECT to_date, xbrl_url FROM raw_financial_results "
         "WHERE symbol=? AND xbrl_url IS NOT NULL AND xbrl_url<>''", (symbol,)
     ):
-        d = _d(to_date)
-        if d == qend:
+        if _d(to_date) == qend:
             urls.append(url)
     return urls
 
