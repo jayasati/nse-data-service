@@ -18,13 +18,29 @@ from ..strategy.daily_sweep.fvg import detect_fvgs
 from ..strategy.daily_sweep.sweep import detect_sweeps
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
-# Re-weighted after validation: catalyst (news) backtested NON-predictive (IC ≈ −0.04..−0.19), so
-# it drops from 25% to 10% (a risk-flag/tiebreaker, not a driver). That weight moves to options
-# (cleanest intraday signal), structure, and positioning.
-WEIGHTS = {"options": 0.22, "structure": 0.20, "positioning": 0.20, "volume": 0.13,
-           "rel_strength": 0.10, "catalyst": 0.10, "vol_expansion": 0.05}
+# Catalyst (news) backtested NON-predictive (IC ≈ 0), so it carries ZERO positive weight — it is a
+# RISK-VETO only (bad news penalises the composite + caps the tier; good news never lifts it).
+WEIGHTS = {"options": 0.25, "structure": 0.22, "positioning": 0.22, "volume": 0.15,
+           "rel_strength": 0.11, "vol_expansion": 0.05}
 
-_SECTOR_IDX = {"it": "^CNXIT", "bfsi": "^NSEBANK", "nbfc": "^CNXFIN", "financial": "^CNXFIN"}
+_SECTOR_IDX = {"it": "^CNXIT", "bfsi": "^NSEBANK", "nbfc": "^CNXFIN", "financial": "^CNXFIN",
+               "pharma": "^CNXPHARMA", "auto": "^CNXAUTO", "fmcg": "^CNXFMCG",
+               "metals": "^CNXMETAL", "energy": "^CNXENERGY", "realty": "^CNXREALTY",
+               "capgoods": "^CNXINFRA", "infra": "^CNXINFRA", "media": "^CNXMEDIA"}
+
+
+def news_veto(stages) -> tuple[float, str | None]:
+    """Catalyst as a risk-veto: low news_risk (governance/insolvency/downgrade/pledge/penalty)
+    penalises the composite and can cap the tier. Good news does NOT lift the score (IC ≈ 0)."""
+    cat = stages.get("catalyst", {})
+    risk = cat.get("news_risk")
+    if not isinstance(risk, (int, float)):
+        return 0.0, None
+    if risk < 50:
+        return 2.0, f"NEWS-VETO ({cat.get('top_neg')})"
+    if risk < 70:
+        return round((70 - risk) / 15.0, 1), f"news-caution ({cat.get('top_neg')})"
+    return 0.0, None
 
 
 def _sector_pct(conn, sym):
@@ -212,17 +228,21 @@ def composite(scores: dict) -> tuple:
     return round(num / den, 2), renorm
 
 
-def tier_of(comp, scores) -> str:
-    gaps_critical = any(scores.get(s, (GAP,))[0] is GAP for s in ("catalyst", "positioning", "options"))
-    cat = scores.get("catalyst", (GAP,))[0]
-    pos = scores.get("positioning", (GAP,))[0]
+def tier_of(comp, scores, veto_flag=None) -> str:
     if comp is None:
         return "DATA_GAP"
-    if (not gaps_critical and cat is not GAP and cat >= 7 and pos is not GAP and pos >= 7
-            and comp >= 7.5):
+    if veto_flag and "NEWS-VETO" in veto_flag:
+        return "C (news-veto)"
+    gaps_critical = any(scores.get(s, (GAP,))[0] is GAP for s in ("positioning", "options"))
+    pos = scores.get("positioning", (GAP,))[0]
+    opt = scores.get("options", (GAP,))[0]
+    # A+ now needs strong positioning + options + composite + clean news (no veto) — not a
+    # high catalyst score (catalyst is veto-only).
+    if (not gaps_critical and pos is not GAP and pos >= 7 and opt is not GAP and opt >= 7
+            and comp >= 7.5 and not veto_flag):
         return "A+"
     if gaps_critical and comp >= 7.0:
-        return "B (capped — DATA_GAP in catalyst/positioning/options)"
+        return "B (capped — DATA_GAP in positioning/options)"
     return "A" if comp >= 6.5 else "B" if comp >= 5.0 else "C"
 
 
@@ -289,15 +309,17 @@ def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None) -> dict:
     comp, renorm = composite(scores)
     gaps = [s for s, (v, _) in scores.items() if v is GAP]
     stages = {s: {"score": ("DATA_GAP" if v is GAP else v), **d} for s, (v, d) in scores.items()}
+    veto_pen, veto_flag = news_veto(stages)          # catalyst = risk-veto, not a positive factor
+    if comp is not None:
+        comp = round(max(0.0, comp - veto_pen), 2)
     df = _daily(conn, sym)
     close = float(df["close"].iloc[-1]) if df is not None else None
     atr = float(ta.atr(df["high"], df["low"], df["close"], 14).iloc[-1]) if df is not None else None
     plan = trade_plan(close, atr, stages, macro)
-    # honest probability: anchored to composite, capped — modest edges (validated this session)
     prob = round(min(68, 45 + (comp or 5) * 2.6)) if comp else None
-    return {"symbol": sym, "composite": comp, "tier": tier_of(comp, scores),
+    return {"symbol": sym, "composite": comp, "tier": tier_of(comp, scores, veto_flag),
             "renorm_weights": renorm, "data_gaps": gaps, "trade": plan, "probability_pct": prob,
-            "stages": stages}
+            "news_flag": veto_flag, "stages": stages}
 
 
 def run_conviction(conn, symbols=None) -> dict:

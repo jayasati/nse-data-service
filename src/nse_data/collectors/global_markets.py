@@ -18,6 +18,12 @@ log = structlog.get_logger()
 TICKERS = {
     "^NSEI": ("Nifty 50", "india_index"), "^NSEBANK": ("Nifty Bank", "india_index"),
     "^CNXIT": ("Nifty IT", "india_index"), "^CNXFIN": ("Nifty Financial", "india_index"),
+    # sector indices (broaden the conviction engine's sector-strength check beyond IT/bank/fin)
+    "^CNXAUTO": ("Nifty Auto", "india_sector"), "^CNXPHARMA": ("Nifty Pharma", "india_sector"),
+    "^CNXFMCG": ("Nifty FMCG", "india_sector"), "^CNXMETAL": ("Nifty Metal", "india_sector"),
+    "^CNXENERGY": ("Nifty Energy", "india_sector"), "^CNXREALTY": ("Nifty Realty", "india_sector"),
+    "^CNXINFRA": ("Nifty Infra", "india_sector"), "^CNXPSUBANK": ("Nifty PSU Bank", "india_sector"),
+    "^CNXMEDIA": ("Nifty Media", "india_sector"),
     "^GSPC": ("S&P 500", "us_index"), "^IXIC": ("Nasdaq", "us_index"),
     "^DJI": ("Dow Jones", "us_index"), "^VIX": ("US VIX", "vol"),
     "^TNX": ("US 10Y Yield", "rate"), "DX-Y.NYB": ("Dollar Index (DXY)", "fx"),
