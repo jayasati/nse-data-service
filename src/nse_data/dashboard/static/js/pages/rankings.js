@@ -45,12 +45,13 @@ async function loadWeek(week) {
   $("rankBody").innerHTML = rows.map(x => {
     const cls = x.selected ? "basket" : x.excluded ? "excluded" : "";
     const rank = x.selected ? x.final_rank : x.base_rank;
-    const pd = x.pledge_delta, fd = x.fii_delta;
+    const pd = x.pledge_delta;
     return `<tr class="${cls}"><td class="num">${rank ?? "—"}</td><td>${x.symbol}</td>` +
-      `<td>${x.sector || "—"}</td><td class="num">${f1(x.lean_score)}</td>` +
+      `<td>${x.sector || "—"}</td><td class="num">${f1(x.quality)}</td>` +
+      `<td class="num">${f1(x.valuation)}</td><td class="num">${f1(x.momentum)}</td>` +
+      `<td class="num">${f1(x.composite)}</td>` +
       `<td class="num">${f1(x.adj_score)}</td><td>${flagHtml(x.flags)}</td>` +
       `<td class="num ${pd > 0 ? "neg" : pd < 0 ? "pos" : ""}">${pd == null ? "—" : (pd > 0 ? "+" : "") + f2(pd)}</td>` +
-      `<td class="num ${fd > 0 ? "pos" : fd < 0 ? "neg" : ""}">${fd == null ? "—" : (fd > 0 ? "+" : "") + f2(fd)}</td>` +
       `<td class="num">${x.delivery_conviction == null ? "—" : f2(x.delivery_conviction)}</td>` +
       `<td class="num">${f1(x.entry_px)}</td><td class="num">${f1(x.stop_px)}</td>` +
       `<td class="num">${x.qty ?? "—"}</td><td class="num">${inr(x.risk_rupees)}</td></tr>`;

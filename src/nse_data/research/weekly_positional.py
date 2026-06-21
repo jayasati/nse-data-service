@@ -18,8 +18,29 @@ import structlog
 from ..indicators.delivery_tracker import compute_symbol_delivery
 from ..scheduler import market_hours
 from ..storage.db import open_db
-from .lean_rank import rank as lean_rank
+from .lean_rank import TRADEABLE
 from .paper_trade import PaperTradeParams, _size_position
+
+
+def _composite_rank(conn, *, grades=TRADEABLE, limit: int = 100, as_of: str | None = None) -> list[dict]:
+    """Top tradeable names by the VALIDATED multi-factor composite (Quality+Value+Momentum+
+    Surprise+Turnaround). Composite is the best single predictor (IC +0.065, +4.2% 90d spread) —
+    far better than FII/ownership (IC +0.017), so this replaces the lean (val+surprise) base."""
+    as_of = as_of or conn.execute("SELECT MAX(snapshot_date) FROM factor_snapshot").fetchone()[0]
+    if not as_of:
+        return []
+    grade = dict(conn.execute("SELECT symbol, grade FROM tradeable_universe"))
+    out = []
+    for sym, sec, comp, q, val, mom, sur in conn.execute(
+            "SELECT symbol, sector, composite, quality, valuation, momentum, surprise "
+            "FROM factor_snapshot WHERE snapshot_date=? AND composite IS NOT NULL", (as_of,)):
+        g = grade.get(sym)
+        if grades and g not in grades:
+            continue
+        out.append({"symbol": sym, "sector": sec, "grade": g, "composite": comp,
+                    "quality": q, "valuation": val, "momentum": mom, "surprise": sur})
+    out.sort(key=lambda r: -(r["composite"] or 0))
+    return out[:limit] if limit else out
 
 log = structlog.get_logger()
 STRATEGY = "weekly_positional"
@@ -92,10 +113,11 @@ def _delivery(conn, sym: str, session_date: str | None) -> dict | None:
 # ---- overlay: tilt the validated score with the slow-data edge ----
 def _overlay(row: dict, shp: dict, deliv: dict | None, credit: dict | None,
              block: float | None) -> tuple[float, list[str], bool]:
-    # NB: the factor_snapshot `risk` column is ~100 for the whole liquid universe (not a usable
-    # danger score), so risk control comes from the engine's liquidity grade + ATR sizing + heat
-    # caps, not a risk gate here. Hard excludes are the real external slow-data red flags.
-    adj, flags, excluded = row["lean_score"], [], False
+    # Base = the validated multi-factor COMPOSITE (Quality+Value+Momentum+Surprise). The overlay
+    # only adds signals NOT already in the composite: external risk events (credit, pledge) and
+    # real-money flow (delivery, block deals). FII/ownership is deliberately NOT re-applied here —
+    # it's a near-zero predictor (IC +0.017) and already lives inside the composite.
+    adj, flags, excluded = row["composite"], [], False
     if credit and credit.get("junk"):                          # hard exclude — junk downgrade
         excluded = True; flags.append("junk-downgrade")
     elif credit and credit.get("action") == "downgrade":
@@ -107,11 +129,6 @@ def _overlay(row: dict, shp: dict, deliv: dict | None, credit: dict | None,
         adj -= 6; flags.append("pledge↑")
     elif pd_ is not None and pd_ < -1:
         adj += 3; flags.append("pledge↓")
-    fd = shp.get("fii_delta")
-    if (fd or 0) > 0.5:
-        adj += 4; flags.append("FII↑")
-    elif (fd or 0) < -0.5:
-        adj -= 4; flags.append("FII↓")
     conv = (deliv or {}).get("conviction")
     if conv is not None and conv >= 0.6:
         adj += 4; flags.append("deliv↑")
@@ -126,7 +143,7 @@ def _overlay(row: dict, shp: dict, deliv: dict | None, credit: dict | None,
 
 def rank_week(conn, *, params: PaperTradeParams, top_n: int, session_date: str | None) -> list[dict]:
     """Rank → overlay → select+size the basket. Returns ALL candidates (selected flagged)."""
-    base = lean_rank(conn, limit=100)
+    base = _composite_rank(conn, limit=100)
     ranked = []
     for i, row in enumerate(base):
         sym = row["symbol"]
@@ -134,7 +151,8 @@ def rank_week(conn, *, params: PaperTradeParams, top_n: int, session_date: str |
         deliv = _delivery(conn, sym, session_date)
         adj, flags, excluded = _overlay(row, shp, deliv, credit, block)
         atr_pct, close = _atr_close(conn, sym)
-        ranked.append({**row, "base_rank": i + 1, "adj_score": adj, "flags": flags,
+        ranked.append({**row, "lean_score": row["composite"], "base_rank": i + 1,
+                       "adj_score": adj, "flags": flags,
                        "excluded": excluded, "pledge_pct": shp.get("pledge_pct"),
                        "pledge_delta": shp.get("pledge_delta"), "fii_pct": shp.get("fii_pct"),
                        "fii_delta": shp.get("fii_delta"),
@@ -163,12 +181,14 @@ def _persist_snapshot(conn, week_date: str, ranked: list[dict]) -> None:
     now = int(time.time())
     conn.executemany(
         "INSERT OR REPLACE INTO weekly_ranking (week_date, symbol, sector, grade, base_rank, "
-        "lean_score, valuation, surprise, risk, adj_score, pledge_pct, pledge_delta, fii_pct, "
-        "fii_delta, delivery_conviction, block_net_cr, credit_action, flags, excluded, atr_pct, "
-        "entry_px, stop_px, qty, risk_rupees, selected, final_rank, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "lean_score, composite, quality, valuation, momentum, surprise, risk, adj_score, "
+        "pledge_pct, pledge_delta, fii_pct, fii_delta, delivery_conviction, block_net_cr, "
+        "credit_action, flags, excluded, atr_pct, entry_px, stop_px, qty, risk_rupees, selected, "
+        "final_rank, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(week_date, r["symbol"], r.get("sector"), r.get("grade"), r["base_rank"],
-          r["lean_score"], r.get("valuation"), r.get("surprise"), r.get("risk"), r["adj_score"],
+          r["lean_score"], r.get("composite"), r.get("quality"), r.get("valuation"),
+          r.get("momentum"), r.get("surprise"), r.get("risk"), r["adj_score"],
           r.get("pledge_pct"), r.get("pledge_delta"), r.get("fii_pct"), r.get("fii_delta"),
           r.get("delivery_conviction"), r.get("block_net_cr"), r.get("credit_action"),
           json.dumps(r["flags"]), 1 if r["excluded"] else 0, r.get("atr_pct"), r.get("entry_px"),
