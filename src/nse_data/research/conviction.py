@@ -213,21 +213,19 @@ def trade_plan(close, atr, stages, macro) -> dict:
     bull = (mp_drift > 0) + (rs > 0) + (pos < 55)
     bear = (mp_drift < 0) + (rs < 0) + (pos > 75)
     direction = "LONG" if bull > bear else "SHORT" if bear > bull else ("LONG" if rs >= 0 else "SHORT")
-    r1 = round(1.5 * atr, 1)
+    # consistent ATR-based risk (1.3·ATR) → sane R:R; walls/max-pain/20d levels used as targets
+    # ONLY when they sit the correct side of entry (else fall back to ATR multiples).
+    entry = round(close, 1)
     if direction == "LONG":
-        entry = round(close, 1)
-        stop = round(max(close - 1.3 * atr, (pw or close - 1.3 * atr)), 1)
-        if stop >= entry:
-            stop = round(close - 1.3 * atr, 1)
-        t1, t2 = round(close + r1, 1), round(cw or close + 2.5 * atr, 1)
-        t3 = round(hi20 or close + 3.5 * atr, 1)
+        stop = round(close - 1.3 * atr, 1)
+        t1 = round(close + 1.5 * atr, 1)
+        t2 = round(cw, 1) if (cw and cw > close + 0.5 * atr) else round(close + 2.5 * atr, 1)
+        t3 = round(max(hi20 or 0, close + 3.5 * atr), 1)
     else:
-        entry = round(close, 1)
-        stop = round(min(close + 1.3 * atr, (cw or close + 1.3 * atr)), 1)
-        if stop <= entry:
-            stop = round(close + 1.3 * atr, 1)
-        t1, t2 = round(close - r1, 1), round(mp or close - 2.5 * atr, 1)
-        t3 = round(lo20 or close - 3.5 * atr, 1)
+        stop = round(close + 1.3 * atr, 1)
+        t1 = round(close - 1.5 * atr, 1)
+        t2 = round(mp, 1) if (mp and mp < close - 0.5 * atr) else round(close - 2.5 * atr, 1)
+        t3 = round(min(lo20 or 1e12, close - 3.5 * atr), 1)
     risk = abs(entry - stop)
     rr = round(abs(t2 - entry) / risk, 1) if risk else None
     # setup bucket (Stage 12)
