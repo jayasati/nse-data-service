@@ -1,0 +1,51 @@
+"""Daily Sweep strategy — all rule parameters in one place (no magic numbers in logic).
+
+Every threshold from the spec lives here so backtest sweeps + live both read the same config.
+Defaults match the spec; the backtester's walk-forward (Step 12) varies these.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class DailySweepConfig:
+    # --- Step 1: swing/trend (fractal lookback, bars each side) ---
+    daily_swing_k: int = 5          # spec default 5 left / 5 right
+    h1_swing_k: int = 5
+    m5_swing_k: int = 3             # tighter on 5m (faster structure)
+
+    # --- Step 2: 1H retracement zone ---
+    fib_min: float = 0.382          # 38.2%–79% retracement band
+    fib_max: float = 0.79
+
+    # --- Step 3: 5m liquidity sweep ---
+    sweep_min_pct: float = 0.001    # 0.1% of price …
+    sweep_min_atr: float = 0.25     # … OR 0.25 × ATR(14) — whichever is larger
+    atr_len: int = 14
+    vol_ma_len: int = 20            # volume must exceed this many-bar average
+
+    # --- Step 7: risk ---
+    risk_pct: float = 1.0           # 1% of capital per trade
+    rr_target: float = 3.0          # Target Model A: 1:3
+    partial_rr: float = 2.0         # Target Model C: 50% at 1:2, trail rest
+    trail_atr_mult: float = 1.5     # ATR trail for the runner
+
+    # --- Step 8: session windows (IST, "HH:MM") ---
+    sessions: tuple[tuple[str, str], ...] = (("09:20", "11:00"), ("13:30", "15:00"))
+
+    # --- Step 9: market filters ---
+    max_gap_pct: float = 2.0        # skip if open gaps > 2% vs prior close
+    block_event_days: bool = True   # RBI/Fed/earnings-within-24h guard
+
+    # --- universe / instruments ---
+    indices: tuple[str, ...] = ("NIFTY", "BANKNIFTY", "FINNIFTY")
+    target_model: str = "A"         # 'A' 1:3 | 'B' nearest-liquidity | 'C' partial+trail
+
+    # --- backtest ---
+    capital: float = 1_000_000.0
+    segment: str = "intraday"       # cost model leg (F&O/intraday)
+    extra: dict = field(default_factory=dict)
+
+
+DEFAULT = DailySweepConfig()

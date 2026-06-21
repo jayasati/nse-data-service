@@ -25,10 +25,12 @@ from ..base import Indicator
 _K = 3   # bars each side for fractal confirmation
 
 
-def _structure_frame(ohlcv: pd.DataFrame) -> pd.DataFrame:
+def _structure_frame(ohlcv: pd.DataFrame, k: int = _K) -> pd.DataFrame:
+    """Swing highs/lows + HH-HL/LH-LL structure. `k` = fractal bars each side
+    (configurable so multi-timeframe strategies can pass their own lookback)."""
     high, low = ohlcv["high"], ohlcv["low"]
     n = len(ohlcv)
-    win = 2 * _K + 1
+    win = 2 * k + 1
     is_sh = high.rolling(win, center=True).max() == high
     is_sl = low.rolling(win, center=True).min() == low
 
@@ -37,9 +39,9 @@ def _structure_frame(ohlcv: pd.DataFrame) -> pd.DataFrame:
     structure = [None] * n
     prev_sh = last_sh = prev_sl = last_sl = None
     for i in range(n):
-        # the swing at i−_K is confirmed once bar i exists
-        j = i - _K
-        if j >= _K:
+        # the swing at i−k is confirmed once bar i exists
+        j = i - k
+        if j >= k:
             if is_sh.iloc[j]:
                 prev_sh, last_sh = last_sh, float(high.iloc[j])
             if is_sl.iloc[j]:
