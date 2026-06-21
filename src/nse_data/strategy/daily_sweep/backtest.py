@@ -115,9 +115,10 @@ def format_report(rep: dict) -> str:
          f"PF {m['profit_factor']} | expectancy {m['expectancy']:.3f}% | "
          f"maxDD {m['max_drawdown_pct']}% | Sharpe {m['sharpe']} | net {m['total_net_pct']}% | "
          f"hold {m['avg_hold_min']}min | exits {m['exit_breakdown']}",
-         "date        time   dir   entry     SL       target    exit      result  RR"]
+         "date        time   dir   1H-retr-zone     entry     SL       target    exit      result  RR"]
     for t in rep["trades"]:
         s = t.setup
-        L.append(f"{s.entry_time:%Y-%m-%d %H:%M} {s.direction:5} {s.entry_price:9.1f} "
+        z = f"{s.h1_zone[0]:.1f}-{s.h1_zone[1]:.1f}" if s.h1_zone else "—"
+        L.append(f"{s.entry_time:%Y-%m-%d %H:%M} {s.direction:5} {z:15} {s.entry_price:9.1f} "
                  f"{s.stop:8.1f} {s.target:9.1f} {t.exit_price:9.1f} {t.exit_reason:7} {t.rr_achieved:+.2f}")
     return "\n".join(L)

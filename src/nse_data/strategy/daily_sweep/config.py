@@ -18,7 +18,9 @@ class DailySweepConfig:
     # --- Step 2: 1H retracement zone ---
     fib_min: float = 0.382          # 38.2%–79% retracement band
     fib_max: float = 0.79
-    require_h1_retracement: bool = True   # entry must sit in the 1H fib zone (Step 2 confluence)
+    require_h1_retracement: bool = True   # Step 2 gate: entry inside the 1H fib band …
+    require_daily_structure_intact: bool = True   # … AND retracement hasn't broken the daily swing
+    require_h1_demand_zone: bool = True    # … AND entry sits in an aligned 1H FVG (demand/supply)
 
     # --- Step 6: sequencing windows (5m bars) ---
     bos_max_bars: int = 24          # BOS must confirm within ~2h of the sweep

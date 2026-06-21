@@ -43,6 +43,7 @@ class SweepSetup:
     qty: int
     risk_rupees: float
     rr: float
+    h1_zone: tuple | None = None   # Step 2 — the 1H retracement (fib) band this entry sat in
 
 
 def in_session(ts: pd.Timestamp, sessions) -> bool:
@@ -72,26 +73,39 @@ def _daily_state(daily: pd.DataFrame, k: int):
     return prior
 
 
-def _h1_zone(h1: pd.DataFrame, k: int, fib_min: float, fib_max: float):
-    """Step 2 — point-in-time 1H retracement zone. Returns ts,trend → (zone_low, zone_high) | None
-    using only the 1H swing structure CONFIRMED at or before ts (no look-ahead)."""
+def _h1_retracement(h1: pd.DataFrame, k: int, fib_min: float, fib_max: float):
+    """Step 2 — point-in-time 1H retracement context. Returns ts,trend → dict | None with the
+    fib 38.2–79% band of the current 1H leg, the leg's prior swing (the demand/supply origin),
+    and the nearest aligned 1H FVG (the demand/supply zone). Uses only 1H structure/FVGs CONFIRMED
+    at or before ts (no look-ahead)."""
     if h1 is None or len(h1) < 2 * k + 1:
         return lambda ts, trend: None
     sf = _structure_frame(h1, k=k)
+    fv = detect_fvgs(h1)
     idx = h1.index
     sh, sl = sf["swing_high"].to_numpy(), sf["swing_low"].to_numpy()
+    fdir = fv["fvg_dir"].to_numpy()
+    flo, fhi = fv["gap_low"].to_numpy(), fv["gap_high"].to_numpy()
 
     def zone(ts, trend):
         pos = idx.searchsorted(ts, side="right") - 1
         if pos < 0:
             return None
-        a, b = sh[pos], sl[pos]
+        a, b = sh[pos], sl[pos]                       # leg high / low confirmed by now
         if pd.isna(a) or pd.isna(b) or a <= b:
             return None
-        rng = float(a - b)
-        if trend == "bullish":                       # 79% (deep) … 38.2% of the up-leg
-            return (float(a) - fib_max * rng, float(a) - fib_min * rng)
-        return (float(b) + fib_min * rng, float(b) + fib_max * rng)   # mirror for downtrend
+        rng, want = float(a - b), ("bull" if trend == "bullish" else "bear")
+        if trend == "bullish":                        # 79% (deep) … 38.2% of the up-leg
+            fib_low, fib_high = float(a) - fib_max * rng, float(a) - fib_min * rng
+        else:
+            fib_low, fib_high = float(b) + fib_min * rng, float(b) + fib_max * rng
+        h1_fvg = None                                 # nearest aligned 1H FVG = demand/supply zone
+        for p in range(pos, -1, -1):
+            if fdir[p] == want and pd.notna(flo[p]):
+                h1_fvg = (float(flo[p]), float(fhi[p]))
+                break
+        return {"fib_low": fib_low, "fib_high": fib_high, "leg_low": float(b),
+                "leg_high": float(a), "h1_fvg": h1_fvg}
     return zone
 
 
@@ -114,7 +128,7 @@ def scan_setups(daily: pd.DataFrame, h1: pd.DataFrame, m5: pd.DataFrame, *,
     blocked = blocked_dates or set()
     prior_trend = _daily_state(daily, config.daily_swing_k)
     gap = _daily_gap_pct(daily)
-    h1_zone = _h1_zone(h1, config.h1_swing_k, config.fib_min, config.fib_max)
+    h1_ret = _h1_retracement(h1, config.h1_swing_k, config.fib_min, config.fib_max)
 
     sw = detect_sweeps(m5, swing_k=config.m5_swing_k, atr_len=config.atr_len,
                        vol_ma_len=config.vol_ma_len, min_pct=config.sweep_min_pct,
@@ -174,10 +188,23 @@ def scan_setups(daily: pd.DataFrame, h1: pd.DataFrame, m5: pd.DataFrame, *,
         entry_ts = m5.index[entry_idx]
         if not in_session(entry_ts, config.sessions):          # Step 8
             continue
-        if config.require_h1_retracement:                      # Step 2: 1H fib confluence
-            z = h1_zone(m5.index[i], dtrend)
-            if z is None or not (z[0] <= entry_px <= z[1]):
+        h1_band = None
+        if config.require_h1_retracement:                      # Step 2: full 1H retracement
+            z = h1_ret(m5.index[i], dtrend)
+            if z is None or not (z["fib_low"] <= entry_px <= z["fib_high"]):
+                continue                                        # entry inside the 38.2–79% fib band
+            dsh, dsl = ds[2], ds[3]                             # (a) daily structure not violated
+            if dtrend == "bullish":
+                structure_ok = dsl is None or pd.isna(dsl) or entry_px > float(dsl)
+            else:
+                structure_ok = dsh is None or pd.isna(dsh) or entry_px < float(dsh)
+            if config.require_daily_structure_intact and not structure_ok:
                 continue
+            fvg = z["h1_fvg"]                                   # (b) demand/supply = aligned 1H FVG
+            in_zone = fvg is not None and fvg[0] <= entry_px <= fvg[1]
+            if config.require_h1_demand_zone and not in_zone:
+                continue
+            h1_band = (round(z["fib_low"], 2), round(z["fib_high"], 2))
 
         # Step 7: SL = sweep extreme; target = model A (1:3); size to 1% risk
         sweep_extreme = float(low.iloc[i]) if sdir == "bull" else float(high.iloc[i])
@@ -197,6 +224,7 @@ def scan_setups(daily: pd.DataFrame, h1: pd.DataFrame, m5: pd.DataFrame, *,
             sweep_time=m5.index[i], swept_level=float(sw["swept_level"].iloc[i]),
             sweep_extreme=sweep_extreme, bos_time=m5.index[j], fvg_low=glo, fvg_high=ghi,
             entry_time=entry_ts, entry_price=float(entry_px), stop=sweep_extreme,
-            target=float(target), qty=qty, risk_rupees=round(qty * risk, 2), rr=config.rr_target))
+            target=float(target), qty=qty, risk_rupees=round(qty * risk, 2), rr=config.rr_target,
+            h1_zone=h1_band))
         used_until = entry_idx                    # one setup per resolved sweep
     return setups
