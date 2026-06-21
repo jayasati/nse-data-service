@@ -179,6 +179,7 @@ def rank_week(conn, *, params: PaperTradeParams, top_n: int, session_date: str |
 
 def _persist_snapshot(conn, week_date: str, ranked: list[dict]) -> None:
     now = int(time.time())
+    conn.execute("DELETE FROM weekly_ranking WHERE week_date=?", (week_date,))   # clear stale rerun
     conn.executemany(
         "INSERT OR REPLACE INTO weekly_ranking (week_date, symbol, sector, grade, base_rank, "
         "lean_score, composite, quality, valuation, momentum, surprise, risk, adj_score, "
