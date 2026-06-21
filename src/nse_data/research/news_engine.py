@@ -163,8 +163,11 @@ def news_raw(conn, symbol: str, as_of_ep: int) -> dict:
             neg += contrib
             if top_neg is None or contrib > top_neg[1]:
                 top_neg = (et, contrib, subj)
-    news_score = round(50 + 50 * math.tanh(pos / 8.0), 1)
-    news_risk = round(100 - 50 * math.tanh(neg / 8.0), 1)
+    # Divisors calibrated to the universe's pos/neg distribution (pos median ~10, neg median ~5).
+    # ÷8 pinned everyone at ~100; positive flow is common so it needs substance to score high
+    # (÷25), while bad news is rarer and matters more so it pulls risk down faster (÷10).
+    news_score = round(50 + 50 * math.tanh(pos / 25.0), 1)
+    news_risk = round(100 - 50 * math.tanh(neg / 10.0), 1)
     return {"news_score": news_score, "news_risk": news_risk, "n_events": len(events),
             "top_pos": top_pos, "top_neg": top_neg}
 
