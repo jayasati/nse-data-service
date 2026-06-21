@@ -33,7 +33,7 @@ EVENT_TYPES = {
     "rating_up":      (+1, 5, 120),
     "positive_news":  (+1, 2, 21),
     "auditor_exit":   (-1, 9, 180),
-    "kmp_exit":       (-1, 6, 120),
+    "kmp_exit":       (-1, 4, 120),
     "regulatory":     (-1, 7, 150),
     "penalty":        (-1, 6, 120),
     "rating_down":    (-1, 7, 150),
@@ -63,7 +63,10 @@ def classify(subject: str | None, details: str | None, sentiment=None) -> str | 
            "reg. 74", "regulation 74", "regulation 7(3)", "regulation 40"):
         return None
     # --- negatives (checked first; they dominate the same filing) ---
-    if has("auditor") and has("resignation", "change in auditor", "cessation", "removal"):
+    # auditor RESIGNATION/removal is the red flag; routine "change in / appointment of auditor"
+    # (mandatory 5-yr rotation, ratification) is NOT — don't tag those severity-9 negatives.
+    if has("auditor") and has("resignation", "resign", "cessation", "removal") \
+            and not has("appoint", "ratif", "re-appoint"):
         return "auditor_exit"
     # pledge/encumbrance, BUT not the NEGATED forms ("no new (share) encumbrances", "confirms no
     # pledge", "pledge released/revoked", "reduction in pledge") — those are neutral/positive.
@@ -72,7 +75,11 @@ def classify(subject: str | None, details: str | None, sentiment=None) -> str | 
                           "pledge released", "revocation", "reduction in pledge", "no shares pledged")
     if has("pledge", "invocation", "encumbrance") and not _pledge_negated:
         return "pledge"
-    if has("insolvency", "nclt", "cirp", "default in payment", "winding up"):
+    # insolvency/NCLT is a negative — UNLESS it's an NCLT-APPROVED merger/scheme (a positive
+    # outcome), which the acquisition rule below should claim instead.
+    if has("insolvency", "cirp", "default in payment", "winding up") or (
+            has("nclt") and not has("approv", "sanction", "dispensation", "convene",
+                                    "scheme", "merger", "amalgamation", "arrangement")):
         return "regulatory"
     # adverse regulatory ACTION (not a routine SEBI-regulations citation)
     if has("show cause", "show-cause", "adjudication", "investigation", "search and seiz",
@@ -101,7 +108,10 @@ def classify(subject: str | None, details: str | None, sentiment=None) -> str | 
         return "product_launch"
     if has("qip", "preferential issue", "fund rais", "raising of funds", "rights issue", "warrant"):
         return "fundraise"
-    if has("credit rating", "rating action", "reaffirm", "rating"):
+    # NB: bare "rating" matches "opeRATING" — require specific credit-rating terms.
+    if has("credit rating", "rating action", "rating agency", "rating assigned", "rating revised",
+           "rating upgrade", "rating downgrade", "rating reaffirm", "reaffirmation of rating",
+           "icra", "crisil", "care ratings", "ind-ra", "india ratings", "rating of"):
         sv = _sentiment_val(sentiment)
         return "rating_down" if (sv is not None and sv < 0) else "rating_up"
     if has("dividend"):
