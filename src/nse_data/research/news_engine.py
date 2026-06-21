@@ -65,12 +65,12 @@ def classify(subject: str | None, details: str | None, sentiment=None) -> str | 
     # --- negatives (checked first; they dominate the same filing) ---
     if has("auditor") and has("resignation", "change in auditor", "cessation", "removal"):
         return "auditor_exit"
-    # pledge/encumbrance, BUT not the NEGATED forms ("no new encumbrances", "confirms no
-    # pledge", "pledge released/revoked") — those are neutral/positive, not a pledge risk.
-    if has("pledge", "invocation", "encumbrance") and not has(
-            "no new encumbr", "no encumbr", "nil encumbr", "no pledge", "nil pledge",
-            "confirms no", "without encumbr", "free of encumbr", "release of pledge",
-            "pledge released", "revocation of pledge", "no shares pledged", "reduction in pledge"):
+    # pledge/encumbrance, BUT not the NEGATED forms ("no new (share) encumbrances", "confirms no
+    # pledge", "pledge released/revoked", "reduction in pledge") — those are neutral/positive.
+    _pledge_negated = has("no new", "declares no", "confirms no", "nil encumbr", "no encumbr",
+                          "no pledge", "without encumbr", "free of encumbr", "release of pledge",
+                          "pledge released", "revocation", "reduction in pledge", "no shares pledged")
+    if has("pledge", "invocation", "encumbrance") and not _pledge_negated:
         return "pledge"
     if has("insolvency", "nclt", "cirp", "default in payment", "winding up"):
         return "regulatory"
