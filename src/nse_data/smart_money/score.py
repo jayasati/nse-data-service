@@ -42,14 +42,28 @@ def flow_score(net_cr: float | None, *, threshold: float = _CASH_THRESHOLD, hi=0
     return 0.5
 
 
-def fii_deriv_score(fii_row: dict | None) -> float | None:
-    """FII derivative lean: net future-index + index call-vs-put longs. 0.3 (bearish)…0.7 (bullish)."""
+def fii_deriv_score(fii_row: dict | None, prev_row: dict | None = None) -> float | None:
+    """FII index-derivative lean, 0.15 (bearish)…0.85 (bullish). Blends the LONG SHARE of index
+    futures with the option call/put long-short skew, then nudges by whether FII ADDED or COVERED
+    shorts vs the prior day. FII structurally run net-short index futures as a cash hedge, so the
+    score reads the DEGREE and the CHANGE, not just the sign (the old binary version)."""
     if not fii_row:
         return None
-    fut_net = (fii_row.get("fut_idx_long") or 0) - (fii_row.get("fut_idx_short") or 0)
-    opt_net = (fii_row.get("opt_idx_call_long") or 0) - (fii_row.get("opt_idx_put_long") or 0)
-    bull = (1 if fut_net > 0 else -1) + (1 if opt_net > 0 else -1)        # -2..+2
-    return round(0.5 + bull * 0.1, 2)
+    fl, fs = fii_row.get("fut_idx_long") or 0, fii_row.get("fut_idx_short") or 0
+    fut_frac = fl / (fl + fs) if (fl + fs) else None                    # long share of index futs
+    bull = (fii_row.get("opt_idx_call_long") or 0) + (fii_row.get("opt_idx_put_short") or 0)
+    bear = (fii_row.get("opt_idx_put_long") or 0) + (fii_row.get("opt_idx_call_short") or 0)
+    opt_frac = bull / (bull + bear) if (bull + bear) else None          # bullish share of index opts
+    parts = [p for p in (fut_frac, opt_frac) if p is not None]
+    if not parts:
+        return None
+    score = sum(parts) / len(parts)                                    # 0..1, 0.5 = balanced
+    if prev_row and fut_frac is not None:                              # adding shorts = more bearish
+        pfl, pfs = prev_row.get("fut_idx_long") or 0, prev_row.get("fut_idx_short") or 0
+        prev_frac = pfl / (pfl + pfs) if (pfl + pfs) else None
+        if prev_frac is not None:
+            score += 0.08 if fut_frac > prev_frac else -0.08 if fut_frac < prev_frac else 0.0
+    return round(min(0.85, max(0.15, score)), 2)
 
 
 def block_tier_score(net_tier_value_cr: float | None) -> float | None:
@@ -96,15 +110,18 @@ def _net_flow(conn, category_like: str) -> float | None:
     return r[0] if r else None
 
 
-def _fii_participant(conn) -> dict | None:
+def _fii_participant(conn) -> tuple[dict | None, dict | None]:
+    """Latest + prior FII participant-OI rows (the prior enables the add/cover-shorts nudge)."""
+    cols = ("fut_idx_long,fut_idx_short,opt_idx_call_long,opt_idx_put_long,"
+            "opt_idx_call_short,opt_idx_put_short")
     try:
-        cols = "fut_idx_long,fut_idx_short,opt_idx_call_long,opt_idx_put_long"
-        r = conn.execute(
+        rows = conn.execute(
             f"SELECT {cols} FROM raw_participant_oi WHERE client_type='FII' "
-            "ORDER BY report_date DESC LIMIT 1").fetchone()
+            "ORDER BY report_date DESC LIMIT 2").fetchall()
     except sqlite3.OperationalError:
-        return None
-    return dict(zip(cols.split(","), r)) if r else None
+        return None, None
+    out = [dict(zip(cols.split(","), r)) for r in rows]
+    return (out[0] if out else None, out[1] if len(out) > 1 else None)
 
 
 def _tiered_block_net(conn, tiers: list[str]) -> float | None:
@@ -135,9 +152,10 @@ def _tiered_block_net(conn, tiers: list[str]) -> float | None:
 def compute_smart_money(conn: sqlite3.Connection) -> dict:
     inst = load_institutions()
     tiers = (inst.get("tier1") or []) + (inst.get("tier2") or [])
+    fii_today, fii_prev = _fii_participant(conn)
     components = {
         "fii_cash": flow_score(_net_flow(conn, "FII%")),
-        "fii_deriv": fii_deriv_score(_fii_participant(conn)),
+        "fii_deriv": fii_deriv_score(fii_today, fii_prev),
         "dii": flow_score(_net_flow(conn, "DII%")),
         "block_tier": block_tier_score(_tiered_block_net(conn, tiers)),
     }

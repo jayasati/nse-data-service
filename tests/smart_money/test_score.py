@@ -16,8 +16,16 @@ def test_fii_deriv_score():
                                "opt_idx_call_long": 200, "opt_idx_put_long": 100})
     bear = sm.fii_deriv_score({"fut_idx_long": 50, "fut_idx_short": 100,
                                "opt_idx_call_long": 100, "opt_idx_put_long": 200})
-    assert bull == 0.7 and bear == 0.3
+    assert bull > 0.6 and bear < 0.4                       # long-heavy bullish, short-heavy bearish
     assert sm.fii_deriv_score(None) is None
+
+
+def test_fii_deriv_score_add_vs_cover():
+    # same heavy-short position today; ADDING shorts (long-frac fell) is more bearish than COVERING
+    today = {"fut_idx_long": 40, "fut_idx_short": 260}
+    added = sm.fii_deriv_score(today, {"fut_idx_long": 45, "fut_idx_short": 255})
+    covered = sm.fii_deriv_score(today, {"fut_idx_long": 30, "fut_idx_short": 270})
+    assert added < covered
 
 
 def test_block_tier_score():
