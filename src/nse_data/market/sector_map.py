@@ -113,6 +113,20 @@ def is_bfsi(symbol: str, path: str = DEFAULT_PATH) -> bool:
     Index membership first; banks outside the four indices are caught via the
     quote-metadata routing (class_for_metadata maps only actual banks to bfsi).
     """
+    if symbol and symbol.upper() in _BFSI_SYMBOL_OVERRIDES:
+        return True
     if sector_for(symbol, path) in BFSI_SECTORS:
         return True
     return metadata_class_for(symbol, path) == "bfsi"
+
+
+# Banks/NBFCs the index + metadata routing misses (PSU banks + finance NBFCs are sparsely
+# populated in the sector feeds). Curated from extractor eval misclassifications.
+_BFSI_SYMBOL_OVERRIDES = frozenset({
+    "CENTRALBK", "IDBI", "BANKINDIA", "BANKBARODA", "PNB", "CANBK", "UNIONBANK", "INDIANB",
+    "UCOBANK", "MAHABANK", "PSB", "IOB", "J&KBANK", "KARURVYSYA", "SOUTHBANK", "DCBBANK",
+    "CSBBANK", "RBLBANK", "BANDHANBNK", "EQUITASBNK", "UJJIVANSFB", "SURYODAY", "FINOPB",
+    "BAJFINANCE", "BAJAJFINSV", "CGCL", "CHOLAFIN", "SHRIRAMFIN", "MUTHOOTFIN", "MANAPPURAM",
+    "LICHSGFIN", "PNBHOUSING", "PEL", "IIFL", "ABCAPITAL", "POONAWALLA", "CREDITACC",
+    "SBFC", "FIVESTAR", "MASFIN", "SAMMAANCAP",
+})

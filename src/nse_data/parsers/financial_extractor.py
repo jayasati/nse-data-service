@@ -111,6 +111,13 @@ def _symbol_is_bfsi(symbol: str | None) -> bool:
         return False
 
 
+def _looks_like_bfsi(text: str) -> bool:
+    """Content fallback for banks the sector map misses (CENTRALBK, IDBI, …): only a bank's
+    Schedule-III P&L carries BOTH 'Interest Earned' and 'Interest Expended' as line items."""
+    low = (text or "").lower()
+    return "interest earned" in low and "interest expended" in low
+
+
 def _pct_after(text: str, *label_variants: str) -> float | None:
     """First NPA-style percentage after a label, tolerant of OCR noise.
 
@@ -261,6 +268,21 @@ def _apply_bfsi_text_overrides(vis: dict, full_text: str) -> None:
 
     factor = units_factor_from(vis.get("units_phrase"))
     ti_text = _amount_after(full_text, "total income")
+    # Units sanity (BFSI): "in lakh" routinely appears in the NPA / segment / shareholding
+    # sub-schedules while the P&L itself is in crore, so whole-doc unit detection can latch
+    # onto lakh and shrink the entire P&L 100×. The P&L's own total-income magnitude is the
+    # disambiguator — a bank / large NBFC that files quarterly results has total income in the
+    # hundreds-to-thousands of crore, so a sub-crore factor that yields < ₹500 cr total income
+    # is a misdetect. Treat the P&L as crore and rescale the already-factored vision fields up.
+    _peak = max((abs(_v) for _k, _v in fields.items()
+                 if _k.endswith("_cr") and isinstance(_v, (int, float))), default=0.0)
+    if factor < 1.0 and 0 < _peak < 500:        # BFSI filer's top P&L line is ≫₹500cr in crore
+        rescale = 1.0 / factor
+        for _k, _v in list(fields.items()):
+            if _k.endswith("_cr") and isinstance(_v, (int, float)):
+                fields[_k] = round(_v * rescale, 2)
+        factor = 1.0
+        vis["units_phrase"] = "INR crore (units-corrected)"
     if ti_text is not None:
         ti_cr = ti_text * factor
         oi = fields.get("other_income_cr")
@@ -532,7 +554,7 @@ def extract(
         # No free deterministic path exists; don't spend without opt-in.
         return ExtractionResult(strategy="llm_disabled", units_factor=uf, units_phrase=up)
 
-    is_bfsi = _symbol_is_bfsi(symbol)
+    is_bfsi = _symbol_is_bfsi(symbol) or _looks_like_bfsi(full_text)
     ctx = {
         "symbol": symbol, "subject": subject, "broadcast_dt": broadcast_dt,
         "is_bfsi": is_bfsi,
