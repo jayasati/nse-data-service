@@ -15,8 +15,11 @@
 > 2. **Position sizing** risked ₹10k but built ₹2.8M avg notionals → costs ate **93%** of the gross
 >    edge. Capped to ₹40k margin × 5 (₹200k notional). Clean baseline then: **PF 0.89, −₹78,596**.
 > 3. **Step 2 (1H retracement) was never wired in** — `scan_setups` took the 1H frame but ignored it.
->    Adding it (point-in-time, no look-ahead) cut trades ~70% and improved net 96% — but only to
->    breakeven-negative. Still missing/never-needed: Step 9 event-day block, Step 7 target models B/C.
+>    Then **completed it fully** (fib band + daily-structure guard + 1H demand-zone via aligned 1H
+>    FVG). A 12-name subset looked great (PF 1.46) — but on the full 29-name universe it was
+>    **PF 0.68, −₹12k, negative in both regimes, 66 trades**. The subset win was **small-sample
+>    noise**. Completing the spec did NOT salvage it. (Still moot: Step 7 B/C, Step 9 event block,
+>    Step 10 CAGR, Step 12 needs 2020–22 candles that don't exist.)
 >
 > **Lesson:** unit-green ≠ validated. Eyeball real trades, measure rupees (not per-trade %), and a
 > backtest "edge" that rests on one outlier trade is a bug until proven otherwise.
