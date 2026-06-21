@@ -36,12 +36,27 @@ class StrategyAnalyticsService:
             raise NotFound(f"run {run_id} not found")
         out = self._run_row(r)
         out["params"] = json.loads(r["params_json"]) if r["params_json"] else {}
+        # Cumulative net P&L. Many trades exit at the SAME timestamp (e.g. 15:25 across symbols);
+        # the chart needs unique ascending times, so collapse same-ts trades to ONE point holding
+        # the running total after all of them. Rows arrive ordered by exit_ts.
         cum, curve = 0.0, []
         for e in self.repo.equity_curve(run_id):
             cum += e["net_pnl"] or 0.0
-            curve.append({"ts": e["exit_ts"], "cum_pnl": round(cum, 2)})
+            if curve and curve[-1]["ts"] == e["exit_ts"]:
+                curve[-1]["cum_pnl"] = round(cum, 2)
+            else:
+                curve.append({"ts": e["exit_ts"], "cum_pnl": round(cum, 2)})
         out["equity_curve"] = curve
+        out["max_dd_rupees"] = self._max_dd_rupees(curve)   # rupee drawdown — the honest one
         return out
+
+    @staticmethod
+    def _max_dd_rupees(curve) -> float:
+        peak = dd = 0.0
+        for p in curve:
+            peak = max(peak, p["cum_pnl"])
+            dd = min(dd, p["cum_pnl"] - peak)
+        return round(dd, 2)
 
     def trades(self, run_id: int, *, symbol=None, direction=None, exit_reason=None,
                limit: int = 200, offset: int = 0) -> dict:

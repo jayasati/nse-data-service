@@ -47,8 +47,14 @@ async function selectRun(runId) {
   $("cWin").textContent = run.win_rate_pct == null ? "—" : run.win_rate_pct + "%";
   $("cPF").textContent = f2(run.profit_factor);
   $("cExp").textContent = run.expectancy == null ? "—" : (+run.expectancy).toFixed(3) + "%";
-  $("cNet").textContent = run.net_pct == null ? "—" : (+run.net_pct).toFixed(1) + "%";
-  $("cDD").textContent = run.max_dd_pct == null ? "—" : run.max_dd_pct + "%";
+  // Honest money: the cumulative-curve endpoint = actual net ₹, and the rupee drawdown.
+  // (net_pct is a per-trade %-sum — it does NOT equal capital return when position sizes vary.)
+  const curve = run.equity_curve || [];
+  const totalR = curve.length ? curve[curve.length - 1].cum_pnl : null;
+  $("cNet").textContent = totalR == null ? "—" : "₹" + inr(totalR);
+  $("cNet").className = "card-val " + pnlCls(totalR);
+  $("cDD").textContent = run.max_dd_rupees == null ? "—" : "₹" + inr(run.max_dd_rupees);
+  $("cDD").className = "card-val neg";
   $("cSharpe").textContent = f2(run.sharpe);
   $("cRR").textContent = f2(run.avg_rr);
   renderCurve(run.equity_curve || []);
