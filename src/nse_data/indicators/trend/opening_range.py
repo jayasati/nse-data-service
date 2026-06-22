@@ -12,6 +12,7 @@ Outputs (per bar, from the 4th bar of each session onward — NaN while the rang
 """
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from ...webcore.config import IST_OFFSET
@@ -41,9 +42,9 @@ class OpeningRangeIntraday(Indicator):
 
         session = (ohlcv.index.to_numpy() + IST_OFFSET) // _SESSION_SECS
         sess = pd.Series(session, index=ohlcv.index)
-        oh = pd.Series(pd.NA, index=ohlcv.index, dtype="float64")
-        ol = pd.Series(pd.NA, index=ohlcv.index, dtype="float64")
-        brk = pd.Series(pd.NA, index=ohlcv.index, dtype="float64")
+        oh = pd.Series(np.nan, index=ohlcv.index, dtype="float64")
+        ol = pd.Series(np.nan, index=ohlcv.index, dtype="float64")
+        brk = pd.Series(np.nan, index=ohlcv.index, dtype="float64")
 
         for _, idx in sess.groupby(sess).groups.items():
             grp = ohlcv.loc[idx]
