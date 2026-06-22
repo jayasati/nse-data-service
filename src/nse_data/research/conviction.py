@@ -406,6 +406,24 @@ def stage_rel_strength(conn, sym, nifty_pct, rs_rank=None) -> tuple:
             "rel_strength": round(float(rel), 2)}
 
 
+def _hv_iv_ratio(conn, sym):
+    """IV / HV20 — implied vs realized vol premium. IV = current ATM IV (iv_daily); HV20 = annualised
+    20-day realized vol. ratio > 1.2 = options EXPENSIVE (overpaying for the move; caution buying
+    breakouts, favour short-vol). ratio < 1.0 = options CHEAP (breakouts attractive — gamma in your
+    favour). Needs only current IV + HV, not IV history — usable immediately."""
+    import numpy as np
+    df = _daily(conn, sym)
+    if df is None or len(df) < 21:
+        return None
+    rets = np.diff(np.log(df["close"].to_numpy(dtype=float)[-21:]))
+    hv20 = float(rets.std() * (252 ** 0.5) * 100)
+    iv = conn.execute("SELECT atm_iv FROM iv_daily WHERE symbol=? ORDER BY as_of_date DESC LIMIT 1",
+                      (sym,)).fetchone()
+    if hv20 <= 0 or not iv or not iv[0]:
+        return None
+    return {"hv20": round(hv20, 1), "iv": round(iv[0], 1), "ratio": round(iv[0] / hv20, 2)}
+
+
 def stage_vol_expansion(conn, sym) -> tuple:
     df = _daily(conn, sym)
     if df is None:
@@ -438,6 +456,18 @@ def stage_vol_expansion(conn, sym) -> tuple:
         elif ts["slope"] > 0.5:
             s += 0.5                                    # contango = genuinely calm/coiled
         detail["term_slope"] = ts["slope"]
+    # HV/IV — realized vs implied premium. Cheap IV (ratio<1) = breakouts favourable (gamma works);
+    # expensive IV (>1.2) = overpaying for the move → caution. Makes vol-expansion actionable.
+    hv_iv = _hv_iv_ratio(conn, sym)
+    if hv_iv:
+        r = hv_iv["ratio"]
+        detail["hv_iv"] = hv_iv
+        if r < 1.0:
+            s += 0.8; detail["vol_premium"] = "CHEAP (breakout-favourable, gamma in your favour)"
+        elif r > 1.2:
+            s -= 0.8; detail["vol_premium"] = "EXPENSIVE (overpaying — caution on breakouts)"
+        else:
+            detail["vol_premium"] = "fair"
     return round(max(0.0, min(10.0, s)), 1), detail
 
 
