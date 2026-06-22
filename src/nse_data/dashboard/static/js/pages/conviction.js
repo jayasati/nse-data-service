@@ -60,10 +60,14 @@ async function init() {
   const m = r.macro || {};
   if (m.status === "ok") {
     const gapnum = m.preopen_gap_pct != null ? `${m.preopen_gap_pct}%` : m.gift_gap_pct != null ? `${m.gift_gap_pct}%` : "—";
+    const pd = m.participant_divergence;
+    const divLine = (pd && pd.status === "ok")
+      ? `<div style="margin-top:4px;font-size:12px"><b>Participant OI:</b> FII <b style="color:${pd.fii_long_pct >= 50 ? "#16a34a" : "#dc2626"}">${pd.fii_long_pct}% long</b> · Retail <b style="color:${pd.client_long_pct >= 50 ? "#16a34a" : "#dc2626"}">${pd.client_long_pct}% long</b> · DII ${pd.dii_long_pct}% · Pro ${pd.pro_long_pct}% → <b>${pd.read}</b></div>`
+      : "";
     $("macro").innerHTML =
       `<b>Market bias: ${m.regime}</b> · gap <b>${m.gap_bias}</b> ${gapnum} <span style="opacity:.7">(src: ${m.gap_source})</span> · ` +
       `US S&P ${m.us_spx_pct}% · US VIX ${m.us_vix} (${m.us_vix_pct}%) · India VIX ${m.india_vix} · ` +
-      `Nifty ${m.nifty_last} (${m.nifty_pct}%) · Smart-money ${r.smart_money}`;
+      `Nifty ${m.nifty_last} (${m.nifty_pct}%) · Smart-money ${r.smart_money}` + divLine;
   } else {
     $("macro").innerHTML = `Macro regime: <b>DATA_GAP</b> — ${m.note || "global macro collector not active"}`;
   }
