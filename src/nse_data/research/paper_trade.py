@@ -136,10 +136,27 @@ def _score_lean(conn, eligible, ep, sector_of) -> dict:
     return out
 
 
+def _score_conviction_confluence(conn, eligible, ep, sector_of) -> dict:
+    """LONG names where the full conviction factor stack AGREES (conf_label='ALIGNED') — the
+    forward, out-of-sample test of the confluence-corrected conviction. Long-only (the harness sizes
+    long entries); short-aligned names are flagged by the engine but not paper-tradable here yet."""
+    if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND "
+                        "name='conviction_daily'").fetchone():
+        return {}
+    d = conn.execute("SELECT MAX(as_of_date) FROM conviction_daily").fetchone()[0]
+    if not d:
+        return {}
+    rows = conn.execute(
+        "SELECT symbol, conviction_adj FROM conviction_daily WHERE as_of_date=? AND "
+        "conf_label='ALIGNED' AND direction='LONG' AND conviction_adj IS NOT NULL", (d,)).fetchall()
+    return {s: round(adj, 1) for s, adj in rows if s in eligible}
+
+
 STRATEGIES = {
     "qvm": (_score_qvm, "Q+V+Mom"),
     "buyscore_adaptive": (_score_buyscore_adaptive, "BuyScore-Adaptive"),
     "lean": (_score_lean, "Lean (Val+Surprise · OOS-validated)"),
+    "conviction_confluence": (_score_conviction_confluence, "Conviction (confluence-aligned LONG)"),
 }
 
 # Per-strategy cap overrides. `lean` is the OOS-validated signal under live observation, so it
@@ -149,6 +166,9 @@ STRATEGIES = {
 # qvm/buyscore stay in realistic portfolio mode (the R5 defaults).
 STRATEGY_OVERRIDES: dict[str, dict] = {
     "lean": {"max_positions": 75, "heat_pct": 100.0, "sector_max": 25},
+    # confluence-aligned set is small per day → coverage mode: take every ALIGNED long (no
+    # top-N selection bias) so the forward sample accumulates as fast as possible.
+    "conviction_confluence": {"max_positions": 50, "heat_pct": 100.0, "sector_max": 20},
 }
 
 
