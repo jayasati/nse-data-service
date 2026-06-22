@@ -36,13 +36,13 @@ def latest(conn=Depends(_get_conn)) -> JSONResponse:
     rows = conn.execute(
         "SELECT symbol, composite, tier, catalyst, positioning, options, structure, volume, "
         "rel_strength, vol_expansion, data_gaps, direction, entry, stop, t1, t2, t3, rr, setup, "
-        "probability, open_iep, gap_pct, conviction_adj, conf_label, conf_agreement, conf_confirm, "
+        "conviction_band, open_iep, gap_pct, conviction_adj, conf_label, conf_agreement, conf_confirm, "
         "conf_against, vol_confirm, intraday_stop, intraday_t1, intraday_t2, intraday_t3, "
         "intraday_rr, stages_json FROM conviction_daily "
         "WHERE as_of_date=? ORDER BY COALESCE(conviction_adj, composite) DESC", (d,)).fetchall()
     cols = ["symbol", "composite", "tier", "catalyst", "positioning", "options", "structure",
             "volume", "rel_strength", "vol_expansion", "data_gaps", "direction", "entry", "stop",
-            "t1", "t2", "t3", "rr", "setup", "probability", "open_iep", "gap_pct", "conviction_adj",
+            "t1", "t2", "t3", "rr", "setup", "conviction_band", "open_iep", "gap_pct", "conviction_adj",
             "conf_label", "conf_agreement", "conf_confirm", "conf_against", "vol_confirm",
             "intraday_stop", "intraday_t1", "intraday_t2", "intraday_t3", "intraday_rr",
             "stages_json"]

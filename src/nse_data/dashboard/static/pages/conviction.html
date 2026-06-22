@@ -52,11 +52,11 @@
       <th class="num">#</th><th>Symbol</th><th class="num">Conv</th><th>Tier</th>
       <th>Dir</th><th id="tfHead">Trend (1D)</th><th>Confluence</th><th>Setup</th><th class="num">Entry</th><th class="num">Open (gap)</th><th class="num">Stop</th>
       <th class="num">T1</th><th class="num">T2</th><th class="num">T3</th>
-      <th class="num">R:R</th><th class="num">Prob</th><th class="num">Exp%</th><th>Gaps</th>
+      <th class="num">R:R</th><th>Conviction</th><th class="num">Exp%</th><th>Gaps</th>
     </tr></thead><tbody id="body"></tbody></table>
   </div>
   <div class="hint" style="margin-top:8px">
-    <b>Horizon: 1–5 day swing.</b> Refreshed 09:10 IST (post pre-open auction) so <b>Open (gap)</b> is the real per-stock indicative open (IEP), measured not proxied. Direction/stop/targets derive from real levels (options call/put walls + max-pain + 20-day H/L, ATR-scaled) — sized for a multi-day hold, not an intraday scalp. <b>Prob = directional probability over the hold</b> (capped 68% — edges are modest). DATA_GAP cells (blank) are excluded from the composite. A+ stays unreachable until per-stock FII (NSE doesn't publish) and IV-percentile (accumulating) exist — by design. Catalyst is a risk-veto only (news IC ≈ 0).
+    <b>Horizon: 1–5 day swing.</b> Refreshed 09:10 IST (post pre-open auction) so <b>Open (gap)</b> is the real per-stock indicative open (IEP), measured not proxied. Direction/stop/targets derive from real levels (options call/put walls + max-pain + 20-day H/L, ATR-scaled) — sized for a multi-day hold, not an intraday scalp. <b>Conviction = a RELATIVE band (High/Medium/Low), NOT a calibrated win-rate</b> — High needs a strong score AND ALIGNED confluence; the realized hit-rate per band attaches only once the forward outcome dataset (conviction_factor_log + paper-trade) has enough closed trades. We deliberately don't show a % because the engine has no forward track record yet. DATA_GAP cells (blank) are excluded from the composite. A+ stays unreachable until per-stock FII (NSE doesn't publish) and IV-percentile (accumulating) exist — by design. Catalyst is a risk-veto only (news IC ≈ 0).
   </div>
 
   <script type="module" src="/static/js/components/nav.js"></script>

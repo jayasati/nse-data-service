@@ -782,6 +782,22 @@ def confluence(stages, direction) -> dict:
             "confirm": confirm, "against": against, "flags": flags}
 
 
+def _conviction_band(conv_adj, conf_label) -> str | None:
+    """RELATIVE conviction band — NOT a calibrated win probability. We deliberately do NOT emit a
+    percentage: a number like '61.3%' implies a calibration against realized outcomes we do not have
+    (the engine has no forward track record yet). The band is magnitude (conviction_adj) gated by
+    confluence (a high score that's CONTRADICTED is not high conviction). Once conviction_factor_log
+    + the paper-trade accumulate enough closed outcomes, we'll attach the *realized* hit-rate per band
+    (scripts/conviction_attribution.py) — THEN it becomes a calibrated number, not before."""
+    if conv_adj is None:
+        return None
+    if conf_label == "CONTRADICTED" or conv_adj < 4.0:
+        return "Low"
+    if conv_adj >= 5.0 and conf_label == "ALIGNED":
+        return "High"
+    return "Medium"
+
+
 def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None, divergence=None, rs_rank=None) -> dict:
     scores = {
         "catalyst": stage_catalyst(conn, sym),
@@ -808,10 +824,10 @@ def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None, divergence=None, 
     conv_adj = comp
     if comp is not None:
         conv_adj = round(max(0.0, comp + conf["agreement"] * 0.25 + conf["vol_confirm"] * 0.4), 2)
-    prob = round(min(68, 45 + (conv_adj or 5) * 2.6)) if conv_adj else None
+    band = _conviction_band(conv_adj, conf.get("label"))
     return {"symbol": sym, "composite": comp, "conviction_adj": conv_adj,
             "tier": tier_of(conv_adj, scores, veto_flag), "renorm_weights": renorm,
-            "data_gaps": gaps, "trade": plan, "probability_pct": prob, "news_flag": veto_flag,
+            "data_gaps": gaps, "trade": plan, "conviction_band": band, "news_flag": veto_flag,
             "confluence": conf, "stages": stages}
 
 
@@ -852,17 +868,17 @@ def run_and_persist(conn) -> dict:
         "stages_json, direction, entry, stop, t1, t2, t3, rr, setup, probability, open_iep, "
         "gap_pct, conviction_adj, conf_label, conf_agreement, conf_confirm, conf_against, "
         "vol_confirm, intraday_stop, intraday_t1, intraday_t2, intraday_t3, intraday_rr, "
-        "updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "conviction_band, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(today, x["symbol"], x["composite"], x["tier"], g(x, "catalyst"), g(x, "positioning"),
           g(x, "options"), g(x, "structure"), g(x, "volume"), g(x, "rel_strength"),
           g(x, "vol_expansion"), ",".join(x["data_gaps"]), json.dumps(x["stages"]),
           t(x, "direction"), t(x, "entry"), t(x, "stop"), t(x, "t1"), t(x, "t2"), t(x, "t3"),
-          t(x, "rr"), t(x, "setup"), x.get("probability_pct"), t(x, "open_iep"), t(x, "gap_pct"),
+          t(x, "rr"), t(x, "setup"), None, t(x, "open_iep"), t(x, "gap_pct"),
           x.get("conviction_adj"), cf(x, "label"), cf(x, "agreement"),
           ",".join(cf(x, "confirm") or []), ",".join(cf(x, "against") or []), cf(x, "vol_confirm"),
           t(x, "intraday_stop"), t(x, "intraday_t1"), t(x, "intraday_t2"), t(x, "intraday_t3"),
-          t(x, "intraday_rr"), now)
+          t(x, "intraday_rr"), x.get("conviction_band"), now)
          for x in r["ranked"]])
     conn.commit()
     return {"date": today, "persisted": len(r["ranked"])}

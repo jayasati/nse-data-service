@@ -49,6 +49,14 @@ function gammaTag(x) {
   return ` <span title="${tip}" style="color:${col};font-size:10px;opacity:.9">· ${lab}</span>`;
 }
 
+// RELATIVE conviction band — deliberately NOT a % (a calibrated win-rate needs a forward track
+// record we don't have yet). High = strong score + ALIGNED confluence; Low = weak or CONTRADICTED.
+function bandCell(b) {
+  if (!b) return "—";
+  const col = b === "High" ? "#16a34a" : b === "Low" ? "#dc2626" : "#f59e0b";
+  return `<span title="relative conviction (magnitude × confluence) — NOT a calibrated win probability; realized hit-rate per band attaches once the forward outcome dataset accumulates" style="color:${col};font-weight:600;font-size:12px">${b}</span>`;
+}
+
 function renderBody() {
   $("body").innerHTML = ROWS.map((x, i) =>
     `<tr><td class="num">${i + 1}</td><td><a href="/research?sym=${x.symbol}" style="color:#60a5fa;text-decoration:none">${x.symbol}</a>` +
@@ -59,7 +67,7 @@ function renderBody() {
     `<td class="num">${x.open_iep == null ? "—" : x.open_iep}${x.gap_pct == null ? "" : ` <span style="font-size:10px;color:${x.gap_pct >= 0 ? "#16a34a" : "#dc2626"}">${x.gap_pct > 0 ? "+" : ""}${x.gap_pct}%</span>`}</td>` +
     `<td class="num" style="color:#dc2626">${n(lv(x, "stop"))}</td>` +
     `<td class="num">${n(lv(x, "t1"))}</td><td class="num" style="color:#16a34a">${n(lv(x, "t2"))}</td><td class="num">${n(lv(x, "t3"))}</td>` +
-    `<td class="num"><b>${lv(x, "rr") == null ? "—" : "1:" + lv(x, "rr")}</b></td><td class="num">${n(x.probability)}%</td>` +
+    `<td class="num"><b>${lv(x, "rr") == null ? "—" : "1:" + lv(x, "rr")}</b></td><td>${bandCell(x.conviction_band)}</td>` +
     `<td class="num">${n(x.stages?.vol_expansion?.atr_pct)}</td>` +
     `<td class="gap">${(x.data_gaps || "")}</td></tr>`).join("");
 }
