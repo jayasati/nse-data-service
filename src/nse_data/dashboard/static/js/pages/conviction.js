@@ -4,6 +4,8 @@ const getJSON = async u => (await fetch(u, { cache: "no-store" })).json();
 const c = (v) => v == null ? "" : v;   // DATA_GAP → blank cell
 let ROWS = [];
 let TF = "1D";
+let HZ = "swing";   // target horizon: swing (1.2/2/3 ATR) or intraday (0.6/1.2/1.8 ATR)
+const lv = (x, k) => HZ === "intraday" ? x["intraday_" + k] : x[k];
 
 const tcls = t => (t === "A+" ? "Ap" : (t || "").charAt(0));
 const n = v => v == null ? "—" : v;
@@ -44,9 +46,9 @@ function renderBody() {
     `<td>${dir(x.direction)}</td><td>${trendCell(x)}</td><td>${confl(x)}</td><td style="font-size:12px">${c(x.setup)}</td>` +
     `<td class="num">${n(x.entry)}</td>` +
     `<td class="num">${x.open_iep == null ? "—" : x.open_iep}${x.gap_pct == null ? "" : ` <span style="font-size:10px;color:${x.gap_pct >= 0 ? "#16a34a" : "#dc2626"}">${x.gap_pct > 0 ? "+" : ""}${x.gap_pct}%</span>`}</td>` +
-    `<td class="num" style="color:#dc2626">${n(x.stop)}</td>` +
-    `<td class="num">${n(x.t1)}</td><td class="num" style="color:#16a34a">${n(x.t2)}</td><td class="num">${n(x.t3)}</td>` +
-    `<td class="num"><b>${x.rr == null ? "—" : "1:" + x.rr}</b></td><td class="num">${n(x.probability)}%</td>` +
+    `<td class="num" style="color:#dc2626">${n(lv(x, "stop"))}</td>` +
+    `<td class="num">${n(lv(x, "t1"))}</td><td class="num" style="color:#16a34a">${n(lv(x, "t2"))}</td><td class="num">${n(lv(x, "t3"))}</td>` +
+    `<td class="num"><b>${lv(x, "rr") == null ? "—" : "1:" + lv(x, "rr")}</b></td><td class="num">${n(x.probability)}%</td>` +
     `<td class="num">${n(x.stages?.vol_expansion?.atr_pct)}</td>` +
     `<td class="gap">${(x.data_gaps || "")}</td></tr>`).join("");
 }
@@ -75,6 +77,14 @@ document.querySelectorAll(".ctrl button[data-tf]").forEach(b => b.onclick = () =
   document.querySelectorAll(".ctrl button[data-tf]").forEach(x => x.classList.remove("on"));
   b.classList.add("on"); TF = b.dataset.tf;
   $("tfHead").textContent = `Trend (${TF})`;
+  renderBody();
+});
+document.querySelectorAll(".ctrl button[data-hz]").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".ctrl button[data-hz]").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); HZ = b.dataset.hz;
+  $("hzNote").innerHTML = HZ === "intraday"
+    ? "— stop/T1/T2/T3 = <b>0.6/0.6/1.2/1.8×ATR</b> for a same-day exit (tighter, single-session)"
+    : "— stop/T1/T2/T3 = <b>1.2/2/3×ATR</b> for a multi-day hold";
   renderBody();
 });
 init();

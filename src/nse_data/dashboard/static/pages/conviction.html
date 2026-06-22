@@ -40,6 +40,12 @@
     <button data-tf="5M">5&nbsp;Min</button>
     <span style="margin-left:8px;opacity:.7">— the <b>Trend</b> column reads each name on the selected timeframe. <b>1D</b>=structure, <b>1H</b>=trend filter, <b>5M</b>=swing-BOS (mid-session breaks). The 5M swing-BOS is blind to the <b>opening drive</b> — for the open, use the live <b>ORB</b> on /intraday (each 5M cell links to it).</span>
   </div>
+  <div class="ctrl" style="margin:4px 0;font-size:12px;color:var(--muted,#9aa)">
+    Target horizon:
+    <button data-hz="swing" class="on">Swing&nbsp;(1–5d)</button>
+    <button data-hz="intraday">Intraday&nbsp;(1d)</button>
+    <span id="hzNote" style="margin-left:8px;opacity:.7">— stop/T1/T2/T3 = <b>1.2/2/3×ATR</b> for a multi-day hold</span>
+  </div>
 
   <div class="tablewrap" style="margin-top:6px">
     <table id="tbl"><thead><tr>

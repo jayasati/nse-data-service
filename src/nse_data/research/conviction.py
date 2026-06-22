@@ -380,6 +380,14 @@ def trade_plan(close, atr, stages, macro, iep=None, stock_gap=None) -> dict:
         t2 = round(magnet, 1)                         # a real level within reach → use it for T2
     risk = abs(entry - stop)
     rr = round(abs(t2 - entry) / risk, 1) if risk else None
+    # INTRADAY level set — fractions of the daily ATR (a single session captures ≲1 ATR net, not the
+    # multi-day swing range). Tighter stop (0.6·ATR) + targets at 0.6/1.2/1.8 ATR.
+    istop = round(entry - sign * 0.6 * atr, 1)
+    it1 = round(entry + sign * 0.6 * atr, 1)
+    it2 = round(entry + sign * 1.2 * atr, 1)
+    it3 = round(entry + sign * 1.8 * atr, 1)
+    irisk = abs(entry - istop)
+    irr = round(abs(it2 - entry) / irisk, 1) if irisk else None
     # setup bucket (Stage 12) — prefer the stock's OWN pre-open gap (real) over the market proxy.
     # A real per-stock gap is ~0.7%+; smaller opens are FLAT and get a non-gap (trend) setup.
     if stock_gap is not None:
@@ -402,6 +410,8 @@ def trade_plan(close, atr, stages, macro, iep=None, stock_gap=None) -> dict:
     return {"direction": direction, "entry": entry, "stop": stop, "t1": t1, "t2": t2, "t3": t3,
             "rr": rr, "setup": setup, "expected_move_pct": round(atr / close * 100, 1),
             "open_iep": round(iep, 1) if iep else None, "gap_pct": stock_gap,
+            "intraday_stop": istop, "intraday_t1": it1, "intraday_t2": it2, "intraday_t3": it3,
+            "intraday_rr": irr,
             "basis": f"levels: call_wall {cw} / put_wall {pw} / max_pain {mp} / 20dH-L {hi20}-{lo20}, ATR ₹{round(atr,1)}"}
 
 
@@ -508,15 +518,18 @@ def run_and_persist(conn) -> dict:
         "positioning, options, structure, volume, rel_strength, vol_expansion, data_gaps, "
         "stages_json, direction, entry, stop, t1, t2, t3, rr, setup, probability, open_iep, "
         "gap_pct, conviction_adj, conf_label, conf_agreement, conf_confirm, conf_against, "
-        "vol_confirm, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "vol_confirm, intraday_stop, intraday_t1, intraday_t2, intraday_t3, intraday_rr, "
+        "updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(today, x["symbol"], x["composite"], x["tier"], g(x, "catalyst"), g(x, "positioning"),
           g(x, "options"), g(x, "structure"), g(x, "volume"), g(x, "rel_strength"),
           g(x, "vol_expansion"), ",".join(x["data_gaps"]), json.dumps(x["stages"]),
           t(x, "direction"), t(x, "entry"), t(x, "stop"), t(x, "t1"), t(x, "t2"), t(x, "t3"),
           t(x, "rr"), t(x, "setup"), x.get("probability_pct"), t(x, "open_iep"), t(x, "gap_pct"),
           x.get("conviction_adj"), cf(x, "label"), cf(x, "agreement"),
-          ",".join(cf(x, "confirm") or []), ",".join(cf(x, "against") or []), cf(x, "vol_confirm"), now)
+          ",".join(cf(x, "confirm") or []), ",".join(cf(x, "against") or []), cf(x, "vol_confirm"),
+          t(x, "intraday_stop"), t(x, "intraday_t1"), t(x, "intraday_t2"), t(x, "intraday_t3"),
+          t(x, "intraday_rr"), now)
          for x in r["ranked"]])
     conn.commit()
     return {"date": today, "persisted": len(r["ranked"])}
