@@ -217,10 +217,16 @@ def stage_catalyst(conn, sym) -> tuple:
                          "top_pos": tp, "top_neg": tn}
 
 
-def _put_skew(conn, sym):
-    """Put skew = OTM-put IV − OTM-call IV (~5% each side, a 25-delta proxy) from the live chain.
-    Positive = puts richer (downside-protection bid; institutions hedging a long book — directionally
-    bullish per the desk read). Negative = calls richer (call demand / short-hedging). None if no chain."""
+def _median(xs):
+    xs = sorted(xs)
+    n = len(xs)
+    return None if not n else xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+
+def _liquid_otm_ivs(conn, sym):
+    """Liquid, sane OTM IVs from the chain → (spot, otm_puts, otm_calls) as [(moneyness, iv), …].
+    Filters to OI≥100 and IV in [5, 70] — NSE reports garbage IV for ITM/illiquid strikes (deep puts
+    at 100% vol, near-ATM calls solving to 9%). OTM only: puts below spot, calls above."""
     a = conn.execute("SELECT MAX(as_of) FROM raw_option_chain WHERE symbol=?", (sym,)).fetchone()[0]
     if not a:
         return None
@@ -228,23 +234,48 @@ def _put_skew(conn, sym):
                      "expiry LIMIT 1", (sym, a)).fetchone()
     if not e:
         return None
-    rows = conn.execute("SELECT strike, option_type, implied_volatility, underlying_value FROM "
-                        "raw_option_chain WHERE symbol=? AND as_of=? AND expiry=? AND "
-                        "implied_volatility>0", (sym, a, e[0])).fetchall()
-    spot = max((x[3] for x in rows if x[3]), default=0)
+    rows = conn.execute("SELECT strike, option_type, implied_volatility, open_interest, "
+                        "underlying_value FROM raw_option_chain WHERE symbol=? AND as_of=? AND "
+                        "expiry=?", (sym, a, e[0])).fetchall()
+    spot = max((r[4] for r in rows if r[4]), default=0)
     if not spot:
         return None
-    puts = [(s, iv) for s, ot, iv, _ in rows if ot == "PE" and s < spot]
-    calls = [(s, iv) for s, ot, iv, _ in rows if ot == "CE" and s > spot]
-    if not puts or not calls:
+    puts, calls = [], []
+    for strike, ot, iv, oi, _ in rows:
+        if not iv or iv < 5 or iv > 70 or (oi or 0) < 100:
+            continue
+        m = abs(strike - spot) / spot
+        if ot == "PE" and strike < spot:
+            puts.append((m, iv))
+        elif ot == "CE" and strike > spot:
+            calls.append((m, iv))
+    return spot, puts, calls
+
+
+def _robust_atm_iv(conn, sym):
+    """ATM IV = MEDIAN of liquid OTM IVs within ~0.5–5% of spot — median ignores single artifacts
+    (a broken near-ATM solver value) the way a nearest-strike average can't."""
+    r = _liquid_otm_ivs(conn, sym)
+    if not r:
         return None
-    # average the 2 nearest OTM strikes each side → robust to a single illiquid/spiked-IV strike
-    near = lambda opts, tgt: [iv for _, iv in sorted(opts, key=lambda x: abs(x[0] - tgt))[:2]]
-    pk, ck = near(puts, spot * 0.95), near(calls, spot * 1.05)
-    if not pk or not ck:
+    _, puts, calls = r
+    near = [iv for m, iv in puts + calls if 0.005 < m < 0.05]
+    return round(_median(near), 1) if len(near) >= 2 else None
+
+
+def _put_skew(conn, sym):
+    """Put skew = median OTM-put IV − median OTM-call IV (≈3–8% OTM band, 25-delta proxy). Median of
+    a band is robust to the single-strike garbage NSE reports. Positive = puts richer (protective
+    bid / hedged-long, bullish); negative = calls richer (call/short-hedge). None if too few strikes."""
+    r = _liquid_otm_ivs(conn, sym)
+    if not r:
         return None
-    skew = sum(pk) / len(pk) - sum(ck) / len(ck)
-    return round(max(-8.0, min(8.0, skew)), 2)              # clamp data artifacts
+    _, puts, calls = r
+    pb = [iv for m, iv in puts if 0.03 < m < 0.08]
+    cb = [iv for m, iv in calls if 0.03 < m < 0.08]
+    if len(pb) < 2 or len(cb) < 2:
+        return None
+    return round(max(-8.0, min(8.0, _median(pb) - _median(cb))), 2)
 
 
 def _iv_term_structure(conn, sym):
@@ -417,11 +448,13 @@ def _hv_iv_ratio(conn, sym):
         return None
     rets = np.diff(np.log(df["close"].to_numpy(dtype=float)[-21:]))
     hv20 = float(rets.std() * (252 ** 0.5) * 100)
-    iv = conn.execute("SELECT atm_iv FROM iv_daily WHERE symbol=? ORDER BY as_of_date DESC LIMIT 1",
-                      (sym,)).fetchone()
-    if hv20 <= 0 or not iv or not iv[0]:
+    iv = _robust_atm_iv(conn, sym)                     # median of liquid OTM strikes (chain), not iv_daily
+    if hv20 <= 0 or iv is None:
         return None
-    return {"hv20": round(hv20, 1), "iv": round(iv[0], 1), "ratio": round(iv[0] / hv20, 2)}
+    ratio = iv / hv20
+    # IV/HV > ~3 with no known event is almost always bad chain data, not a real premium → flag it.
+    return {"hv20": round(hv20, 1), "iv": round(iv, 1), "ratio": round(ratio, 2),
+            "reliable": ratio <= 3.0}
 
 
 def stage_vol_expansion(conn, sym) -> tuple:
@@ -460,14 +493,17 @@ def stage_vol_expansion(conn, sym) -> tuple:
     # expensive IV (>1.2) = overpaying for the move → caution. Makes vol-expansion actionable.
     hv_iv = _hv_iv_ratio(conn, sym)
     if hv_iv:
-        r = hv_iv["ratio"]
         detail["hv_iv"] = hv_iv
-        if r < 1.0:
-            s += 0.8; detail["vol_premium"] = "CHEAP (breakout-favourable, gamma in your favour)"
-        elif r > 1.2:
-            s -= 0.8; detail["vol_premium"] = "EXPENSIVE (overpaying — caution on breakouts)"
+        if not hv_iv.get("reliable"):
+            detail["vol_premium"] = "DATA_GAP (IV/HV implausible — noisy chain, not scored)"
         else:
-            detail["vol_premium"] = "fair"
+            r = hv_iv["ratio"]
+            if r < 1.0:
+                s += 0.8; detail["vol_premium"] = "CHEAP (breakout-favourable, gamma in your favour)"
+            elif r > 1.2:
+                s -= 0.8; detail["vol_premium"] = "EXPENSIVE (overpaying — caution on breakouts)"
+            else:
+                detail["vol_premium"] = "fair"
     return round(max(0.0, min(10.0, s)), 1), detail
 
 
