@@ -366,17 +366,18 @@ def trade_plan(close, atr, stages, macro, iep=None, stock_gap=None) -> dict:
     direction = "LONG" if bull > bear else "SHORT" if bear > bull else ("LONG" if rs >= 0 else "SHORT")
     # consistent ATR-based risk (1.3·ATR) → sane R:R; walls/max-pain/20d levels used as targets
     # ONLY when they sit the correct side of entry (else fall back to ATR multiples).
+    # Targets scaled to the stock's OWN ATR (realistic for a 1–5 day swing): T1 1.2·ATR, T2 2·ATR,
+    # T3 3·ATR. A structural level (call-wall long / max-pain short) snaps T2 ONLY if it genuinely
+    # sits between T1 and T3 — a far OTM wall (e.g. +18%) is ignored, not used as a fantasy target.
     entry = round(close, 1)
-    if direction == "LONG":
-        stop = round(close - 1.3 * atr, 1)
-        t1 = round(close + 1.5 * atr, 1)
-        t2 = round(cw, 1) if (cw and cw > close + 0.5 * atr) else round(close + 2.5 * atr, 1)
-        t3 = round(max(hi20 or 0, close + 3.5 * atr), 1)
-    else:
-        stop = round(close + 1.3 * atr, 1)
-        t1 = round(close - 1.5 * atr, 1)
-        t2 = round(mp, 1) if (mp and mp < close - 0.5 * atr) else round(close - 2.5 * atr, 1)
-        t3 = round(min(lo20 or 1e12, close - 3.5 * atr), 1)
+    sign = 1 if direction == "LONG" else -1
+    stop = round(entry - sign * 1.3 * atr, 1)
+    t1 = round(entry + sign * 1.2 * atr, 1)
+    t2 = round(entry + sign * 2.0 * atr, 1)
+    t3 = round(entry + sign * 3.0 * atr, 1)
+    magnet = cw if direction == "LONG" else mp
+    if magnet and sign * (magnet - t1) > 0 and sign * (magnet - t3) < 0:
+        t2 = round(magnet, 1)                         # a real level within reach → use it for T2
     risk = abs(entry - stop)
     rr = round(abs(t2 - entry) / risk, 1) if risk else None
     # setup bucket (Stage 12) — prefer the stock's OWN pre-open gap (real) over the market proxy.
