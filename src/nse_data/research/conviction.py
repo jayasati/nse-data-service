@@ -358,11 +358,11 @@ def _iv_term_structure(conn, sym):
 
 
 def stage_options(conn, sym) -> tuple:
-    r = conn.execute("SELECT spot,max_pain,pcr,call_wall,put_wall,gex_sign FROM options_metrics "
-                     "WHERE symbol=? ORDER BY as_of DESC LIMIT 1", (sym,)).fetchone()
+    r = conn.execute("SELECT spot,max_pain,pcr,call_wall,put_wall,gex_sign,gex_flip_level FROM "
+                     "options_metrics WHERE symbol=? ORDER BY as_of DESC LIMIT 1", (sym,)).fetchone()
     if not r:
         return GAP, {"src": "options_metrics=null", "note": "not in F&O options set"}
-    spot, mp, pcr, cw, pw, gex = r
+    spot, mp, pcr, cw, pw, gex, flip = r
     mp_dir = (mp - spot) / spot * 100 if (mp and spot) else 0.0   # drift toward max-pain
     # bullish: max-pain above spot + balanced/high PCR; bearish: below + low PCR
     s = 5 + min(2.5, max(-2.5, mp_dir)) * 0.8 + ((pcr or 1) - 1) * 2.0
@@ -371,9 +371,17 @@ def stage_options(conn, sym) -> tuple:
     skew = _put_skew(conn, sym)
     if skew is not None:
         s += max(-1.0, min(1.0, skew / 3.0))
-    return round(max(0.0, min(10.0, s)), 1), {"src": "options_metrics + IV skew", "spot": spot,
-            "max_pain": mp, "pcr": pcr, "call_wall": cw, "put_wall": pw, "gex": gex,
-            "max_pain_drift_pct": round(mp_dir, 2), "put_skew": skew}
+    # GAMMA REGIME — gex_sign is the AUTHORITATIVE regime AT spot (this codebase's dealer convention
+    # is short-calls/long-puts, so the flip is inverted vs textbook SpotGamma; trust gex_sign, not a
+    # spot-vs-flip guess). negative = dealers amplify → trending/vol-expansion; positive = dealers
+    # dampen → pinning/mean-reversion. The flip is the price where that switches (a vol-regime switch
+    # intraday) — used for TARGET SELECTION in trade_plan, not direction.
+    regime = "amplifying" if gex == "negative" else "pinning" if gex == "positive" else None
+    flip_dist = round((spot - flip) / spot * 100, 1) if (flip and spot) else None
+    return round(max(0.0, min(10.0, s)), 1), {"src": "options_metrics + IV skew + gamma regime",
+            "spot": spot, "max_pain": mp, "pcr": pcr, "call_wall": cw, "put_wall": pw, "gex": gex,
+            "max_pain_drift_pct": round(mp_dir, 2), "put_skew": skew,
+            "gex_flip_level": flip, "gamma_regime": regime, "flip_dist_pct": flip_dist}
 
 
 def stage_positioning(conn, sym, sm_score, divergence=None) -> tuple:
@@ -671,20 +679,31 @@ def trade_plan(close, atr, stages, macro, iep=None, stock_gap=None) -> dict:
     entry = round(close, 1)
     sign = 1 if direction == "LONG" else -1
     stop = round(entry - sign * 1.3 * atr, 1)
-    t1 = round(entry + sign * 1.2 * atr, 1)
-    t2 = round(entry + sign * 2.0 * atr, 1)
-    t3 = round(entry + sign * 3.0 * atr, 1)
-    magnet = cw if direction == "LONG" else mp
-    if magnet and sign * (magnet - t1) > 0 and sign * (magnet - t3) < 0:
-        t2 = round(magnet, 1)                         # a real level within reach → use it for T2
+    # GAMMA-REGIME target selection — the dealer-gamma regime is a VOLATILITY regime, so it scales the
+    # target distances: AMPLIFYING (neg γ, dealers amplify) → moves trend/extend → targets ×1.25 and
+    # the pin (max-pain/wall) does NOT bind (price blows through it). PINNING (pos γ, dealers dampen)
+    # → mean-reversion toward the pin → targets ×0.85 and the magnet snap is kept (the pin holds).
+    gex_sign = opt.get("gex"); flip = opt.get("gex_flip_level")
+    tmult = 1.25 if gex_sign == "negative" else 0.85 if gex_sign == "positive" else 1.0
+    t1 = round(entry + sign * 1.2 * atr * tmult, 1)
+    t2 = round(entry + sign * 2.0 * atr * tmult, 1)
+    t3 = round(entry + sign * 3.0 * atr * tmult, 1)
+    if gex_sign != "negative":                        # pin binds only when dealers are dampening
+        magnet = cw if direction == "LONG" else mp
+        if magnet and sign * (magnet - t1) > 0 and sign * (magnet - t3) < 0:
+            t2 = round(magnet, 1)                     # a real level within reach → use it for T2
+    # the flip is a vol-regime SWITCH: if it sits between entry and T3 in the trade's direction, the
+    # move crosses from one regime into the other there — manage it (accel or stall at the flip).
+    gflip_note = (f"γ-flip {flip} in path → vol-regime switch"
+                  if (flip and sign * (flip - entry) > 0 and sign * (flip - t3) < 0) else None)
     risk = abs(entry - stop)
     rr = round(abs(t2 - entry) / risk, 1) if risk else None
     # INTRADAY level set — fractions of the daily ATR (a single session captures ≲1 ATR net, not the
-    # multi-day swing range). Tighter stop (0.6·ATR) + targets at 0.6/1.2/1.8 ATR.
+    # multi-day swing range). Tighter stop (0.6·ATR) + targets at 0.6/1.2/1.8 ATR, same regime scale.
     istop = round(entry - sign * 0.6 * atr, 1)
-    it1 = round(entry + sign * 0.6 * atr, 1)
-    it2 = round(entry + sign * 1.2 * atr, 1)
-    it3 = round(entry + sign * 1.8 * atr, 1)
+    it1 = round(entry + sign * 0.6 * atr * tmult, 1)
+    it2 = round(entry + sign * 1.2 * atr * tmult, 1)
+    it3 = round(entry + sign * 1.8 * atr * tmult, 1)
     irisk = abs(entry - istop)
     irr = round(abs(it2 - entry) / irisk, 1) if irisk else None
     # setup bucket (Stage 12) — prefer the stock's OWN pre-open gap (real) over the market proxy.
@@ -711,7 +730,10 @@ def trade_plan(close, atr, stages, macro, iep=None, stock_gap=None) -> dict:
             "open_iep": round(iep, 1) if iep else None, "gap_pct": stock_gap,
             "intraday_stop": istop, "intraday_t1": it1, "intraday_t2": it2, "intraday_t3": it3,
             "intraday_rr": irr,
-            "basis": f"levels: call_wall {cw} / put_wall {pw} / max_pain {mp} / 20dH-L {hi20}-{lo20}, ATR ₹{round(atr,1)}"}
+            "gamma_regime": opt.get("gamma_regime"), "gex_flip_level": flip,
+            "target_scale": tmult, "gflip_note": gflip_note,
+            "basis": f"levels: call_wall {cw} / put_wall {pw} / max_pain {mp} / 20dH-L {hi20}-{lo20}, "
+                     f"ATR ₹{round(atr,1)} · γ-regime {opt.get('gamma_regime') or '—'} (targets ×{tmult})"}
 
 
 def confluence(stages, direction) -> dict:
