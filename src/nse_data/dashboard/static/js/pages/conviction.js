@@ -25,8 +25,10 @@ function trendCell(x) {
   if (TF === "1H") return arrow(st.h1_trend);
   if (TF === "5M") {
     const m = st.m5_trend;
-    return m > 0 ? '<span class="up">BOS ▲</span>' : m < 0 ? '<span class="down">BOS ▼</span>'
+    const bos = m > 0 ? '<span class="up">BOS ▲</span>' : m < 0 ? '<span class="down">BOS ▼</span>'
       : '<span class="flat">no break</span>';
+    // swing-BOS is blind to the opening drive — point to the live ORB (the open's real trigger).
+    return `${bos} <a href="/intraday?sym=${x.symbol}" title="5M swing-BOS misses the opening rally — watch the live ORB on /intraday for the open" style="color:#16a34a;text-decoration:none;font-size:10px">→ watch ORB live</a>`;
   }
   const sw = st.last_sweep || "", pos = st.range_pos_pct;          // 1D: daily structure
   const d = sw.includes("bull") ? '<span class="up">▲</span>' : sw.includes("bear") ? '<span class="down">▼</span>'
