@@ -248,6 +248,7 @@ def stage_positioning(conn, sym, sm_score, divergence=None) -> tuple:
         detail["fii_long_pct"] = divergence["fii_long_pct"]
         detail["client_long_pct"] = divergence["client_long_pct"]
         detail["divergence_read"] = divergence["read"]
+        detail["divergence_signal"] = round(divergence["signal"], 2)   # −1..+1 for confluence
     if not parts:
         return GAP, {"src": "smart_money + participant_oi = null"}
     detail["note"] = "market-wide (per-stock FII = DATA_GAP); divergence = real institutional-vs-retail read"
@@ -465,10 +466,11 @@ def confluence(stages, direction) -> dict:
     num = lambda x: x if isinstance(x, (int, float)) else None
     o = stages.get("options", {}); st = stages.get("structure", {})
     v = stages.get("volume", {}); rs = stages.get("rel_strength", {}); ca = stages.get("catalyst", {})
+    pn = stages.get("positioning", {})
     drift = num(o.get("max_pain_drift_pct")) or 0
     pcr = num(o.get("pcr")); pos = num(st.get("range_pos_pct"))
     sw = str(st.get("last_sweep", "")); r = num(rs.get("rel_strength")) or 0
-    risk = num(ca.get("news_risk"))
+    risk = num(ca.get("news_risk")); divsig = num(pn.get("divergence_signal"))
     flags = {
         "options_drift": 1 if drift > 0.5 else -1 if drift < -0.5 else 0,
         "pcr": 1 if pcr and pcr > 0.7 else -1 if pcr and pcr < 0.5 else 0,   # call-heavy = bearish
@@ -478,6 +480,8 @@ def confluence(stages, direction) -> dict:
         "sector": -1 if st.get("sector_weak") else 0,
         "catalyst": -1 if risk is not None and risk < 70 else 0,   # negative-news drag
         "mtf_1h": 1 if num(st.get("h1_trend")) == 1 else -1 if num(st.get("h1_trend")) == -1 else 0,
+        # FII-vs-retail divergence: institutions-more-long = bullish, retail-chasing = bearish
+        "divergence": 1 if divsig is not None and divsig > 0.3 else -1 if divsig is not None and divsig < -0.3 else 0,
     }
     bull = sum(flags.values())                            # net bullish lean across factors
     rvol = num(v.get("rvol")) or 1; conv = num(v.get("delivery_conviction"))
