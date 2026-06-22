@@ -101,8 +101,9 @@ def macro_regime(conn) -> dict:
     gap_val = preopen_gap if preopen_gap is not None else gift_gap
     gap_src = ("pre-open IEP" if preopen_gap is not None else "GIFT" if gift_gap is not None
                else "DATA_GAP")
+    # a real, tradeable index gap is ~0.4%+; below that the open is FLAT (noise, not a gap).
     gap_bias = ("DATA_GAP (no fresh pre-open/GIFT read)" if gap_val is None else
-                "GAP-UP" if gap_val > 0.2 else "GAP-DOWN" if gap_val < -0.2 else "FLAT")
+                "GAP-UP" if gap_val > 0.4 else "GAP-DOWN" if gap_val < -0.4 else "FLAT")
     risk_on = bool(spx and spx[1] is not None and spx[1] > 0 and vix and vix[1] is not None
                    and vix[1] < 0)
     return {"status": "ok", "nifty_last": nifty[0] if nifty else None,
@@ -313,9 +314,10 @@ def trade_plan(close, atr, stages, macro, iep=None, stock_gap=None) -> dict:
         t3 = round(min(lo20 or 1e12, close - 3.5 * atr), 1)
     risk = abs(entry - stop)
     rr = round(abs(t2 - entry) / risk, 1) if risk else None
-    # setup bucket (Stage 12) — prefer the stock's OWN pre-open gap (real) over the market proxy
+    # setup bucket (Stage 12) — prefer the stock's OWN pre-open gap (real) over the market proxy.
+    # A real per-stock gap is ~0.7%+; smaller opens are FLAT and get a non-gap (trend) setup.
     if stock_gap is not None:
-        is_up, is_down = stock_gap > 0.3, stock_gap < -0.3
+        is_up, is_down = stock_gap > 0.7, stock_gap < -0.7
     else:
         gb = (macro or {}).get("gap_bias", "")
         is_up, is_down = "GAP-UP" in gb, "GAP-DOWN" in gb
