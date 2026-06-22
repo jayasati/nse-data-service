@@ -55,6 +55,8 @@ _VALUE_COLUMNS: tuple[str, ...] = (
     "adx", "supertrend_direction", "obv",
     # Intraday 5-min set (Week 12, task 12.4) — live flip + pressure.
     "supertrend_5m_dir", "vol_delta",
+    # Intraday board (live price + opening range + rvol + structure).
+    "ltp", "orb_high", "orb_low", "orb_break", "rvol_5m", "structure_5m",
 )
 
 # Latest settled EOD columns pulled into the snapshot (subset of indicator_eod).
@@ -134,6 +136,12 @@ def build_snapshot(
             conn, "indicator_supertrend_5m", "supertrend_dir", symbol),
         "vol_delta": _latest_intraday(
             conn, "indicator_volume_delta_5m", "cum_vol_delta", symbol),
+        "ltp": price,
+        "orb_high": _latest_intraday(conn, "indicator_orb_5m", "orb_high", symbol),
+        "orb_low": _latest_intraday(conn, "indicator_orb_5m", "orb_low", symbol),
+        "orb_break": _latest_intraday(conn, "indicator_orb_5m", "orb_break", symbol),
+        "rvol_5m": _latest_intraday(conn, "indicator_rvol_5m", "rvol", symbol),
+        "structure_5m": _latest_intraday(conn, "indicator_structure_5m", "structure", symbol),
     }
 
 

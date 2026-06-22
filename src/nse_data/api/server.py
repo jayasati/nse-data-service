@@ -47,6 +47,7 @@ from .routes import backtests as backtests_routes
 from .routes import conviction as conviction_routes
 from .routes import earnings as earnings_routes
 from .routes import health as health_routes
+from .routes import intraday as intraday_routes
 from .routes import llm as llm_routes
 from .routes import market as market_routes
 from .routes import rankings as rankings_routes
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
     app.include_router(rankings_routes.router)        # /api/rankings/* (weekly positional snapshots)
     app.include_router(research_routes.router)        # /api/research/* (per-stock catalyst study)
     app.include_router(conviction_routes.router)      # /api/conviction (13-stage synthesis)
+    app.include_router(intraday_routes.router)        # /api/intraday (live VWAP/ORB/rvol board)
     app.mount("/static", RevalidatingStatic(directory=str(STATIC_DIR)), name="static")
     return app
 

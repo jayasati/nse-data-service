@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intraday — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/backtest.css">
+<style>
+  .ctrl { font-size:12px; color:var(--muted,#9aa); margin:6px 0; }
+  .ctrl button { background:var(--card,#161a23); border:1px solid var(--border,#333); color:inherit; border-radius:5px; padding:3px 9px; cursor:pointer; margin-right:5px; }
+  .ctrl button.on { background:rgba(96,165,250,.25); border-color:#60a5fa; color:#dbeafe; }
+  td.long, .long { color:#16a34a; font-weight:600; } td.short, .short { color:#dc2626; font-weight:600; }
+  .pill { padding:1px 6px; border-radius:4px; font-size:11px; }
+  .pill.above { background:rgba(22,163,74,.22); } .pill.below { background:rgba(220,38,38,.2); } .pill.inside { background:rgba(148,163,184,.18); }
+  td.num.hot { color:#f59e0b; font-weight:600; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Intraday <span style="font-size:13px;font-weight:400;opacity:.65">live VWAP · ORB · rvol — read, not a validated edge</span></h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right"></div>
+  </header>
+
+  <div class="ctrl">
+    Filter: <button data-f="all" class="on">All</button>
+    <button data-f="LONG">Long bias</button>
+    <button data-f="SHORT">Short bias</button>
+    <button data-f="orb">ORB breakouts</button>
+    <span style="margin-left:10px">auto-refresh 30s · sorted by relative volume</span>
+  </div>
+
+  <div class="tablewrap">
+    <table id="tbl"><thead><tr>
+      <th class="num">#</th><th>Symbol</th><th>Bias</th><th class="num">LTP</th>
+      <th class="num">vs VWAP</th><th>ORB</th><th class="num">OR-Hi</th><th class="num">OR-Lo</th>
+      <th class="num">RVOL</th><th>5m struct</th><th class="num">RSI 5m</th><th>momentum</th>
+    </tr></thead><tbody id="body"></tbody></table>
+  </div>
+  <div class="ctrl" style="margin-top:8px">
+    <b>How to read:</b> <span class="pill above">above</span> = price broke the opening-range high (breakout); <span class="pill below">below</span> = broke the low (breakdown); <span class="pill inside">inside</span> = ranging. <b>vs VWAP</b> green/red = above/below the day's volume-weighted price. <b>RVOL</b> &gt; ~1.5 (amber) = unusual volume today. <b>Bias</b> = confluence of VWAP side + ORB break + 5m supertrend — a live read for context, <b>not a validated signal</b> (intraday edges need net-of-cost validation before trusting).
+  </div>
+
+  <script type="module" src="/static/js/components/nav.js"></script>
+  <script type="module" src="/static/js/pages/intraday.js"></script>
+</body>
+</html>

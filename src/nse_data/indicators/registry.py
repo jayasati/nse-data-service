@@ -22,6 +22,7 @@ from .trend.cpr import CentralPivotRange
 from .trend.ema import EodEma
 from .trend.ema_intraday import EmaIntraday
 from .trend.market_structure import MarketStructure, MarketStructureIntraday
+from .trend.opening_range import OpeningRangeIntraday
 from .trend.sma import SimpleMovingAverage
 from .trend.supertrend_intraday import SupertrendIntraday
 from .volatility.atr_series import AtrIntraday, AtrSeries
@@ -59,4 +60,5 @@ INDICATORS: tuple[Indicator, ...] = (
     ChopIntraday(),
     RelativeVolumeIntraday(),
     MarketStructureIntraday(),
+    OpeningRangeIntraday(),
 )
