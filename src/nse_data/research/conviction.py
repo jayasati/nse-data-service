@@ -55,6 +55,37 @@ def _sector_pct(conn, sym):
     return sec[0], (r[0] if r else None)
 
 
+def participant_divergence(conn) -> dict:
+    """FII (smart money) vs Client (retail) index-futures positioning — NSE's structural edge.
+
+    Disaggregates participant_oi by client_type (FII/DII/Client/Pro), not the FII monolith. The
+    signal is the DIVERGENCE: FII more long than retail = institutions accumulating vs retail
+    distributing (bullish); FII short while retail long = retail chasing / institutions hedged
+    (bearish fade). Returns a −1..+1 directional `signal` for wiring into positioning + macro.
+    """
+    d = conn.execute("SELECT MAX(report_date) FROM raw_participant_oi").fetchone()[0]
+    if not d:
+        return {"status": "DATA_GAP"}
+    leans = {}
+    for ct, lng, sht in conn.execute("SELECT client_type, fut_idx_long, fut_idx_short FROM "
+                                     "raw_participant_oi WHERE report_date=?", (d,)):
+        if (lng or 0) + (sht or 0):
+            leans[ct] = lng / (lng + sht)            # long fraction 0–1
+    fii, client = leans.get("FII"), leans.get("Client")
+    if fii is None or client is None:
+        return {"status": "DATA_GAP", "note": "FII/Client index-fut OI missing"}
+    div = fii - client                                # >0 FII more long than retail, <0 retail chasing
+    read = ("INSTITUTIONAL ACCUMULATION (FII > retail) — bullish" if div > 0.15 else
+            "RETAIL CHASING (retail long, FII short) — bearish fade" if div < -0.15 else
+            "aligned (no divergence)")
+    return {"status": "ok", "date": d, "fii_long_pct": round(fii * 100),
+            "client_long_pct": round(client * 100),
+            "dii_long_pct": round(leans["DII"] * 100) if "DII" in leans else None,
+            "pro_long_pct": round(leans["Pro"] * 100) if "Pro" in leans else None,
+            "divergence": round(div, 2), "read": read,
+            "signal": max(-1.0, min(1.0, div * 2))}   # −1..+1 directional
+
+
 def _pre_open(conn, sym):
     """NSE pre-open indicative open (IEP) + gap% for this symbol (populated ~09:08). Returns
     (iep, gap_pct) only if read in the last ~14h, else (None, None) — the real per-stock open."""
@@ -200,19 +231,27 @@ def stage_options(conn, sym) -> tuple:
             "max_pain_drift_pct": round(mp_dir, 2)}
 
 
-def stage_positioning(conn, sym, sm_score) -> tuple:
-    # NSE doesn't publish per-stock participant OI — only aggregate FII stock-futures + index-level
-    # smart-money. Both are MARKET-WIDE proxies (same for every symbol); true per-stock = DATA_GAP.
+def stage_positioning(conn, sym, sm_score, divergence=None) -> tuple:
+    # NSE doesn't publish per-stock participant OI — only aggregate FII stock-futures + the
+    # index-level FII-vs-RETAIL divergence (the real institutional read). Both are MARKET-WIDE.
     fii = conn.execute("SELECT fut_stk_long, fut_stk_short FROM raw_participant_oi WHERE "
                        "client_type='FII' ORDER BY report_date DESC LIMIT 1").fetchone()
     stk_lean = fii[0] / (fii[0] + fii[1]) if (fii and (fii[0] + fii[1])) else None
     parts = [p for p in (sm_score, stk_lean) if p is not None]
+    detail = {"src": "smart_money + FII-stk-fut + FII-vs-retail divergence",
+              "smart_money_score": sm_score,
+              "fii_stk_long_frac": round(stk_lean, 3) if stk_lean is not None else None}
+    # FII-vs-Client divergence (institutional vs retail) — NSE's structural edge. Maps the −1..+1
+    # signal to a 0–1 bullishness and blends it in: FII>retail lifts positioning, retail-chasing cuts.
+    if divergence and divergence.get("status") == "ok":
+        parts.append(0.5 + divergence["signal"] * 0.5)
+        detail["fii_long_pct"] = divergence["fii_long_pct"]
+        detail["client_long_pct"] = divergence["client_long_pct"]
+        detail["divergence_read"] = divergence["read"]
     if not parts:
         return GAP, {"src": "smart_money + participant_oi = null"}
-    return round(sum(parts) / len(parts) * 10, 1), {
-        "src": "smart_money + FII-stk-fut(aggregate)", "smart_money_score": sm_score,
-        "fii_stk_long_frac": round(stk_lean, 3) if stk_lean is not None else None,
-        "note": "market-wide proxy; per-stock FII = DATA_GAP (NSE doesn't publish per-symbol)"}
+    detail["note"] = "market-wide (per-stock FII = DATA_GAP); divergence = real institutional-vs-retail read"
+    return round(sum(parts) / len(parts) * 10, 1), detail
 
 
 def stage_volume(conn, sym) -> tuple:
@@ -452,10 +491,10 @@ def confluence(stages, direction) -> dict:
             "confirm": confirm, "against": against, "flags": flags}
 
 
-def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None) -> dict:
+def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None, divergence=None) -> dict:
     scores = {
         "catalyst": stage_catalyst(conn, sym),
-        "positioning": stage_positioning(conn, sym, sm_score),
+        "positioning": stage_positioning(conn, sym, sm_score, divergence),
         "options": stage_options(conn, sym),
         "structure": stage_structure(conn, sym),
         "volume": stage_volume(conn, sym),
@@ -490,11 +529,13 @@ def run_conviction(conn, symbols=None) -> dict:
     nifty_pct = macro.get("nifty_pct") if macro.get("status") == "ok" else None
     sm = conn.execute("SELECT score FROM smart_money_daily ORDER BY as_of_date DESC LIMIT 1").fetchone()
     sm_score = sm[0] if sm else None
+    divergence = participant_divergence(conn)            # FII-vs-retail, once for the whole book
+    macro["participant_divergence"] = divergence          # surface it in the market bias
     if symbols is None:
         symbols = [r[0] for r in conn.execute("SELECT DISTINCT symbol FROM options_metrics "
                    "WHERE symbol NOT IN ('NIFTY','BANKNIFTY','FINNIFTY')")]
-    scored = [score_stock(conn, s, sm_score=sm_score, nifty_pct=nifty_pct, macro=macro)
-              for s in symbols]
+    scored = [score_stock(conn, s, sm_score=sm_score, nifty_pct=nifty_pct, macro=macro,
+                          divergence=divergence) for s in symbols]
     scored = [x for x in scored if x["composite"] is not None]
     scored.sort(key=lambda x: -(x.get("conviction_adj") or x["composite"]))   # confluence-ranked
     return {"macro": macro, "smart_money_score": sm_score, "n": len(scored), "ranked": scored}
