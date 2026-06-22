@@ -253,20 +253,24 @@ def _liquid_otm_ivs(conn, sym):
 
 
 def _robust_atm_iv(conn, sym):
-    """ATM IV = MEDIAN of liquid OTM IVs within ~0.5–5% of spot — median ignores single artifacts
-    (a broken near-ATM solver value) the way a nearest-strike average can't."""
+    """ATM IV = mean of the near-money OTM put-median and call-median. Returns None when the two
+    sides DIVERGE > 12 vol-points — a put-call-parity violation that means the chain IV is garbage
+    (e.g. BAJAJ-AUTO's near-ATM call solving to 9% while puts price 49%)."""
     r = _liquid_otm_ivs(conn, sym)
     if not r:
         return None
     _, puts, calls = r
-    near = [iv for m, iv in puts + calls if 0.005 < m < 0.05]
-    return round(_median(near), 1) if len(near) >= 2 else None
+    pm = _median([iv for m, iv in puts if 0.005 < m < 0.06])
+    cm = _median([iv for m, iv in calls if 0.005 < m < 0.06])
+    if pm is None or cm is None or abs(pm - cm) > 12:    # inconsistent → unreliable, don't use
+        return None
+    return round((pm + cm) / 2, 1)
 
 
 def _put_skew(conn, sym):
     """Put skew = median OTM-put IV − median OTM-call IV (≈3–8% OTM band, 25-delta proxy). Median of
-    a band is robust to the single-strike garbage NSE reports. Positive = puts richer (protective
-    bid / hedged-long, bullish); negative = calls richer (call/short-hedge). None if too few strikes."""
+    a band is robust to single-strike garbage. Returns None when |skew| > 6 — a real equity skew is
+    1–4 vol-points; a larger gap is a put-call-parity violation (bad NSE chain data), not signal."""
     r = _liquid_otm_ivs(conn, sym)
     if not r:
         return None
@@ -275,7 +279,8 @@ def _put_skew(conn, sym):
     cb = [iv for m, iv in calls if 0.03 < m < 0.08]
     if len(pb) < 2 or len(cb) < 2:
         return None
-    return round(max(-8.0, min(8.0, _median(pb) - _median(cb))), 2)
+    skew = _median(pb) - _median(cb)
+    return round(skew, 2) if abs(skew) <= 6 else None    # |skew|>6 = bad data, not a real signal
 
 
 def _iv_term_structure(conn, sym):
