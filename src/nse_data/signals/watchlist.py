@@ -33,7 +33,10 @@ log = structlog.get_logger()
 
 JOB_ID = "live_watchlist"
 _INTERVAL_SECONDS = 900
-_TTL_TRADING_DAYS = 5
+_TTL_TRADING_DAYS = 3         # default fallback
+# Per-reason expiry. News is a DAILY-horizon catalyst, not an intraday-5m one — a long TTL was
+# flooding the intraday watchlist (it stays on the GATED daily/conviction layers regardless).
+_TTL_BY_REASON = {"news": 1, "rating": 3, "oi_spurt": 2, "breakout_52wh": 2}
 _LOOKBACK_HOURS = 30          # ~one trading day of triggers
 
 
@@ -85,11 +88,12 @@ def _rating_symbols(conn, cutoff_epoch) -> set[str]:
 def _news_symbols(conn, cutoff_epoch) -> set[str]:
     if not _has(conn, "raw_announcements"):
         return set()
+    # Only HIGH-priority or STRONG sentiment — plain positive/negative is stamped on nearly every
+    # announcement by the classifier, which is what flooded the watchlist with ~2k names.
     return {r[0] for r in conn.execute(
         "SELECT DISTINCT symbol FROM raw_announcements "
         "WHERE created_at >= ? AND (LOWER(priority) = 'high' OR "
-        "      LOWER(COALESCE(sentiment,'')) IN "
-        "      ('positive','negative','very_positive','very_negative'))",
+        "      LOWER(COALESCE(sentiment,'')) IN ('very_positive','very_negative'))",
         (cutoff_epoch,),
     )}
 
@@ -124,7 +128,6 @@ def refresh_watchlist(
     """Scan triggers, upsert symbols with a fresh expiry, prune expired rows."""
     now = now or market_hours.now_ist()
     now_iso = now.isoformat()
-    expires_iso = _trading_days_ahead(now, ttl_trading_days).isoformat()
     cutoff = int((now - timedelta(hours=lookback_hours)).timestamp())
 
     by_reason = {
@@ -135,6 +138,8 @@ def refresh_watchlist(
     }
     counts = {}
     for reason, symbols in by_reason.items():
+        ttl = _TTL_BY_REASON.get(reason, ttl_trading_days)
+        expires_iso = _trading_days_ahead(now, ttl).isoformat()
         for sym in symbols:
             add_to_watchlist(conn, sym, reason, now_iso, expires_iso)
         counts[reason] = len(symbols)
