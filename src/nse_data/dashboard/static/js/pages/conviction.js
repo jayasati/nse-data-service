@@ -38,12 +38,23 @@ function trendCell(x) {
   return `${d} <span style="font-size:11px;opacity:.65">${pos != null ? pos + "% rng" : ""}</span>`;
 }
 
+// gamma regime → target scaling. amplifying (neg γ, trending) = wider targets ×1.25; pinning
+// (pos γ, mean-revert) = tighter ×0.85 + pin binds. Flip = the intraday vol-regime switch level.
+function gammaTag(x) {
+  const o = (x.stages && x.stages.options) || {};
+  const r = o.gamma_regime; if (!r) return "";
+  const amp = r === "amplifying";
+  const col = amp ? "#dc2626" : "#60a5fa", lab = amp ? "γ-amp ×1.25" : "γ-pin ×0.85";
+  const tip = `gamma regime: ${r} (gex ${o.gex})` + (o.gex_flip_level ? ` · flip ${o.gex_flip_level} (${o.flip_dist_pct}% away) → targets ${amp ? "extended" : "tightened, pin binds"}` : "");
+  return ` <span title="${tip}" style="color:${col};font-size:10px;opacity:.9">· ${lab}</span>`;
+}
+
 function renderBody() {
   $("body").innerHTML = ROWS.map((x, i) =>
     `<tr><td class="num">${i + 1}</td><td><a href="/research?sym=${x.symbol}" style="color:#60a5fa;text-decoration:none">${x.symbol}</a>` +
     ` <a href="/intraday?sym=${x.symbol}" title="watch live 5M/ORB/VWAP for entry timing" style="color:#16a34a;text-decoration:none;font-size:11px">▸live</a></td>` +
     `<td class="num"><b>${x.conviction_adj ?? x.composite}</b></td><td><span class="tier ${tcls(x.tier)}">${(x.tier || "").split(" ")[0]}</span></td>` +
-    `<td>${dir(x.direction)}</td><td>${trendCell(x)}</td><td>${confl(x)}</td><td style="font-size:12px">${c(x.setup)}</td>` +
+    `<td>${dir(x.direction)}</td><td>${trendCell(x)}</td><td>${confl(x)}</td><td style="font-size:12px">${c(x.setup)}${gammaTag(x)}</td>` +
     `<td class="num">${n(x.entry)}</td>` +
     `<td class="num">${x.open_iep == null ? "—" : x.open_iep}${x.gap_pct == null ? "" : ` <span style="font-size:10px;color:${x.gap_pct >= 0 ? "#16a34a" : "#dc2626"}">${x.gap_pct > 0 ? "+" : ""}${x.gap_pct}%</span>`}</td>` +
     `<td class="num" style="color:#dc2626">${n(lv(x, "stop"))}</td>` +
