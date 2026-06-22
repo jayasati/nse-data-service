@@ -478,15 +478,18 @@ def stage_vol_expansion(conn, sym) -> tuple:
            "IS NOT NULL ORDER BY as_of_date DESC LIMIT 90", (sym,))]
     iv_pctile = round(sum(1 for x in ivh if x < ivh[0]) / len(ivh) * 100, 0) if len(ivh) >= 30 \
         else f"DATA_GAP (accumulating n={len(ivh)})"
-    # coiled spring = LOW bandwidth pctile (and low IV pctile when available) → high score.
-    pcts = [pctile] + ([iv_pctile] if isinstance(iv_pctile, (int, float)) else [])
-    s = 10 - (sum(pcts) / len(pcts)) / 10.0
+    # COILED-SPRING NEUTRALISED 2026-06-22: the "low BB-width pctile → high score" rule tested
+    # WRONG-SIGNED cross-sectionally (compressed names underperformed ~1–2% over 5–10d; IC −0.016/
+    # −0.027 across 200 liquid names, 2025-05→2026-06). It no longer drives the score — start from a
+    # neutral 5.0 and let only the conceptually-distinct, untested-but-sound signals move it:
+    # term-structure (contango/backwardation) and HV/IV premium. BB/IV pctiles kept for context only.
+    s = 5.0
     # IV TERM STRUCTURE: backwardation (near IV > far) = near-term event/vol already priced → the
     # spring is releasing, not coiled → cut the score; contango (calm) leaves it. DATA_GAP if 1 expiry.
     ts = _iv_term_structure(conn, sym)
-    detail = {"src": "bb_width_pctile + atr_pct + iv + term_structure",
+    detail = {"src": "vol-regime: term_structure + HV/IV (coiled-spring NEUTRALISED — tested wrong-signed)",
               "bb_width_pctile": round(float(pctile), 0), "atr_pct": round(float(atr_pct), 2),
-              "iv_pctile": iv_pctile,
+              "iv_pctile": iv_pctile, "coiled_note": "BB-width compression no longer scored (IC<0)",
               "iv_term_structure": ts if ts else "DATA_GAP (need n_expiries≥2)"}
     if ts:
         if ts["slope"] < -0.5:
@@ -792,6 +795,35 @@ def run_and_persist(conn) -> dict:
     return {"date": today, "persisted": len(r["ranked"])}
 
 
+def append_factor_log(conn) -> dict:
+    """Append today's per-symbol factor SCORES (+ direction/confluence) to the append-only
+    conviction_factor_log — the dataset for FORWARD, out-of-sample weight calibration. Captures the
+    actual emitted scores including options/positioning (no backtest history), so over weeks we learn
+    each factor's real forward IC from live signals. Forward returns are joined later from bhavcopy.
+    Written once/day (pre-market run); idempotent on (snapshot_date, symbol)."""
+    import time
+    today = dt.datetime.now(IST).date().isoformat()
+    rows = conn.execute(
+        "SELECT symbol, direction, conf_label, conf_agreement, conviction_adj, composite, options, "
+        "structure, positioning, volume, rel_strength, vol_expansion FROM conviction_daily "
+        "WHERE as_of_date=?", (today,)).fetchall()
+    if not rows:
+        return {"logged": 0}
+    now = int(time.time())
+    out = []
+    for r in rows:
+        ec = conn.execute("SELECT close FROM raw_bhavcopy_cm WHERE symbol=? ORDER BY date DESC "
+                          "LIMIT 1", (r[0],)).fetchone()
+        out.append((today, *r, ec[0] if ec else None, now))
+    conn.executemany(
+        "INSERT OR REPLACE INTO conviction_factor_log (snapshot_date, symbol, direction, conf_label, "
+        "conf_agreement, conviction_adj, composite, options, structure, positioning, volume, "
+        "rel_strength, vol_expansion, entry_close, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        out)
+    conn.commit()
+    return {"logged": len(out)}
+
+
 def register_conviction_job(scheduler, db_path: str) -> str:
     """Pre-market thesis at 09:10 IST + intraday refreshes every 5 min so the 1H/5M timeframes (and
     live options/volume/gap) update through the session. The 1-DAY structure stays fixed (daily bars
@@ -813,8 +845,19 @@ def register_conviction_job(scheduler, db_path: str) -> str:
             conn.close()
 
     # 09:10 IST — just after the NSE pre-open auction (09:08) so the gap/entry use the real
-    # per-stock indicative open (IEP) + final GIFT, ~5 min before the 09:15 open.
-    scheduler.add_job(lambda: _run("conviction"),
+    # per-stock indicative open (IEP) + final GIFT, ~5 min before the 09:15 open. This run also
+    # appends the day's factor scores to the append-only attribution log (once/day, pre-market).
+    def _premarket():
+        conn = open_db(db_path)
+        try:
+            log.info("conviction", **run_and_persist(conn))
+            log.info("conviction_factor_log", **append_factor_log(conn))
+        except Exception:
+            log.exception("conviction_failed")
+        finally:
+            conn.close()
+
+    scheduler.add_job(_premarket,
                       trigger=CronTrigger(hour=9, minute=10, timezone=market_hours.IST),
                       id="conviction", max_instances=1, coalesce=True, replace_existing=True)
 
