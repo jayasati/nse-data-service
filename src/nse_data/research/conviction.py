@@ -339,6 +339,42 @@ def trade_plan(close, atr, stages, macro, iep=None, stock_gap=None) -> dict:
             "basis": f"levels: call_wall {cw} / put_wall {pw} / max_pain {mp} / 20dH-L {hi20}-{lo20}, ATR ₹{round(atr,1)}"}
 
 
+def confluence(stages, direction) -> dict:
+    """CONFLUENCE CHECK — does the full factor stack actually support the setup's direction?
+
+    The per-stock direction comes from a thin rule (max-pain drift + RS + position). This tallies
+    every factor's bullish/bearish lean (options drift, PCR, range position, SMC, relative strength,
+    sector, catalyst-risk) plus whether VOLUME confirms the move, and reports whether the confluence
+    ALIGNS with, is MIXED on, or CONTRADICTS the direction — the correction the board was missing.
+    """
+    num = lambda x: x if isinstance(x, (int, float)) else None
+    o = stages.get("options", {}); st = stages.get("structure", {})
+    v = stages.get("volume", {}); rs = stages.get("rel_strength", {}); ca = stages.get("catalyst", {})
+    drift = num(o.get("max_pain_drift_pct")) or 0
+    pcr = num(o.get("pcr")); pos = num(st.get("range_pos_pct"))
+    sw = str(st.get("last_sweep", "")); r = num(rs.get("rel_strength")) or 0
+    risk = num(ca.get("news_risk"))
+    flags = {
+        "options_drift": 1 if drift > 0.5 else -1 if drift < -0.5 else 0,
+        "pcr": 1 if pcr and pcr > 0.7 else -1 if pcr and pcr < 0.5 else 0,   # call-heavy = bearish
+        "position": 1 if pos is not None and pos < 30 else -1 if pos is not None and pos > 80 else 0,
+        "smc": 1 if "bull" in sw else -1 if "bear" in sw else 0,
+        "rel_strength": 1 if r > 1.5 else -1 if r < -1 else 0,
+        "sector": -1 if st.get("sector_weak") else 0,
+        "catalyst": -1 if risk is not None and risk < 70 else 0,   # negative-news drag
+    }
+    bull = sum(flags.values())                            # net bullish lean across factors
+    rvol = num(v.get("rvol")) or 1; conv = num(v.get("delivery_conviction"))
+    vol = 1 if rvol > 1.3 and (conv or 0) >= 0.5 else -1 if rvol < 0.9 or (conv or 1) < 0.35 else 0
+    want = 1 if direction == "LONG" else -1
+    agree = bull * want                                   # >0 confluence supports the direction
+    label = "ALIGNED" if agree >= 2 else "CONTRADICTED" if agree <= -2 else "MIXED"
+    confirm = [k for k, f in flags.items() if f * want > 0]
+    against = [k for k, f in flags.items() if f * want < 0]
+    return {"net_bull": bull, "agreement": agree, "vol_confirm": vol, "label": label,
+            "confirm": confirm, "against": against, "flags": flags}
+
+
 def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None) -> dict:
     scores = {
         "catalyst": stage_catalyst(conn, sym),
@@ -360,10 +396,16 @@ def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None) -> dict:
     atr = float(ta.atr(df["high"], df["low"], df["close"], 14).iloc[-1]) if df is not None else None
     iep, stock_gap = _pre_open(conn, sym)        # real per-stock indicative open + gap (~09:08)
     plan = trade_plan(close, atr, stages, macro, iep=iep, stock_gap=stock_gap)
-    prob = round(min(68, 45 + (comp or 5) * 2.6)) if comp else None
-    return {"symbol": sym, "composite": comp, "tier": tier_of(comp, scores, veto_flag),
-            "renorm_weights": renorm, "data_gaps": gaps, "trade": plan, "probability_pct": prob,
-            "news_flag": veto_flag, "stages": stages}
+    # CONFLUENCE CORRECTION: reward factor-agreement + volume confirmation, penalise contradiction.
+    conf = confluence(stages, plan.get("direction"))
+    conv_adj = comp
+    if comp is not None:
+        conv_adj = round(max(0.0, comp + conf["agreement"] * 0.25 + conf["vol_confirm"] * 0.4), 2)
+    prob = round(min(68, 45 + (conv_adj or 5) * 2.6)) if conv_adj else None
+    return {"symbol": sym, "composite": comp, "conviction_adj": conv_adj,
+            "tier": tier_of(conv_adj, scores, veto_flag), "renorm_weights": renorm,
+            "data_gaps": gaps, "trade": plan, "probability_pct": prob, "news_flag": veto_flag,
+            "confluence": conf, "stages": stages}
 
 
 def run_conviction(conn, symbols=None) -> dict:
@@ -377,7 +419,7 @@ def run_conviction(conn, symbols=None) -> dict:
     scored = [score_stock(conn, s, sm_score=sm_score, nifty_pct=nifty_pct, macro=macro)
               for s in symbols]
     scored = [x for x in scored if x["composite"] is not None]
-    scored.sort(key=lambda x: -x["composite"])
+    scored.sort(key=lambda x: -(x.get("conviction_adj") or x["composite"]))   # confluence-ranked
     return {"macro": macro, "smart_money_score": sm_score, "n": len(scored), "ranked": scored}
 
 
@@ -393,17 +435,21 @@ def run_and_persist(conn) -> dict:
                  (today, json.dumps(r["macro"]), r["smart_money_score"], now))
     g = lambda x, s: (None if x["stages"][s]["score"] == "DATA_GAP" else x["stages"][s]["score"])
     t = lambda x, k: x.get("trade", {}).get(k)
+    cf = lambda x, k: x.get("confluence", {}).get(k)
     conn.executemany(
         "INSERT OR REPLACE INTO conviction_daily (as_of_date, symbol, composite, tier, catalyst, "
         "positioning, options, structure, volume, rel_strength, vol_expansion, data_gaps, "
         "stages_json, direction, entry, stop, t1, t2, t3, rr, setup, probability, open_iep, "
-        "gap_pct, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "gap_pct, conviction_adj, conf_label, conf_agreement, conf_confirm, conf_against, "
+        "vol_confirm, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(today, x["symbol"], x["composite"], x["tier"], g(x, "catalyst"), g(x, "positioning"),
           g(x, "options"), g(x, "structure"), g(x, "volume"), g(x, "rel_strength"),
           g(x, "vol_expansion"), ",".join(x["data_gaps"]), json.dumps(x["stages"]),
           t(x, "direction"), t(x, "entry"), t(x, "stop"), t(x, "t1"), t(x, "t2"), t(x, "t3"),
-          t(x, "rr"), t(x, "setup"), x.get("probability_pct"), t(x, "open_iep"), t(x, "gap_pct"), now)
+          t(x, "rr"), t(x, "setup"), x.get("probability_pct"), t(x, "open_iep"), t(x, "gap_pct"),
+          x.get("conviction_adj"), cf(x, "label"), cf(x, "agreement"),
+          ",".join(cf(x, "confirm") or []), ",".join(cf(x, "against") or []), cf(x, "vol_confirm"), now)
          for x in r["ranked"]])
     conn.commit()
     return {"date": today, "persisted": len(r["ranked"])}
