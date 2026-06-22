@@ -31,7 +31,8 @@ async function init() {
     return `<span style="color:${col};font-weight:600;font-size:11px">${lb}${ag}</span>${against}`;
   };
   $("body").innerHTML = r.rows.map((x, i) =>
-    `<tr><td class="num">${i + 1}</td><td><a href="/research?sym=${x.symbol}" style="color:#60a5fa;text-decoration:none">${x.symbol}</a></td>` +
+    `<tr><td class="num">${i + 1}</td><td><a href="/research?sym=${x.symbol}" style="color:#60a5fa;text-decoration:none">${x.symbol}</a>` +
+    ` <a href="/intraday?sym=${x.symbol}" title="watch live 5M/ORB/VWAP for entry timing" style="color:#16a34a;text-decoration:none;font-size:11px">▸live</a></td>` +
     `<td class="num"><b>${x.conviction_adj ?? x.composite}</b></td><td><span class="tier ${tcls(x.tier)}">${(x.tier || "").split(" ")[0]}</span></td>` +
     `<td>${dir(x.direction)}</td><td>${confl(x)}</td><td style="font-size:12px">${c(x.setup)}</td>` +
     `<td class="num">${n(x.entry)}</td>` +

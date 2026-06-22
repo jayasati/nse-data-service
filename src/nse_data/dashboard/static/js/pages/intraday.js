@@ -3,6 +3,9 @@ const $ = id => document.getElementById(id);
 const getJSON = async u => (await fetch(u, { cache: "no-store" })).json();
 let DATA = [], filter = "all";
 
+const FOCUS = new URLSearchParams(location.search).get("sym");   // handed off from /conviction
+let scrolled = false;
+
 const n = (v, d = 1) => v == null ? "—" : (typeof v === "number" ? v.toFixed(d) : v);
 const biasCell = b => b === "LONG" ? '<td class="long">LONG</td>'
   : b === "SHORT" ? '<td class="short">SHORT</td>' : "<td>—</td>";
@@ -12,20 +15,26 @@ function render() {
   if (filter === "LONG" || filter === "SHORT") rows = rows.filter(x => x.bias === filter);
   else if (filter === "orb") rows = rows.filter(x => x.orb_state === "above" || x.orb_state === "below");
   $("body").innerHTML = rows.map((x, i) => {
+    const hl = FOCUS && x.symbol === FOCUS ? ' style="background:rgba(96,165,250,.18);outline:1px solid #60a5fa"' : "";
     const vsv = x.vs_vwap_pct;
     const vsvCell = vsv == null ? "<td class='num'>—</td>"
       : `<td class="num ${vsv >= 0 ? "long" : "short"}">${vsv > 0 ? "+" : ""}${vsv}%</td>`;
     const orb = x.orb_state ? `<span class="pill ${x.orb_state}">${x.orb_state}</span>` : "—";
     const rvol = x.rvol_5m == null ? "—"
       : `<span class="${x.rvol_5m >= 1.5 ? "num hot" : ""}">${x.rvol_5m.toFixed(2)}</span>`;
-    return `<tr><td class="num">${i + 1}</td>` +
+    return `<tr data-sym="${x.symbol}"${hl}><td class="num">${i + 1}</td>` +
       `<td><a href="/research?sym=${x.symbol}" style="color:#60a5fa;text-decoration:none">${x.symbol}</a></td>` +
       biasCell(x.bias) + `<td class="num">${n(x.ltp)}</td>` + vsvCell +
       `<td>${orb}</td><td class="num">${n(x.orb_high)}</td><td class="num">${n(x.orb_low)}</td>` +
       `<td class="num">${rvol}</td><td style="font-size:12px">${x.structure_5m ?? "—"}</td>` +
       `<td class="num">${n(x.rsi_5m, 0)}</td><td style="font-size:12px">${x.momentum_state ?? "—"}</td></tr>`;
   }).join("");
-  $("meta").textContent = `${DATA.length} live names · ${rows.length} shown`;
+  $("meta").textContent = FOCUS ? `watching ${FOCUS} (from conviction) · ${DATA.length} live names`
+    : `${DATA.length} live names · ${rows.length} shown`;
+  if (FOCUS && !scrolled) {                       // hand-off: jump to the conviction pick once
+    const row = document.querySelector(`tr[data-sym="${FOCUS}"]`);
+    if (row) { row.scrollIntoView({ block: "center" }); scrolled = true; }
+  }
 }
 
 async function load() {
