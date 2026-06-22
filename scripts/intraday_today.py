@@ -17,9 +17,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from nse_data.backtester.strategies.orb_vwap.bars import read_intraday_5m  # noqa: E402
+from nse_data.indicators.intraday_ohlcv import read_intraday_5m  # noqa: E402 (merges live feed)
 
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30))
+
+
+def _today_bars(conn, sym):
+    """Today's 5m bars (09:15→latest) from the live-merged source, columns lowercased."""
+    df = read_intraday_5m(conn, sym)
+    if df is None or df.empty:
+        return None
+    df = df.rename(columns=str.lower)
+    today = dt.datetime.now(IST).date()
+    mask = [dt.datetime.fromtimestamp(int(t), IST).date() == today for t in df.index]
+    return df[mask].reset_index(drop=True)
 
 
 def _vwap(df):
@@ -43,10 +54,9 @@ def main() -> int:
           f"{'now':>8}{'naive%':>8}{'timed%':>8}{'stop?':>7}")
     helped = naive_tot = timed_tot = took = 0
     for sym, dirn, entry, stop, t2 in rows:
-        df = read_intraday_5m(conn, sym, start_date=today, end_date=today)
+        df = _today_bars(conn, sym)
         if df is None or len(df) < 4:
             print(f"{sym:11}{dirn:6}  no/short intraday data"); continue
-        df = df.reset_index(drop=True)
         o = float(df["open"].iloc[0])
         hi = df["high"].to_numpy(); lo = df["low"].to_numpy(); cl = df["close"].to_numpy()
         vw = _vwap(df)
