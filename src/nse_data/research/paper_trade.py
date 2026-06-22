@@ -137,9 +137,9 @@ def _score_lean(conn, eligible, ep, sector_of) -> dict:
 
 
 def _score_conviction_confluence(conn, eligible, ep, sector_of) -> dict:
-    """LONG names where the full conviction factor stack AGREES (conf_label='ALIGNED') — the
-    forward, out-of-sample test of the confluence-corrected conviction. Long-only (the harness sizes
-    long entries); short-aligned names are flagged by the engine but not paper-tradable here yet."""
+    """Names where the full conviction factor stack AGREES (conf_label='ALIGNED'), LONG or SHORT —
+    the forward, out-of-sample test of the confluence-corrected conviction. The harness is now
+    direction-aware, so both sides are traded (side read from conviction_daily.direction)."""
     if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND "
                         "name='conviction_daily'").fetchone():
         return {}
@@ -148,7 +148,7 @@ def _score_conviction_confluence(conn, eligible, ep, sector_of) -> dict:
         return {}
     rows = conn.execute(
         "SELECT symbol, conviction_adj FROM conviction_daily WHERE as_of_date=? AND "
-        "conf_label='ALIGNED' AND direction='LONG' AND conviction_adj IS NOT NULL", (d,)).fetchall()
+        "conf_label='ALIGNED' AND conviction_adj IS NOT NULL", (d,)).fetchall()
     return {s: round(adj, 1) for s, adj in rows if s in eligible}
 
 
@@ -186,16 +186,17 @@ def _effective_params(key: str, params: PaperTradeParams) -> PaperTradeParams:
     return replace(params, **applied) if applied else params
 
 
-def _size_position(entry_px, atr_pct, params: PaperTradeParams, *, size_mult: float = 1.0):
-    """(stop_px, qty, risk_rupees) for a long entry sized to risk params.risk_pct of
-    capital to a k·ATR stop. `size_mult` (< 1) trims qty for the W27.6 risk rules. Falls
-    back to a flat stop when ATR% is missing; never sizes a single name above the book."""
+def _size_position(entry_px, atr_pct, params: PaperTradeParams, *, size_mult: float = 1.0,
+                   direction: str = "long"):
+    """(stop_px, qty, risk_rupees) sized to risk params.risk_pct of capital to a k·ATR stop. For a
+    SHORT the stop sits ABOVE entry. `size_mult` (< 1) trims qty for the W27.6 rules."""
     if not entry_px or entry_px <= 0:
         return None, None, None
     frac = (params.atr_k * atr_pct / 100.0) if (atr_pct and atr_pct > 0) else DEFAULT_STOP_FRAC
     frac = min(frac, MAX_STOP_FRAC)
     risk_per_share = entry_px * frac
-    stop_px = round(entry_px - risk_per_share, 2)
+    sign = 1 if direction == "long" else -1
+    stop_px = round(entry_px - sign * risk_per_share, 2)        # long: below · short: above
     qty = int((params.capital * params.risk_pct / 100.0) // risk_per_share)
     qty = min(qty, int(params.capital // entry_px))      # cap at full-book notional
     qty = max(1, int(qty * size_mult))
@@ -221,24 +222,26 @@ def _risk_state(conn, key, today, params: PaperTradeParams, vix):
     return kill, round(mult, 3)
 
 
-def _chandelier(conn, sym, atr_pct, params: PaperTradeParams):
-    """Close-based chandelier level = highest close over trail_window × (1 − k·ATR%).
-    None when ATR% or price history is missing. Read each pass; the stored trail_stop
-    ratchets it (never down)."""
+def _chandelier(conn, sym, atr_pct, params: PaperTradeParams, direction: str = "long"):
+    """Chandelier trail. LONG = highest close × (1 − k·ATR%) (ratchets up under price). SHORT =
+    lowest close × (1 + k·ATR%) (ratchets down over price). None when ATR%/history missing."""
     if not atr_pct or atr_pct <= 0:
         return None
+    k = min(params.trail_atr_k * atr_pct / 100.0, MAX_STOP_FRAC)
+    agg = "MAX" if direction == "long" else "MIN"
     row = conn.execute(
-        "SELECT MAX(close) FROM (SELECT close FROM raw_intraday_candles WHERE symbol=? "
+        f"SELECT {agg}(close) FROM (SELECT close FROM raw_intraday_candles WHERE symbol=? "
         "AND interval='day' AND close IS NOT NULL ORDER BY ts DESC LIMIT ?)",
         (sym, params.trail_window)).fetchone()
-    hh = row[0] if row else None
-    if not hh:
+    ext = row[0] if row else None
+    if not ext:
         return None
-    return round(hh * (1 - min(params.trail_atr_k * atr_pct / 100.0, MAX_STOP_FRAC)), 2)
+    return round(ext * (1 - k), 2) if direction == "long" else round(ext * (1 + k), 2)
 
 
 def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
-                  price_now, risk_tag, atr_of, sector_of, chand_of, vix=None) -> dict:
+                  price_now, risk_tag, atr_of, sector_of, chand_of, vix=None,
+                  direction_of=None) -> dict:
     """Drive one strategy's paper_book positions through the state machine.
 
     Writes BUY/SELL/peak updates to paper_book (unless params.dry_run) and returns a
@@ -247,31 +250,38 @@ def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
     exits book real net P&L via the delivery cost model (R2). Rows opened before sizing
     existed (NULL qty) fall back to the flat-% cost path.
     """
+    direction_of = direction_of or (lambda s: "long")
     open_rows = conn.execute(
         "SELECT id, symbol, entry_date, entry_px, peak_score, stop_px, qty, risk_rupees, "
-        "trail_stop FROM paper_book WHERE status='open' AND strategy=?", (key,)).fetchall()
+        "trail_stop, COALESCE(direction,'long') FROM paper_book WHERE status='open' AND strategy=?",
+        (key,)).fetchall()
     held = {r[1] for r in open_rows}
     now = int(time.time())
     sells, buys = [], []
 
-    for pid, sym, entry_date, entry_px, peak, stop_px, qty, risk_rupees, trail_stop in open_rows:
+    for (pid, sym, entry_date, entry_px, peak, stop_px, qty, risk_rupees, trail_stop,
+         pdir) in open_rows:
         px = price_now(sym)
         sc = score.get(sym)
+        sign = 1 if pdir == "long" else -1
         peak = max(peak or 0.0, sc if sc is not None else (peak or 0.0))
         hd = (_d(today) - _d(entry_date)).days
-        gross = ((px / entry_px - 1) * 100) if (px and entry_px) else 0.0
-        # R10 — chandelier trailing stop, ratcheted (never down) above the initial ATR stop
-        chand = chand_of(sym)
-        eff_trail = max([s for s in (trail_stop, chand) if s is not None], default=None)
-        hit_init = (stop_px is not None and px is not None and px <= stop_px) or gross <= params.stop
-        hit_trail = eff_trail is not None and px is not None and px <= eff_trail
+        gross = (sign * (px / entry_px - 1) * 100) if (px and entry_px) else 0.0   # short-aware P&L
+        # R10 — chandelier, ratcheted toward price: long trails up (max), short trails down (min)
+        chand = chand_of(sym, pdir)
+        trails = [s for s in (trail_stop, chand) if s is not None]
+        eff_trail = (max(trails) if pdir == "long" else min(trails)) if trails else None
+        adverse_stop = (px <= stop_px) if pdir == "long" else (px >= stop_px)
+        hit_init = (stop_px is not None and px is not None and adverse_stop) or gross <= params.stop
+        hit_trail = (eff_trail is not None and px is not None and
+                     ((px <= eff_trail) if pdir == "long" else (px >= eff_trail)))
         reason = ("dropped" if sc is None else "t_out" if sc < params.t_out
                   else "trail" if peak - sc >= params.trail else "stop" if hit_init
                   else "chandelier" if hit_trail
                   else "max_hold" if hd >= params.max_hold else None)
         if reason:
             if qty and entry_px and px:
-                tc = compute_costs(entry_px, px, int(qty), "long", segment=params.segment)
+                tc = compute_costs(entry_px, px, int(qty), pdir, segment=params.segment)
                 net_pnl = round(tc.net_pnl, 2)
                 net_pct = round(net_pnl / (entry_px * qty) * 100, 2)
                 r_multiple = round(net_pnl / risk_rupees, 3) if risk_rupees else None
@@ -286,9 +296,9 @@ def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
                     "WHERE id=?",
                     (today, px, reason, net_pct, net_pnl, r_multiple, sc, round(peak, 1), now, pid))
         elif not params.dry_run:
-            new_trail = eff_trail                          # ratchet up, keep at/below price
+            new_trail = eff_trail                          # keep on the correct side of price
             if new_trail is not None and px is not None:
-                new_trail = round(min(new_trail, px), 2)
+                new_trail = round(min(new_trail, px) if pdir == "long" else max(new_trail, px), 2)
             conn.execute(
                 "UPDATE paper_book SET peak_score=?, last_score=?, trail_stop=?, updated_at=? "
                 "WHERE id=?", (round(peak, 1), sc, new_trail, now, pid))
@@ -318,7 +328,9 @@ def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
             capped += 1
             continue
         entry_px = price_now(sym)
-        stop_px, qty, risk_rupees = _size_position(entry_px, atr_of(sym), params, size_mult=size_mult)
+        bdir = direction_of(sym)
+        stop_px, qty, risk_rupees = _size_position(entry_px, atr_of(sym), params,
+                                                   size_mult=size_mult, direction=bdir)
         if risk_rupees and heat + risk_rupees > heat_cap:
             capped += 1
             continue
@@ -329,19 +341,20 @@ def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
         if not params.dry_run:
             conn.execute(
                 "INSERT INTO paper_book (symbol, entry_date, entry_px, entry_score, "
-                "peak_score, last_score, status, strategy, stop_px, qty, risk_rupees, updated_at) "
-                "VALUES (?,?,?,?,?,?, 'open', ?,?,?,?,?)",
-                (sym, today, entry_px, sc, sc, sc, key, stop_px, qty, risk_rupees, now))
+                "peak_score, last_score, status, strategy, stop_px, qty, risk_rupees, direction, "
+                "updated_at) VALUES (?,?,?,?,?,?, 'open', ?,?,?,?,?,?)",
+                (sym, today, entry_px, sc, sc, sc, key, stop_px, qty, risk_rupees, bdir, now))
     if not params.dry_run:
         conn.commit()
 
     cur = conn.execute(
-        "SELECT symbol, entry_date, entry_px, last_score FROM paper_book "
+        "SELECT symbol, entry_date, entry_px, last_score, COALESCE(direction,'long') FROM paper_book "
         "WHERE status='open' AND strategy=? ORDER BY entry_date", (key,)).fetchall()
     holdings = []
-    for sym, ed, epx, ls in cur:
+    for sym, ed, epx, ls, hdir in cur:
         px = price_now(sym)
-        unr = ((px / epx - 1) * 100) if (px and epx) else 0.0
+        sign = 1 if hdir == "long" else -1
+        unr = (sign * (px / epx - 1) * 100) if (px and epx) else 0.0
         holdings.append((sym, ed, (_d(today) - _d(ed)).days, round(unr, 1), ls, risk_tag(sym)))
     closed = [r[0] for r in conn.execute(
         "SELECT net_pct FROM paper_book WHERE status='closed' AND net_pct IS NOT NULL "
@@ -424,8 +437,23 @@ def run_paper_trade(conn, *, strategies=None, params: PaperTradeParams | None = 
     def atr_of(sym):
         return atr_cache.get(sym)        # ATR% for R4 sizing; None → flat-stop fallback
 
-    def chand_of(sym):
-        return _chandelier(conn, sym, atr_cache.get(sym), params)   # R10 trailing level
+    def chand_of(sym, direction="long"):
+        return _chandelier(conn, sym, atr_cache.get(sym), params, direction)   # R10 trailing level
+
+    # Per-name direction for direction-aware strategies (conviction_confluence reads its side from
+    # the latest conviction snapshot; every other strategy is long-only).
+    conv_dir: dict = {}
+    if "conviction_confluence" in keys and conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='conviction_daily'").fetchone():
+        cd = conn.execute("SELECT MAX(as_of_date) FROM conviction_daily").fetchone()[0]
+        if cd:
+            conv_dir = {s: ("short" if (dr or "").upper() == "SHORT" else "long")
+                        for s, dr in conn.execute(
+                            "SELECT symbol, direction FROM conviction_daily WHERE as_of_date=?", (cd,))}
+
+    def direction_for(key):
+        return (lambda s: conv_dir.get(s, "long")) if key == "conviction_confluence" \
+            else (lambda s: "long")
 
     def _vix():
         for sql in ("SELECT vix_level FROM market_state ORDER BY as_of DESC LIMIT 1",
@@ -459,7 +487,7 @@ def run_paper_trade(conn, *, strategies=None, params: PaperTradeParams | None = 
         sp = _effective_params(key, params)        # lean → coverage caps; others → portfolio caps
         summaries.append(
             _run_strategy(conn, key, label, score, today, sp, price_now, risk_tag,
-                          atr_of, sector_of, chand_of, vix))
+                          atr_of, sector_of, chand_of, vix, direction_of=direction_for(key)))
     return {"today": today, "eligible": len(eligible), "strategies": summaries}
 
 
