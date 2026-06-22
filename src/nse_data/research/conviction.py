@@ -217,6 +217,32 @@ def stage_catalyst(conn, sym) -> tuple:
                          "top_pos": tp, "top_neg": tn}
 
 
+def _put_skew(conn, sym):
+    """Put skew = OTM-put IV − OTM-call IV (~5% each side, a 25-delta proxy) from the live chain.
+    Positive = puts richer (downside-protection bid; institutions hedging a long book — directionally
+    bullish per the desk read). Negative = calls richer (call demand / short-hedging). None if no chain."""
+    a = conn.execute("SELECT MAX(as_of) FROM raw_option_chain WHERE symbol=?", (sym,)).fetchone()[0]
+    if not a:
+        return None
+    e = conn.execute("SELECT expiry FROM raw_option_chain WHERE symbol=? AND as_of=? ORDER BY "
+                     "expiry LIMIT 1", (sym, a)).fetchone()
+    if not e:
+        return None
+    rows = conn.execute("SELECT strike, option_type, implied_volatility, underlying_value FROM "
+                        "raw_option_chain WHERE symbol=? AND as_of=? AND expiry=? AND "
+                        "implied_volatility>0", (sym, a, e[0])).fetchall()
+    spot = max((x[3] for x in rows if x[3]), default=0)
+    if not spot:
+        return None
+    puts = [(s, iv) for s, ot, iv, _ in rows if ot == "PE" and s < spot]
+    calls = [(s, iv) for s, ot, iv, _ in rows if ot == "CE" and s > spot]
+    if not puts or not calls:
+        return None
+    pk = min(puts, key=lambda x: abs(x[0] - spot * 0.95))[1]
+    ck = min(calls, key=lambda x: abs(x[0] - spot * 1.05))[1]
+    return round(pk - ck, 2)
+
+
 def stage_options(conn, sym) -> tuple:
     r = conn.execute("SELECT spot,max_pain,pcr,call_wall,put_wall,gex_sign FROM options_metrics "
                      "WHERE symbol=? ORDER BY as_of DESC LIMIT 1", (sym,)).fetchone()
@@ -226,9 +252,14 @@ def stage_options(conn, sym) -> tuple:
     mp_dir = (mp - spot) / spot * 100 if (mp and spot) else 0.0   # drift toward max-pain
     # bullish: max-pain above spot + balanced/high PCR; bearish: below + low PCR
     s = 5 + min(2.5, max(-2.5, mp_dir)) * 0.8 + ((pcr or 1) - 1) * 2.0
-    return round(max(0.0, min(10.0, s)), 1), {"src": "options_metrics", "spot": spot,
+    # IV SKEW (directional) — puts-richer = protective-bid/institutions-long (bullish), calls-richer
+    # = call demand / short-hedging (bearish). A modest tilt; NEW factor, pending forward validation.
+    skew = _put_skew(conn, sym)
+    if skew is not None:
+        s += max(-1.0, min(1.0, skew / 3.0))
+    return round(max(0.0, min(10.0, s)), 1), {"src": "options_metrics + IV skew", "spot": spot,
             "max_pain": mp, "pcr": pcr, "call_wall": cw, "put_wall": pw, "gex": gex,
-            "max_pain_drift_pct": round(mp_dir, 2)}
+            "max_pain_drift_pct": round(mp_dir, 2), "put_skew": skew}
 
 
 def stage_positioning(conn, sym, sm_score, divergence=None) -> tuple:
@@ -482,6 +513,9 @@ def confluence(stages, direction) -> dict:
         "mtf_1h": 1 if num(st.get("h1_trend")) == 1 else -1 if num(st.get("h1_trend")) == -1 else 0,
         # FII-vs-retail divergence: institutions-more-long = bullish, retail-chasing = bearish
         "divergence": 1 if divsig is not None and divsig > 0.3 else -1 if divsig is not None and divsig < -0.3 else 0,
+        # IV skew: puts-richer = protective bid (bullish), calls-richer = call/short-hedge (bearish)
+        "iv_skew": 1 if num(o.get("put_skew")) is not None and num(o.get("put_skew")) > 1.0
+                   else -1 if num(o.get("put_skew")) is not None and num(o.get("put_skew")) < -0.5 else 0,
     }
     bull = sum(flags.values())                            # net bullish lean across factors
     rvol = num(v.get("rvol")) or 1; conv = num(v.get("delivery_conviction"))
