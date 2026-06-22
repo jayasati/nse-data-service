@@ -14,6 +14,7 @@ import pandas as pd
 import pandas_ta_classic as ta
 
 from ..indicators.delivery_tracker import compute_symbol_delivery
+from ..indicators.intraday_ohlcv import read_intraday_5m
 from ..strategy.daily_sweep.fvg import detect_fvgs
 from ..strategy.daily_sweep.sweep import detect_sweeps
 
@@ -121,6 +122,37 @@ def _daily(conn, sym, n=60):
     if len(rows) < 25:
         return None
     return pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
+
+
+def _trend_dir(df) -> int:
+    """+1 up / −1 down / 0 range — EMA20 vs EMA50 with price confirmation. Works on any timeframe."""
+    if df is None or len(df) < 50:
+        return 0
+    c = df["close"].astype(float)
+    e20, e50 = ta.ema(c, 20), ta.ema(c, 50)
+    if e20 is None or e50 is None or pd.isna(e20.iloc[-1]) or pd.isna(e50.iloc[-1]):
+        return 0
+    a, b, last = float(e20.iloc[-1]), float(e50.iloc[-1]), float(c.iloc[-1])
+    if a > b and last > a:
+        return 1
+    if a < b and last < a:
+        return -1
+    return 0
+
+
+def _mtf_trends(conn, sym):
+    """1H + 5M trend direction from the live-merged intraday bars (resampled). (h1, m5) ∈ {−1,0,1}."""
+    try:
+        m5 = read_intraday_5m(conn, sym)
+    except Exception:
+        return None, None
+    if m5 is None or m5.empty:
+        return None, None
+    m5 = m5.rename(columns=str.lower)
+    m5.index = pd.to_datetime(m5.index, unit="s", utc=True)
+    h1 = m5.resample("1h").agg({"open": "first", "high": "max", "low": "min",
+                                "close": "last", "volume": "sum"}).dropna()
+    return _trend_dir(h1), _trend_dir(m5.tail(40))   # 5M trigger = recent ~3h direction
 
 
 # ---- per-stock stages (each → (score 0-10 | GAP, source dict)) --------------
@@ -246,6 +278,21 @@ def stage_structure(conn, sym) -> tuple:
     if sec_pct is not None and sec_pct < -1.5:           # weak sector = structural headwind
         s -= 1.5
         detail["sector_weak"] = f"{sector} {sec_pct}%"
+    # MULTI-TIMEFRAME alignment: does the 1H (and 5M) confirm the daily structure's lean? A daily
+    # that looks bullish while the 1H has rolled over is a false signal — pull the score toward
+    # neutral. Confirmation across timeframes is the highest-quality structure read.
+    lean = 1 if s > 5 else -1 if s < 5 else 0            # daily structure's directional lean
+    h1_t, m5_t = _mtf_trends(conn, sym)
+    if lean != 0 and h1_t is not None:
+        if h1_t == lean:
+            s += 1.0 * lean; detail["mtf"] = "1H aligned"
+        elif h1_t == -lean:
+            s -= 1.8 * lean; detail["mtf"] = "1H CONFLICTS (false-signal risk)"
+        else:
+            s -= 0.4 * lean; detail["mtf"] = "1H ranging (no confirmation)"
+        if m5_t == lean:
+            s += 0.4 * lean; detail["mtf"] += " · 5M trigger"
+        detail["h1_trend"] = h1_t; detail["m5_trend"] = m5_t
     return round(max(0.0, min(10.0, s)), 1), detail
 
 
@@ -362,6 +409,7 @@ def confluence(stages, direction) -> dict:
         "rel_strength": 1 if r > 1.5 else -1 if r < -1 else 0,
         "sector": -1 if st.get("sector_weak") else 0,
         "catalyst": -1 if risk is not None and risk < 70 else 0,   # negative-news drag
+        "mtf_1h": 1 if num(st.get("h1_trend")) == 1 else -1 if num(st.get("h1_trend")) == -1 else 0,
     }
     bull = sum(flags.values())                            # net bullish lean across factors
     rvol = num(v.get("rvol")) or 1; conv = num(v.get("delivery_conviction"))
