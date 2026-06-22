@@ -238,9 +238,13 @@ def _put_skew(conn, sym):
     calls = [(s, iv) for s, ot, iv, _ in rows if ot == "CE" and s > spot]
     if not puts or not calls:
         return None
-    pk = min(puts, key=lambda x: abs(x[0] - spot * 0.95))[1]
-    ck = min(calls, key=lambda x: abs(x[0] - spot * 1.05))[1]
-    return round(pk - ck, 2)
+    # average the 2 nearest OTM strikes each side → robust to a single illiquid/spiked-IV strike
+    near = lambda opts, tgt: [iv for _, iv in sorted(opts, key=lambda x: abs(x[0] - tgt))[:2]]
+    pk, ck = near(puts, spot * 0.95), near(calls, spot * 1.05)
+    if not pk or not ck:
+        return None
+    skew = sum(pk) / len(pk) - sum(ck) / len(ck)
+    return round(max(-8.0, min(8.0, skew)), 2)              # clamp data artifacts
 
 
 def stage_options(conn, sym) -> tuple:
@@ -502,6 +506,7 @@ def confluence(stages, direction) -> dict:
     pcr = num(o.get("pcr")); pos = num(st.get("range_pos_pct"))
     sw = str(st.get("last_sweep", "")); r = num(rs.get("rel_strength")) or 0
     risk = num(ca.get("news_risk")); divsig = num(pn.get("divergence_signal"))
+    skew = num(o.get("put_skew"))
     flags = {
         "options_drift": 1 if drift > 0.5 else -1 if drift < -0.5 else 0,
         "pcr": 1 if pcr and pcr > 0.7 else -1 if pcr and pcr < 0.5 else 0,   # call-heavy = bearish
@@ -514,8 +519,7 @@ def confluence(stages, direction) -> dict:
         # FII-vs-retail divergence: institutions-more-long = bullish, retail-chasing = bearish
         "divergence": 1 if divsig is not None and divsig > 0.3 else -1 if divsig is not None and divsig < -0.3 else 0,
         # IV skew: puts-richer = protective bid (bullish), calls-richer = call/short-hedge (bearish)
-        "iv_skew": 1 if num(o.get("put_skew")) is not None and num(o.get("put_skew")) > 1.0
-                   else -1 if num(o.get("put_skew")) is not None and num(o.get("put_skew")) < -0.5 else 0,
+        "iv_skew": 1 if skew is not None and skew > 1.0 else -1 if skew is not None and skew < -0.5 else 0,
     }
     bull = sum(flags.values())                            # net bullish lean across factors
     rvol = num(v.get("rvol")) or 1; conv = num(v.get("delivery_conviction"))
