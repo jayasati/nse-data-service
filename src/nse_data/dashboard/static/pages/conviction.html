@@ -14,6 +14,9 @@
   .tier.Ap, .tier.A { background:rgba(22,163,74,.25); } .tier.B { background:rgba(245,158,11,.22); } .tier.C, .tier.D { background:rgba(220,38,38,.2); }
   td.gap { color:#dc2626; font-size:11px; } td.num.hi { color:#16a34a; font-weight:600; }
   .hint { color:var(--muted,#9aa); font-size:12px; }
+  .ctrl button { background:var(--card,#161a23); border:1px solid var(--border,#333); color:inherit; border-radius:5px; padding:3px 9px; cursor:pointer; margin-right:4px; }
+  .ctrl button.on { background:rgba(96,165,250,.25); border-color:#60a5fa; color:#dbeafe; }
+  .up { color:#16a34a; } .down { color:#dc2626; } .flat { color:#9aa; }
 </style>
 </head>
 <body>
@@ -30,10 +33,18 @@
   <div class="macro" id="macro"></div>
   <div class="hint" id="bias"></div>
 
-  <div class="tablewrap" style="margin-top:10px">
+  <div class="ctrl" style="margin:6px 0;font-size:12px;color:var(--muted,#9aa)">
+    Structure timeframe:
+    <button data-tf="1D" class="on">1&nbsp;Day</button>
+    <button data-tf="1H">1&nbsp;Hour</button>
+    <button data-tf="5M">5&nbsp;Min</button>
+    <span style="margin-left:8px;opacity:.7">— the <b>Trend</b> column shows each name's read on the selected timeframe (entries/targets stay daily-swing)</span>
+  </div>
+
+  <div class="tablewrap" style="margin-top:6px">
     <table id="tbl"><thead><tr>
       <th class="num">#</th><th>Symbol</th><th class="num">Conv</th><th>Tier</th>
-      <th>Dir</th><th>Confluence</th><th>Setup</th><th class="num">Entry</th><th class="num">Open (gap)</th><th class="num">Stop</th>
+      <th>Dir</th><th id="tfHead">Trend (1D)</th><th>Confluence</th><th>Setup</th><th class="num">Entry</th><th class="num">Open (gap)</th><th class="num">Stop</th>
       <th class="num">T1</th><th class="num">T2</th><th class="num">T3</th>
       <th class="num">R:R</th><th class="num">Prob</th><th class="num">Exp%</th><th>Gaps</th>
     </tr></thead><tbody id="body"></tbody></table>
