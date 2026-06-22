@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Conviction — NSE Data Service</title>
+<title>Swing Conviction — NSE Data Service</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/theme.css">
@@ -18,10 +18,14 @@
 </head>
 <body>
   <header>
-    <h1>Conviction</h1>
+    <h1>Conviction <span style="font-size:13px;font-weight:400;opacity:.65">swing / positional · 1–5 day hold</span></h1>
     <span class="meta" id="meta">loading…</span>
     <div class="hdr-right"></div>
   </header>
+
+  <div class="hint" style="margin:6px 0;padding:8px 10px;background:rgba(96,165,250,.08);border-left:3px solid #60a5fa">
+    <b>This is a SWING / POSITIONAL board, not an intraday scalper.</b> Its signals (options positioning, daily structure, relative strength, real-delivery volume) predict <b>multi-day drift, not the next 2 hours</b> — judge a call by where it sits in <b>2–5 days</b>, not by midday. Entry/stop/targets are daily-ATR scaled for a multi-day hold. Intraday paths are choppy by design; that's expected.
+  </div>
 
   <div class="macro" id="macro"></div>
   <div class="hint" id="bias"></div>
@@ -35,7 +39,7 @@
     </tr></thead><tbody id="body"></tbody></table>
   </div>
   <div class="hint" style="margin-top:8px">
-    <b>Runs 09:10 IST, just after the NSE pre-open auction</b> — so <b>Open (gap)</b> is the real per-stock indicative open (IEP) and the gap is measured, not a GIFT proxy. Direction/entry/stop/targets derive from real levels (options call/put walls + max-pain + 20-day H/L, with ATR stops) — not round numbers. Entry = prior close; act on the open (shown) relative to it. T2 is the primary target (the wall/max-pain level); R:R is measured to T2. Probability is anchored to the composite and <b>capped at 68%</b> — validated edges are modest, so no fake 90%s. DATA_GAP cells (blank) are excluded from the composite. A+ stays unreachable until per-stock FII (NSE doesn't publish) and IV-percentile (accumulating) exist — by design.
+    <b>Horizon: 1–5 day swing.</b> Refreshed 09:10 IST (post pre-open auction) so <b>Open (gap)</b> is the real per-stock indicative open (IEP), measured not proxied. Direction/stop/targets derive from real levels (options call/put walls + max-pain + 20-day H/L, ATR-scaled) — sized for a multi-day hold, not an intraday scalp. <b>Prob = directional probability over the hold</b> (capped 68% — edges are modest). DATA_GAP cells (blank) are excluded from the composite. A+ stays unreachable until per-stock FII (NSE doesn't publish) and IV-percentile (accumulating) exist — by design. Catalyst is a risk-veto only (news IC ≈ 0).
   </div>
 
   <script type="module" src="/static/js/components/nav.js"></script>
