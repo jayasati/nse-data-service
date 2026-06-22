@@ -140,8 +140,26 @@ def _trend_dir(df) -> int:
     return 0
 
 
+def _recent_5m_bos(m5, k=3, lookback=78) -> int:
+    """Most recent 5M Break-of-Structure direction over ~one session (+1 bull / −1 bear / 0 none).
+
+    BOS = latest close beyond the most recent confirmed swing (pivot) high/low — the SMC entry
+    trigger. A pivot high/low is a bar higher/lower than the k bars on each side.
+    """
+    d = m5.tail(lookback)
+    if len(d) < 2 * k + 6:
+        return 0
+    h = d["high"].to_numpy(dtype=float); l = d["low"].to_numpy(dtype=float)
+    c = float(d["close"].iloc[-1])
+    sh = [h[i] for i in range(k, len(d) - k) if h[i] == max(h[i - k:i + k + 1])]
+    sl = [l[i] for i in range(k, len(d) - k) if l[i] == min(l[i - k:i + k + 1])]
+    bull = bool(sh) and c > sh[-1]      # closed above the last swing high → bullish BOS
+    bear = bool(sl) and c < sl[-1]      # closed below the last swing low → bearish BOS
+    return 1 if bull and not bear else -1 if bear and not bull else 0
+
+
 def _mtf_trends(conn, sym):
-    """1H + 5M trend direction from the live-merged intraday bars (resampled). (h1, m5) ∈ {−1,0,1}."""
+    """1H trend + 5M BOS from the live-merged intraday bars. (h1, m5) ∈ {−1,0,1}."""
     try:
         m5 = read_intraday_5m(conn, sym)
     except Exception:
@@ -152,7 +170,7 @@ def _mtf_trends(conn, sym):
     m5.index = pd.to_datetime(m5.index, unit="s", utc=True)
     h1 = m5.resample("1h").agg({"open": "first", "high": "max", "low": "min",
                                 "close": "last", "volume": "sum"}).dropna()
-    return _trend_dir(h1), _trend_dir(m5.tail(40))   # 5M trigger = recent ~3h direction
+    return _trend_dir(h1), _recent_5m_bos(m5)        # 1H trend + 5M break-of-structure trigger
 
 
 # ---- per-stock stages (each → (score 0-10 | GAP, source dict)) --------------
