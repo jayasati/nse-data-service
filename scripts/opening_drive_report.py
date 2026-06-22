@@ -51,17 +51,33 @@ def main():
                                   f"{gap:+}% · {note} {tag}"))
     drives.sort(reverse=True)
 
+    # GAMMA-REGIME calls on the top names — amplifying (neg γ, targets ×1.25, pin doesn't bind) vs
+    # pinning (pos γ, ×0.85, max-pain magnet binds). The flip is the intraday vol-regime switch; a
+    # name within ~1.5% of its flip is at risk of FLIPPING regime (watch it).
+    gam, n_amp, n_pin = [], 0, 0
+    for sym, direction, conv, conf, gap, sj in rows[:8]:
+        o = json.loads(sj).get("options", {}) if sj else {}
+        reg, flip, fd = o.get("gamma_regime"), o.get("gex_flip_level"), o.get("flip_dist_pct")
+        if not reg:
+            continue
+        n_amp += reg == "amplifying"; n_pin += reg == "pinning"
+        mult = "×1.25" if reg == "amplifying" else "×0.85"
+        ic = "🔺" if reg == "amplifying" else "🔵"
+        near = " ⚡NEAR-FLIP (regime may switch)" if (fd is not None and abs(fd) < 1.5) else ""
+        gam.append(f"{ic} {sym} {reg} {mult} · flip {flip} ({fd:+}% away){near}")
+
     now = dt.datetime.now(IST).strftime("%H:%M")
-    if not drives:
-        body = (f"No opening-drive reads yet ({now} IST). Either no >0.5-ATR gaps today, or it's "
-                f"outside the 09:25–10:00 window / pre-open.")
-    else:
-        body = "\n".join(x[1] for x in drives)
-    text = (f"Opening-Drive @ {now} IST · {d}\n\n{body}\n\n"
-            "(opening-drive = scored 5M structure trigger, 09:25–10:00; ✓agrees = drive direction "
-            "matches the conviction call → confirmed opening timing.)")
-    ok = ntfy_send(text, channel="signals", title=f"Opening-Drive {len(drives)} gap names")
-    print(f"[{now}] {len(drives)} drives · ntfy_sent={ok}\n{text}")
+    drive_body = ("\n".join(x[1] for x in drives) if drives else
+                  f"No >0.5-ATR gap drives ({now} IST) — flat opens or outside 09:25–10:00.")
+    gam_body = ("\n".join(gam) if gam else "no gamma data") + \
+        (f"\n→ book regime: {n_amp} amplifying / {n_pin} pinning" if (n_amp or n_pin) else "")
+    text = (f"Conviction AM @ {now} IST · {d}\n\n"
+            f"— OPENING-DRIVE (gap names) —\n{drive_body}\n\n"
+            f"— GAMMA REGIME (top names) —\n{gam_body}\n\n"
+            "(drive ✓agrees = opening confirms the call; γ amplifying→targets extended, pinning→"
+            "tightened+pin binds; ⚡near-flip = price may cross the vol-regime switch.)")
+    ok = ntfy_send(text, channel="signals", title=f"Conviction AM · {len(drives)} drives · {n_amp}amp/{n_pin}pin")
+    print(f"[{now}] {len(drives)} drives · {n_amp}amp/{n_pin}pin · ntfy_sent={ok}\n{text}")
 
 
 if __name__ == "__main__":
