@@ -62,20 +62,30 @@ def macro_regime(conn) -> dict:
         "WHERE as_of=(SELECT MAX(as_of) FROM raw_global_markets)")}
     if not g:
         return {"status": "DATA_GAP", "note": "global macro collector not active. Regime withheld."}
-    gn = conn.execute("SELECT pct_change FROM raw_gift_nifty ORDER BY as_of DESC LIMIT 1").fetchone()
+    import time as _t
+    gn = conn.execute("SELECT pct_change, as_of FROM raw_gift_nifty ORDER BY as_of DESC "
+                      "LIMIT 1").fetchone()
     iv = conn.execute("SELECT vix, vix_pct_change FROM raw_india_vix ORDER BY as_of DESC "
                       "LIMIT 1").fetchone()
     spx = g.get("^GSPC"); vix = g.get("^VIX"); nifty = g.get("^NSEI")
-    gift_gap = gn[0] if gn else None
+    # FRESHNESS GUARD: only trust GIFT for the gap call if it was read in the last ~14h (the
+    # pre-market window). A stale (prior-session) reading is a DATA_GAP, not a confident gap call.
+    gift_gap, gift_stale = (None, False)
+    if gn:
+        if (_t.time() - gn[1]) / 3600.0 <= 14:
+            gift_gap = gn[0]
+        else:
+            gift_stale = True
     risk_on = bool(spx and spx[1] is not None and spx[1] > 0 and vix and vix[1] is not None
                    and vix[1] < 0)
     return {"status": "ok", "nifty_last": nifty[0] if nifty else None,
             "nifty_pct": nifty[1] if nifty else None, "us_spx_pct": spx[1] if spx else None,
             "us_vix": vix[0] if vix else None, "us_vix_pct": vix[1] if vix else None,
             "india_vix": iv[0] if iv else None, "india_vix_pct": iv[1] if iv else None,
-            "gift_gap_pct": gift_gap,
+            "gift_gap_pct": gift_gap, "gift_stale": gift_stale,
             "regime": "RISK-ON" if risk_on else "MIXED/RISK-OFF",
-            "gap_bias": ("GAP-UP" if (gift_gap or 0) > 0.2 else "GAP-DOWN"
+            "gap_bias": ("DATA_GAP (GIFT stale — no fresh pre-market read)" if gift_stale else
+                         "GAP-UP" if (gift_gap or 0) > 0.2 else "GAP-DOWN"
                          if (gift_gap or 0) < -0.2 else "FLAT")}
 
 
