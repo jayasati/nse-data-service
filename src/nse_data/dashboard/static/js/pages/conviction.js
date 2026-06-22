@@ -56,7 +56,7 @@ function renderBody() {
 async function init() {
   const r = await getJSON("/api/conviction");
   if (r.detail || !r.rows) { $("meta").textContent = r.detail || "no conviction snapshot yet — runs 09:10 IST (post pre-open)"; return; }
-  $("meta").textContent = `${r.date} · ${r.count} F&O names`;
+  $("meta").textContent = `${r.date} · ${r.count} F&O names · refreshed ${new Date().toLocaleTimeString()}`;
   const m = r.macro || {};
   if (m.status === "ok") {
     const gapnum = m.preopen_gap_pct != null ? `${m.preopen_gap_pct}%` : m.gift_gap_pct != null ? `${m.gift_gap_pct}%` : "—";
@@ -92,3 +92,4 @@ document.querySelectorAll(".ctrl button[data-hz]").forEach(b => b.onclick = () =
   renderBody();
 });
 init();
+setInterval(init, 60_000);   // auto-refresh on screen; server re-runs the engine every 5 min intraday
