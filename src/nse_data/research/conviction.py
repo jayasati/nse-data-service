@@ -189,19 +189,67 @@ def _recent_5m_bos(m5, k=3, lookback=78) -> int:
     return 1 if bull and not bear else -1 if bear and not bull else 0
 
 
-def _mtf_trends(conn, sym):
-    """1H trend + 5M BOS from the live-merged intraday bars. (h1, m5) ∈ {−1,0,1}."""
+def _opening_drive(m5, prior_close, atr):
+    """Gap-adjusted OPENING-DRIVE — a SCORED 5M trigger for the first ~45 min, where the swing-BOS is
+    blind (no pivots have formed yet). The opening 30–45 min is where the largest moves initiate, so
+    that window must not be a dead zone:
+      • gap > 0.5·ATR and the first 2 bars HOLD beyond the gap-fill (prior close) → BOS-equivalent
+        (+1 gap-up held / −1 gap-down held)
+      • a gap that FILLS back through prior close → failed gap = reversal (opposite sign)
+      • no significant gap → opening-range (first 3 bars) break (+1 high / −1 low)
+    Returns (signal ∈ {−1,0,1}, note) for bars 2–9 of the session; None outside the window / pre-open."""
+    if not prior_close or not atr or atr <= 0:
+        return None
+    today = m5.index[-1].date()
+    td = m5[m5.index.date == today]
+    nb = len(td)
+    if nb < 2 or nb > 9:                              # opening window only (≈09:25–10:00 IST)
+        return None
+    op = float(td["open"].iloc[0]); price = float(td["close"].iloc[-1])
+    gap_atr = (op - prior_close) / atr
+    last2 = td.tail(2)["close"].astype(float)
+    if gap_atr > 0.5:                                # GAP UP
+        if (last2 > prior_close).all() and price > prior_close:
+            return 1, f"gap-up {gap_atr:.1f}ATR held above fill → bullish drive"
+        if price < prior_close:
+            return -1, f"gap-up {gap_atr:.1f}ATR FILLED → failed-gap fade"
+        return 0, f"gap-up {gap_atr:.1f}ATR testing fill"
+    if gap_atr < -0.5:                               # GAP DOWN
+        if (last2 < prior_close).all() and price < prior_close:
+            return -1, f"gap-down {abs(gap_atr):.1f}ATR held below fill → bearish drive"
+        if price > prior_close:
+            return 1, f"gap-down {abs(gap_atr):.1f}ATR RECLAIMED → failed-breakdown reclaim"
+        return 0, f"gap-down {abs(gap_atr):.1f}ATR testing fill"
+    if nb < 4:
+        return 0, "opening (range forming)"          # OR = first 3 bars; need a later bar to break it
+    orr = td.head(3); orh = float(orr["high"].max()); orl = float(orr["low"].min())
+    if price > orh:
+        return 1, "opening-range high break"
+    if price < orl:
+        return -1, "opening-range low break"
+    return 0, "inside opening range"
+
+
+def _mtf_trends(conn, sym, prior_close=None, atr=None):
+    """1H trend + 5M trigger from the live-merged bars. The 5M trigger is the gap-adjusted OPENING-
+    DRIVE in the first ~45 min (swing-BOS is blind then), else the swing Break-of-Structure.
+    Returns (h1, m5_trigger, note) ∈ ({−1,0,1}, {−1,0,1}, str|None)."""
     try:
         m5 = read_intraday_5m(conn, sym)
     except Exception:
-        return None, None
+        return None, None, None
     if m5 is None or m5.empty:
-        return None, None
+        return None, None, None
     m5 = m5.rename(columns=str.lower)
-    m5.index = pd.to_datetime(m5.index, unit="s", utc=True)
+    m5.index = pd.to_datetime(m5.index, unit="s", utc=True).tz_convert(IST)
     h1 = m5.resample("1h").agg({"open": "first", "high": "max", "low": "min",
                                 "close": "last", "volume": "sum"}).dropna()
-    return _trend_dir(h1), _recent_5m_bos(m5)        # 1H trend + 5M break-of-structure trigger
+    drive = _opening_drive(m5, prior_close, atr)
+    if drive is not None:
+        m5_trig, note = drive                        # opening window: scored opening-drive
+    else:
+        m5_trig, note = _recent_5m_bos(m5), "swing-BOS"   # mid-session: swing break-of-structure
+    return _trend_dir(h1), m5_trig, note
 
 
 # ---- per-stock stages (each → (score 0-10 | GAP, source dict)) --------------
@@ -548,7 +596,8 @@ def stage_structure(conn, sym) -> tuple:
     # that looks bullish while the 1H has rolled over is a false signal — pull the score toward
     # neutral. Confirmation across timeframes is the highest-quality structure read.
     lean = 1 if s > 5 else -1 if s < 5 else 0            # daily structure's directional lean
-    h1_t, m5_t = _mtf_trends(conn, sym)
+    atr = float(ta.atr(df["high"], df["low"], df["close"], 14).iloc[-1])
+    h1_t, m5_t, m5_note = _mtf_trends(conn, sym, prior_close=float(close), atr=atr)
     if lean != 0 and h1_t is not None:
         if h1_t == lean:
             s += 1.0 * lean; detail["mtf"] = "1H aligned"
@@ -559,6 +608,8 @@ def stage_structure(conn, sym) -> tuple:
         if m5_t == lean:
             s += 0.4 * lean; detail["mtf"] += " · 5M trigger"
         detail["h1_trend"] = h1_t; detail["m5_trend"] = m5_t
+        if m5_note:
+            detail["m5_note"] = m5_note                  # opening-drive read or "swing-BOS"
     return round(max(0.0, min(10.0, s)), 1), detail
 
 
