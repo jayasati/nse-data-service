@@ -60,8 +60,9 @@ option_chain:
     - CAMS
 
   # How many expiries to fetch per symbol. 1 = nearest only (cheapest, covers PCR
-  # and max-pain). Bump to 2 when traders are mid-rollover and you want both.
-  n_expiries: 1
+  # and max-pain). 2 = near + next month, needed for the IV term-structure factor
+  # (near ATM IV vs far ATM IV → contango/backwardation).
+  n_expiries: 2
 
 
 index_members:

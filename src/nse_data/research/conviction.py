@@ -247,6 +247,32 @@ def _put_skew(conn, sym):
     return round(max(-8.0, min(8.0, skew)), 2)              # clamp data artifacts
 
 
+def _iv_term_structure(conn, sym):
+    """ATM IV term structure: slope = far-expiry IV − near-expiry IV. Contango (slope>0, far richer)
+    = calm; BACKWARDATION (slope<0, near richer) = near-term event/stress priced in. None (DATA_GAP)
+    until the chain collects ≥2 expiries (n_expiries≥2)."""
+    a = conn.execute("SELECT MAX(as_of) FROM raw_option_chain WHERE symbol=?", (sym,)).fetchone()[0]
+    if not a:
+        return None
+    exps = [r[0] for r in conn.execute("SELECT DISTINCT expiry FROM raw_option_chain WHERE "
+            "symbol=? AND as_of=? ORDER BY expiry", (sym, a))]
+    if len(exps) < 2:
+        return None
+    def atm(expiry):
+        rows = conn.execute("SELECT strike, implied_volatility, underlying_value FROM "
+            "raw_option_chain WHERE symbol=? AND as_of=? AND expiry=? AND option_type='CE' AND "
+            "implied_volatility>0", (sym, a, expiry)).fetchall()
+        spot = max((r[2] for r in rows if r[2]), default=0)
+        return min(rows, key=lambda r: abs(r[0] - spot))[1] if (spot and rows) else None
+    near, far = atm(exps[0]), atm(exps[1])
+    if near is None or far is None:
+        return None
+    slope = round(far - near, 2)
+    return {"near_iv": round(near, 1), "far_iv": round(far, 1), "slope": slope,
+            "regime": "contango (calm)" if slope > 0.5 else
+                      "BACKWARDATION (near-term event/stress)" if slope < -0.5 else "flat"}
+
+
 def stage_options(conn, sym) -> tuple:
     r = conn.execute("SELECT spot,max_pain,pcr,call_wall,put_wall,gex_sign FROM options_metrics "
                      "WHERE symbol=? ORDER BY as_of DESC LIMIT 1", (sym,)).fetchone()
@@ -362,9 +388,20 @@ def stage_vol_expansion(conn, sym) -> tuple:
     # coiled spring = LOW bandwidth pctile (and low IV pctile when available) → high score.
     pcts = [pctile] + ([iv_pctile] if isinstance(iv_pctile, (int, float)) else [])
     s = 10 - (sum(pcts) / len(pcts)) / 10.0
-    return round(max(0.0, min(10.0, s)), 1), {"src": "bollinger_bandwidth_pctile + atr_pct + iv",
-            "bb_width_pctile": round(float(pctile), 0), "atr_pct": round(float(atr_pct), 2),
-            "iv_pctile": iv_pctile}
+    # IV TERM STRUCTURE: backwardation (near IV > far) = near-term event/vol already priced → the
+    # spring is releasing, not coiled → cut the score; contango (calm) leaves it. DATA_GAP if 1 expiry.
+    ts = _iv_term_structure(conn, sym)
+    detail = {"src": "bb_width_pctile + atr_pct + iv + term_structure",
+              "bb_width_pctile": round(float(pctile), 0), "atr_pct": round(float(atr_pct), 2),
+              "iv_pctile": iv_pctile,
+              "iv_term_structure": ts if ts else "DATA_GAP (need n_expiries≥2)"}
+    if ts:
+        if ts["slope"] < -0.5:
+            s -= 1.5                                    # backwardation = near-term event, not coiled
+        elif ts["slope"] > 0.5:
+            s += 0.5                                    # contango = genuinely calm/coiled
+        detail["term_slope"] = ts["slope"]
+    return round(max(0.0, min(10.0, s)), 1), detail
 
 
 def stage_structure(conn, sym) -> tuple:
