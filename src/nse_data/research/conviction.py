@@ -52,6 +52,19 @@ def _sector_pct(conn, sym):
     r = conn.execute("SELECT pct_change FROM raw_global_markets WHERE ticker=? ORDER BY as_of "
                      "DESC LIMIT 1", (_SECTOR_IDX[sec[0]],)).fetchone()
     return sec[0], (r[0] if r else None)
+
+
+def _pre_open(conn, sym):
+    """NSE pre-open indicative open (IEP) + gap% for this symbol (populated ~09:08). Returns
+    (iep, gap_pct) only if read in the last ~14h, else (None, None) — the real per-stock open."""
+    import time as _t
+    r = conn.execute("SELECT iep, pct_change, as_of FROM raw_pre_open WHERE symbol=? ORDER BY "
+                     "as_of DESC LIMIT 1", (sym,)).fetchone()
+    if not r or not r[0] or (_t.time() - r[2]) / 3600.0 > 14:
+        return None, None
+    return r[0], r[1]
+
+
 GAP = None   # sentinel: a stage returning GAP score is DATA_GAP
 
 
@@ -76,17 +89,29 @@ def macro_regime(conn) -> dict:
             gift_gap = gn[0]
         else:
             gift_stale = True
+    # PRE-OPEN IEP market gap (median of the NSE pre-open indicative-open gaps, ~09:08) — the REAL
+    # market gap, not the GIFT index proxy. Prefer it when fresh.
+    po_as_of = conn.execute("SELECT MAX(as_of) FROM raw_pre_open").fetchone()[0]
+    preopen_gap = None
+    if po_as_of and (_t.time() - po_as_of) / 3600.0 <= 14:
+        vals = sorted(r[0] for r in conn.execute("SELECT pct_change FROM raw_pre_open WHERE "
+                      "as_of=? AND pct_change IS NOT NULL", (po_as_of,)))
+        if vals:
+            preopen_gap = round(vals[len(vals) // 2], 2)
+    gap_val = preopen_gap if preopen_gap is not None else gift_gap
+    gap_src = ("pre-open IEP" if preopen_gap is not None else "GIFT" if gift_gap is not None
+               else "DATA_GAP")
+    gap_bias = ("DATA_GAP (no fresh pre-open/GIFT read)" if gap_val is None else
+                "GAP-UP" if gap_val > 0.2 else "GAP-DOWN" if gap_val < -0.2 else "FLAT")
     risk_on = bool(spx and spx[1] is not None and spx[1] > 0 and vix and vix[1] is not None
                    and vix[1] < 0)
     return {"status": "ok", "nifty_last": nifty[0] if nifty else None,
             "nifty_pct": nifty[1] if nifty else None, "us_spx_pct": spx[1] if spx else None,
             "us_vix": vix[0] if vix else None, "us_vix_pct": vix[1] if vix else None,
             "india_vix": iv[0] if iv else None, "india_vix_pct": iv[1] if iv else None,
-            "gift_gap_pct": gift_gap, "gift_stale": gift_stale,
-            "regime": "RISK-ON" if risk_on else "MIXED/RISK-OFF",
-            "gap_bias": ("DATA_GAP (GIFT stale — no fresh pre-market read)" if gift_stale else
-                         "GAP-UP" if (gift_gap or 0) > 0.2 else "GAP-DOWN"
-                         if (gift_gap or 0) < -0.2 else "FLAT")}
+            "gift_gap_pct": gift_gap, "gift_stale": gift_stale, "preopen_gap_pct": preopen_gap,
+            "gap_source": gap_src,
+            "regime": "RISK-ON" if risk_on else "MIXED/RISK-OFF", "gap_bias": gap_bias}
 
 
 def _daily(conn, sym, n=60):
@@ -256,10 +281,11 @@ def tier_of(comp, scores, veto_flag=None) -> str:
     return "A" if comp >= 6.5 else "B" if comp >= 5.0 else "C"
 
 
-def trade_plan(close, atr, stages, macro) -> dict:
+def trade_plan(close, atr, stages, macro, iep=None, stock_gap=None) -> dict:
     """STAGE 11/12 — direction + entry/stop/targets from liquidity levels (options walls, 20d H/L)
     + ATR, plus the pre-market setup bucket. All levels trace to Stage 3/5/6 fields, not round
-    numbers. Honest probability: anchored to the composite, capped (we proved edges are modest)."""
+    numbers. When the NSE pre-open IEP is present, the setup uses the stock's OWN gap (real, not the
+    market proxy) and the indicative open is reported. Probability capped (edges are modest)."""
     if not close or not atr:
         return {"direction": "DATA_GAP", "note": "no candle/atr"}
     opt = stages.get("options", {})
@@ -287,11 +313,15 @@ def trade_plan(close, atr, stages, macro) -> dict:
         t3 = round(min(lo20 or 1e12, close - 3.5 * atr), 1)
     risk = abs(entry - stop)
     rr = round(abs(t2 - entry) / risk, 1) if risk else None
-    # setup bucket (Stage 12)
-    gap = (macro or {}).get("gap_bias", "FLAT")
-    if direction == "SHORT" and gap == "GAP-UP" and pos > 70:
+    # setup bucket (Stage 12) — prefer the stock's OWN pre-open gap (real) over the market proxy
+    if stock_gap is not None:
+        is_up, is_down = stock_gap > 0.3, stock_gap < -0.3
+    else:
+        gb = (macro or {}).get("gap_bias", "")
+        is_up, is_down = "GAP-UP" in gb, "GAP-DOWN" in gb
+    if direction == "SHORT" and is_up and pos > 70:
         setup = "Gap-up fade"
-    elif direction == "LONG" and gap == "GAP-DOWN" and pos < 40:
+    elif direction == "LONG" and is_down and pos < 40:
         setup = "Gap-down reversal"
     elif direction == "LONG" and pos > 80:
         setup = "Breakout continuation"
@@ -303,6 +333,7 @@ def trade_plan(close, atr, stages, macro) -> dict:
         setup = "Resistance fade short"
     return {"direction": direction, "entry": entry, "stop": stop, "t1": t1, "t2": t2, "t3": t3,
             "rr": rr, "setup": setup, "expected_move_pct": round(atr / close * 100, 1),
+            "open_iep": round(iep, 1) if iep else None, "gap_pct": stock_gap,
             "basis": f"levels: call_wall {cw} / put_wall {pw} / max_pain {mp} / 20dH-L {hi20}-{lo20}, ATR ₹{round(atr,1)}"}
 
 
@@ -325,7 +356,8 @@ def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None) -> dict:
     df = _daily(conn, sym)
     close = float(df["close"].iloc[-1]) if df is not None else None
     atr = float(ta.atr(df["high"], df["low"], df["close"], 14).iloc[-1]) if df is not None else None
-    plan = trade_plan(close, atr, stages, macro)
+    iep, stock_gap = _pre_open(conn, sym)        # real per-stock indicative open + gap (~09:08)
+    plan = trade_plan(close, atr, stages, macro, iep=iep, stock_gap=stock_gap)
     prob = round(min(68, 45 + (comp or 5) * 2.6)) if comp else None
     return {"symbol": sym, "composite": comp, "tier": tier_of(comp, scores, veto_flag),
             "renorm_weights": renorm, "data_gaps": gaps, "trade": plan, "probability_pct": prob,
@@ -362,20 +394,21 @@ def run_and_persist(conn) -> dict:
     conn.executemany(
         "INSERT OR REPLACE INTO conviction_daily (as_of_date, symbol, composite, tier, catalyst, "
         "positioning, options, structure, volume, rel_strength, vol_expansion, data_gaps, "
-        "stages_json, direction, entry, stop, t1, t2, t3, rr, setup, probability, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "stages_json, direction, entry, stop, t1, t2, t3, rr, setup, probability, open_iep, "
+        "gap_pct, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         [(today, x["symbol"], x["composite"], x["tier"], g(x, "catalyst"), g(x, "positioning"),
           g(x, "options"), g(x, "structure"), g(x, "volume"), g(x, "rel_strength"),
           g(x, "vol_expansion"), ",".join(x["data_gaps"]), json.dumps(x["stages"]),
           t(x, "direction"), t(x, "entry"), t(x, "stop"), t(x, "t1"), t(x, "t2"), t(x, "t3"),
-          t(x, "rr"), t(x, "setup"), x.get("probability_pct"), now)
+          t(x, "rr"), t(x, "setup"), x.get("probability_pct"), t(x, "open_iep"), t(x, "gap_pct"), now)
          for x in r["ranked"]])
     conn.commit()
     return {"date": today, "persisted": len(r["ranked"])}
 
 
 def register_conviction_job(scheduler, db_path: str) -> str:
-    """Pre-market 08:45 IST — run the engine and persist to conviction_daily for /conviction."""
+    """09:10 IST (post pre-open auction) — run the engine and persist to conviction_daily."""
     import structlog
     from apscheduler.triggers.cron import CronTrigger
 
@@ -392,6 +425,8 @@ def register_conviction_job(scheduler, db_path: str) -> str:
         finally:
             conn.close()
 
-    scheduler.add_job(_tick, trigger=CronTrigger(hour=8, minute=45, timezone=market_hours.IST),
+    # 09:10 IST — just after the NSE pre-open auction (09:08) so the gap/entry use the real
+    # per-stock indicative open (IEP) + final GIFT, ~5 min before the 09:15 open.
+    scheduler.add_job(_tick, trigger=CronTrigger(hour=9, minute=10, timezone=market_hours.IST),
                       id="conviction", max_instances=1, coalesce=True, replace_existing=True)
     return "conviction"

@@ -5,12 +5,13 @@ const c = (v) => v == null ? "" : v;   // DATA_GAP → blank cell
 
 async function init() {
   const r = await getJSON("/api/conviction");
-  if (r.detail || !r.rows) { $("meta").textContent = r.detail || "no conviction snapshot yet — runs 08:45 IST"; return; }
+  if (r.detail || !r.rows) { $("meta").textContent = r.detail || "no conviction snapshot yet — runs 09:10 IST (post pre-open)"; return; }
   $("meta").textContent = `${r.date} · ${r.count} F&O names`;
   const m = r.macro || {};
   if (m.status === "ok") {
+    const gapnum = m.preopen_gap_pct != null ? `${m.preopen_gap_pct}%` : m.gift_gap_pct != null ? `${m.gift_gap_pct}%` : "—";
     $("macro").innerHTML =
-      `<b>Market bias: ${m.regime}</b> · gap-bias <b>${m.gap_bias}</b> (GIFT ${m.gift_gap_pct}%) · ` +
+      `<b>Market bias: ${m.regime}</b> · gap <b>${m.gap_bias}</b> ${gapnum} <span style="opacity:.7">(src: ${m.gap_source})</span> · ` +
       `US S&P ${m.us_spx_pct}% · US VIX ${m.us_vix} (${m.us_vix_pct}%) · India VIX ${m.india_vix} · ` +
       `Nifty ${m.nifty_last} (${m.nifty_pct}%) · Smart-money ${r.smart_money}`;
   } else {
@@ -26,7 +27,9 @@ async function init() {
     `<tr><td class="num">${i + 1}</td><td><a href="/research?sym=${x.symbol}" style="color:#60a5fa;text-decoration:none">${x.symbol}</a></td>` +
     `<td class="num"><b>${x.composite}</b></td><td><span class="tier ${tcls(x.tier)}">${(x.tier || "").split(" ")[0]}</span></td>` +
     `<td>${dir(x.direction)}</td><td style="font-size:12px">${c(x.setup)}</td>` +
-    `<td class="num">${n(x.entry)}</td><td class="num" style="color:#dc2626">${n(x.stop)}</td>` +
+    `<td class="num">${n(x.entry)}</td>` +
+    `<td class="num">${x.open_iep == null ? "—" : x.open_iep}${x.gap_pct == null ? "" : ` <span style="font-size:10px;color:${x.gap_pct >= 0 ? "#16a34a" : "#dc2626"}">${x.gap_pct > 0 ? "+" : ""}${x.gap_pct}%</span>`}</td>` +
+    `<td class="num" style="color:#dc2626">${n(x.stop)}</td>` +
     `<td class="num">${n(x.t1)}</td><td class="num" style="color:#16a34a">${n(x.t2)}</td><td class="num">${n(x.t3)}</td>` +
     `<td class="num"><b>${x.rr == null ? "—" : "1:" + x.rr}</b></td><td class="num">${n(x.probability)}%</td>` +
     `<td class="num">${n(x.stages?.vol_expansion?.atr_pct)}</td>` +

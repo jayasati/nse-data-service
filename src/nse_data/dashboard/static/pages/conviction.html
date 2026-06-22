@@ -29,13 +29,13 @@
   <div class="tablewrap" style="margin-top:10px">
     <table id="tbl"><thead><tr>
       <th class="num">#</th><th>Symbol</th><th class="num">Comp</th><th>Tier</th>
-      <th>Dir</th><th>Setup</th><th class="num">Entry</th><th class="num">Stop</th>
+      <th>Dir</th><th>Setup</th><th class="num">Entry</th><th class="num">Open (gap)</th><th class="num">Stop</th>
       <th class="num">T1</th><th class="num">T2</th><th class="num">T3</th>
       <th class="num">R:R</th><th class="num">Prob</th><th class="num">Exp%</th><th>Gaps</th>
     </tr></thead><tbody id="body"></tbody></table>
   </div>
   <div class="hint" style="margin-top:8px">
-    <b>Direction/entry/stop/targets are derived from real levels</b> (options call/put walls + max-pain + 20-day H/L, with ATR stops) — not round numbers. Entry = prior close (act on the open relative to it). T2 is the primary target (the wall/max-pain level); R:R is measured to T2. Probability is anchored to the composite and <b>capped at 68%</b> — validated edges are modest, so no fake 90%s. DATA_GAP cells (blank) are excluded from the composite. A+ stays unreachable until per-stock FII (NSE doesn't publish) and IV-percentile (accumulating) exist — by design.
+    <b>Runs 09:10 IST, just after the NSE pre-open auction</b> — so <b>Open (gap)</b> is the real per-stock indicative open (IEP) and the gap is measured, not a GIFT proxy. Direction/entry/stop/targets derive from real levels (options call/put walls + max-pain + 20-day H/L, with ATR stops) — not round numbers. Entry = prior close; act on the open (shown) relative to it. T2 is the primary target (the wall/max-pain level); R:R is measured to T2. Probability is anchored to the composite and <b>capped at 68%</b> — validated edges are modest, so no fake 90%s. DATA_GAP cells (blank) are excluded from the composite. A+ stays unreachable until per-stock FII (NSE doesn't publish) and IV-percentile (accumulating) exist — by design.
   </div>
 
   <script type="module" src="/static/js/components/nav.js"></script>
