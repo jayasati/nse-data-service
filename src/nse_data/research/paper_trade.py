@@ -167,8 +167,11 @@ STRATEGIES = {
 STRATEGY_OVERRIDES: dict[str, dict] = {
     "lean": {"max_positions": 75, "heat_pct": 100.0, "sector_max": 25},
     # confluence-aligned set is small per day → coverage mode: take every ALIGNED long (no
-    # top-N selection bias) so the forward sample accumulates as fast as possible.
-    "conviction_confluence": {"max_positions": 50, "heat_pct": 100.0, "sector_max": 20},
+    # top-N selection bias) so the forward sample accumulates as fast as possible. Thresholds are on
+    # the conviction 0–10 scale (not the 0–100 of the other strategies): enter any aligned long
+    # (≥4), exit when it falls out of the aligned set (score → 0 < t_out).
+    "conviction_confluence": {"max_positions": 50, "heat_pct": 100.0, "sector_max": 20,
+                              "t_in": 4.0, "t_out": 3.5},
 }
 
 
