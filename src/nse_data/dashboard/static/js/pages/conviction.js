@@ -23,10 +23,17 @@ async function init() {
   const n = v => v == null ? "—" : v;
   const dir = d => d === "LONG" ? '<span style="color:#16a34a;font-weight:700">LONG</span>'
     : d === "SHORT" ? '<span style="color:#dc2626;font-weight:700">SHORT</span>' : c(d);
+  const confl = x => {
+    const lb = x.conf_label, col = lb === "ALIGNED" ? "#16a34a" : lb === "CONTRADICTED" ? "#dc2626" : "#9aa";
+    if (!lb) return "—";
+    const ag = x.conf_agreement == null ? "" : ` ${x.conf_agreement > 0 ? "+" : ""}${x.conf_agreement}`;
+    const against = x.conf_against ? ` <span style="opacity:.6;font-size:10px">vs ${x.conf_against}</span>` : "";
+    return `<span style="color:${col};font-weight:600;font-size:11px">${lb}${ag}</span>${against}`;
+  };
   $("body").innerHTML = r.rows.map((x, i) =>
     `<tr><td class="num">${i + 1}</td><td><a href="/research?sym=${x.symbol}" style="color:#60a5fa;text-decoration:none">${x.symbol}</a></td>` +
-    `<td class="num"><b>${x.composite}</b></td><td><span class="tier ${tcls(x.tier)}">${(x.tier || "").split(" ")[0]}</span></td>` +
-    `<td>${dir(x.direction)}</td><td style="font-size:12px">${c(x.setup)}</td>` +
+    `<td class="num"><b>${x.conviction_adj ?? x.composite}</b></td><td><span class="tier ${tcls(x.tier)}">${(x.tier || "").split(" ")[0]}</span></td>` +
+    `<td>${dir(x.direction)}</td><td>${confl(x)}</td><td style="font-size:12px">${c(x.setup)}</td>` +
     `<td class="num">${n(x.entry)}</td>` +
     `<td class="num">${x.open_iep == null ? "—" : x.open_iep}${x.gap_pct == null ? "" : ` <span style="font-size:10px;color:${x.gap_pct >= 0 ? "#16a34a" : "#dc2626"}">${x.gap_pct > 0 ? "+" : ""}${x.gap_pct}%</span>`}</td>` +
     `<td class="num" style="color:#dc2626">${n(x.stop)}</td>` +
