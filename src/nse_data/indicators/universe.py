@@ -75,24 +75,34 @@ def top_fno_by_value(conn: sqlite3.Connection, limit: int = CORE_SIZE) -> list[s
     return ranked[:limit]
 
 
-def active_watchlist(conn: sqlite3.Connection, now_iso: str | None = None) -> set[str]:
-    """Symbols on the live watchlist whose trigger hasn't expired."""
+def active_watchlist(conn: sqlite3.Connection, now_iso: str | None = None,
+                     limit: int | None = None) -> set[str]:
+    """Symbols on the live watchlist whose trigger hasn't expired (most-recent first if limited)."""
     if not _has_table(conn, "live_watchlist"):
         return set()
     now_iso = now_iso or market_hours.now_ist().isoformat()
-    return {r[0] for r in conn.execute(
-        "SELECT symbol FROM live_watchlist WHERE expires_at > ?", (now_iso,),
-    )}
+    sql = "SELECT symbol FROM live_watchlist WHERE expires_at > ? ORDER BY added_at DESC"
+    params: tuple = (now_iso,)
+    if limit is not None:
+        sql += " LIMIT ?"
+        params = (now_iso, int(limit))
+    return {r[0] for r in conn.execute(sql, params)}
 
 
-def live_universe(conn: sqlite3.Connection, *, core_size: int = CORE_SIZE) -> list[str]:
-    """What the intraday jobs compute: top-F&O core ∪ active watchlist.
+WATCHLIST_CAP = 200
 
-    Replaces fno_plus_nifty500 as the live scope (Phase 4) — far smaller, so the
-    full live indicator set fits comfortably in the 1-minute loop.
+
+def live_universe(conn: sqlite3.Connection, *, core_size: int = CORE_SIZE,
+                  watchlist_cap: int = WATCHLIST_CAP) -> list[str]:
+    """What the intraday jobs compute: top-F&O core ∪ a BOUNDED active watchlist.
+
+    The watchlist contribution is capped (most-recently-triggered first) so a runaway
+    populator — e.g. the news signal flooding it with ~2k names — can't blow the per-minute
+    intraday pass up to the whole market and starve every other writer with DB-lock contention.
+    Core (≤core_size) + watchlist (≤watchlist_cap) keeps the live set ≲400 and the 1-minute loop fast.
     """
     members = set(top_fno_by_value(conn, core_size))
-    members |= active_watchlist(conn)
+    members |= active_watchlist(conn, limit=watchlist_cap)
     return sorted(members)
 
 

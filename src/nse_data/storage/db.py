@@ -17,7 +17,9 @@ def open_db(path: str = "data/nse.db") -> sqlite3.Connection:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, timeout=30.0)
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
+    # 20s: under heavy concurrent writers (live ticks, option chain, intraday indicators) a
+    # 5s wait was being exceeded → "database is locked". Wait longer before giving up.
+    conn.execute("PRAGMA busy_timeout=20000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
