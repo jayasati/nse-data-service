@@ -307,13 +307,38 @@ def stage_volume(conn, sym) -> tuple:
             "delivery_trend": (dlv or {}).get("delivery_trend")}
 
 
-def stage_rel_strength(conn, sym, nifty_pct) -> tuple:
-    df = _daily(conn, sym)
+def rel_strength_ranks(conn, symbols, nifty_pct) -> dict:
+    """Cross-sectional 5-day relative-strength PERCENTILE across the F&O universe. Returns
+    {symbol: (percentile_0_1, rel_pct, ret5_pct)}. Percentile normalises RS across vol regimes — a
+    +3% week ranks differently when the whole universe is up 3% vs flat — making the factor
+    comparable day to day instead of a raw return that drifts with market-wide volatility."""
+    import bisect
+    rels = {}
+    for sym in symbols:
+        df = _daily(conn, sym)
+        if df is None or len(df) < 6:
+            continue
+        ret5 = (df["close"].iloc[-1] - df["close"].iloc[-6]) / df["close"].iloc[-6] * 100
+        rels[sym] = (round(float(ret5 - (nifty_pct or 0)), 2), round(float(ret5), 2))
+    if not rels:
+        return {}
+    vals = sorted(r[0] for r in rels.values())
+    n = len(vals)
+    return {s: (bisect.bisect_left(vals, rel) / max(1, n - 1), rel, ret5)
+            for s, (rel, ret5) in rels.items()}
+
+
+def stage_rel_strength(conn, sym, nifty_pct, rs_rank=None) -> tuple:
+    if rs_rank is not None:
+        pct, rel, ret5 = rs_rank                       # cross-sectional percentile (preferred)
+        return round(pct * 10, 1), {"src": "5d RS percentile (F&O universe)",
+                "percentile": round(pct * 100), "rel_strength": rel, "stock_5d_pct": ret5}
+    df = _daily(conn, sym)                              # fallback: single-symbol linear (no universe)
     if df is None:
         return GAP, {"src": "candles=null"}
     ret5 = (df["close"].iloc[-1] - df["close"].iloc[-6]) / df["close"].iloc[-6] * 100
     rel = ret5 - (nifty_pct or 0)
-    return round(max(0.0, min(10.0, 5 + rel * 0.5)), 1), {"src": "stock 5d vs nifty",
+    return round(max(0.0, min(10.0, 5 + rel * 0.5)), 1), {"src": "stock 5d vs nifty (no-universe)",
             "stock_5d_pct": round(float(ret5), 2), "nifty_pct": nifty_pct,
             "rel_strength": round(float(rel), 2)}
 
@@ -505,6 +530,7 @@ def confluence(stages, direction) -> dict:
     drift = num(o.get("max_pain_drift_pct")) or 0
     pcr = num(o.get("pcr")); pos = num(st.get("range_pos_pct"))
     sw = str(st.get("last_sweep", "")); r = num(rs.get("rel_strength")) or 0
+    rs_pctile = num(rs.get("percentile"))               # cross-sectional RS rank (0–100) if present
     risk = num(ca.get("news_risk")); divsig = num(pn.get("divergence_signal"))
     skew = num(o.get("put_skew"))
     flags = {
@@ -512,7 +538,9 @@ def confluence(stages, direction) -> dict:
         "pcr": 1 if pcr and pcr > 0.7 else -1 if pcr and pcr < 0.5 else 0,   # call-heavy = bearish
         "position": 1 if pos is not None and pos < 30 else -1 if pos is not None and pos > 80 else 0,
         "smc": 1 if "bull" in sw else -1 if "bear" in sw else 0,
-        "rel_strength": 1 if r > 1.5 else -1 if r < -1 else 0,
+        # cross-sectional RS percentile when available (top quartile = bullish, bottom = bearish)
+        "rel_strength": (1 if rs_pctile > 70 else -1 if rs_pctile < 30 else 0) if rs_pctile is not None
+                        else (1 if r > 1.5 else -1 if r < -1 else 0),
         "sector": -1 if st.get("sector_weak") else 0,
         "catalyst": -1 if risk is not None and risk < 70 else 0,   # negative-news drag
         "mtf_1h": 1 if num(st.get("h1_trend")) == 1 else -1 if num(st.get("h1_trend")) == -1 else 0,
@@ -533,14 +561,14 @@ def confluence(stages, direction) -> dict:
             "confirm": confirm, "against": against, "flags": flags}
 
 
-def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None, divergence=None) -> dict:
+def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None, divergence=None, rs_rank=None) -> dict:
     scores = {
         "catalyst": stage_catalyst(conn, sym),
         "positioning": stage_positioning(conn, sym, sm_score, divergence),
         "options": stage_options(conn, sym),
         "structure": stage_structure(conn, sym),
         "volume": stage_volume(conn, sym),
-        "rel_strength": stage_rel_strength(conn, sym, nifty_pct),
+        "rel_strength": stage_rel_strength(conn, sym, nifty_pct, rs_rank),
         "vol_expansion": stage_vol_expansion(conn, sym),
     }
     comp, renorm = composite(scores)
@@ -576,8 +604,9 @@ def run_conviction(conn, symbols=None) -> dict:
     if symbols is None:
         symbols = [r[0] for r in conn.execute("SELECT DISTINCT symbol FROM options_metrics "
                    "WHERE symbol NOT IN ('NIFTY','BANKNIFTY','FINNIFTY')")]
+    rs_ranks = rel_strength_ranks(conn, symbols, nifty_pct)   # cross-sectional RS percentile, once
     scored = [score_stock(conn, s, sm_score=sm_score, nifty_pct=nifty_pct, macro=macro,
-                          divergence=divergence) for s in symbols]
+                          divergence=divergence, rs_rank=rs_ranks.get(s)) for s in symbols]
     scored = [x for x in scored if x["composite"] is not None]
     scored.sort(key=lambda x: -(x.get("conviction_adj") or x["composite"]))   # confluence-ranked
     return {"macro": macro, "smart_money_score": sm_score, "n": len(scored), "ranked": scored}
