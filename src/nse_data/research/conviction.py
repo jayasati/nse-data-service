@@ -793,7 +793,9 @@ def run_and_persist(conn) -> dict:
 
 
 def register_conviction_job(scheduler, db_path: str) -> str:
-    """09:10 IST (post pre-open auction) — run the engine and persist to conviction_daily."""
+    """Pre-market thesis at 09:10 IST + intraday refreshes every 5 min so the 1H/5M timeframes (and
+    live options/volume/gap) update through the session. The 1-DAY structure stays fixed (daily bars
+    don't change intraday) — only the lower-timeframe and live factors evolve."""
     import structlog
     from apscheduler.triggers.cron import CronTrigger
 
@@ -801,17 +803,27 @@ def register_conviction_job(scheduler, db_path: str) -> str:
     from ..storage.db import open_db
     log = structlog.get_logger()
 
-    def _tick():
+    def _run(tag):
         conn = open_db(db_path)
         try:
-            log.info("conviction", **run_and_persist(conn))
+            log.info(tag, **run_and_persist(conn))
         except Exception:
-            log.exception("conviction_failed")
+            log.exception(f"{tag}_failed")
         finally:
             conn.close()
 
     # 09:10 IST — just after the NSE pre-open auction (09:08) so the gap/entry use the real
     # per-stock indicative open (IEP) + final GIFT, ~5 min before the 09:15 open.
-    scheduler.add_job(_tick, trigger=CronTrigger(hour=9, minute=10, timezone=market_hours.IST),
+    scheduler.add_job(lambda: _run("conviction"),
+                      trigger=CronTrigger(hour=9, minute=10, timezone=market_hours.IST),
                       id="conviction", max_instances=1, coalesce=True, replace_existing=True)
+
+    # Intraday refresh every 5 min while the market is open (first complete 5M bar at 09:20, first
+    # complete 1H bar at 10:15, …) — re-runs the engine so the 1H/5M timeframes track today live.
+    def _intraday():
+        if market_hours.is_market_open():
+            _run("conviction_intraday")
+
+    scheduler.add_job(_intraday, trigger=CronTrigger(minute="*/5", timezone=market_hours.IST),
+                      id="conviction_intraday", max_instances=1, coalesce=True, replace_existing=True)
     return "conviction"
