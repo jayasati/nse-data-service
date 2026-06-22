@@ -316,11 +316,47 @@ def stage_positioning(conn, sym, sm_score, divergence=None) -> tuple:
     return round(sum(parts) / len(parts) * 10, 1), detail
 
 
+def _tod_rvol(conn, sym):
+    """Time-of-day-normalized RVOL: today's cumulative volume so far ÷ the 20-day average cumulative
+    volume up to the SAME time of day. Corrects the intraday U-shape (a 2× at 09:20 means something
+    very different from 2× at 14:30) — usable from the first bars, not a lagged full-day measure.
+    None pre-open / when no today bars exist."""
+    try:
+        m5 = read_intraday_5m(conn, sym)
+    except Exception:
+        return None
+    if m5 is None or m5.empty:
+        return None
+    m5 = m5.rename(columns=str.lower)
+    m5.index = pd.to_datetime(m5.index, unit="s", utc=True).tz_convert(IST)
+    today = m5.index[-1].date()
+    td = m5[m5.index.date == today]
+    if td.empty:
+        return None
+    cutoff = td.index[-1].time()                       # current time-of-day
+    today_cum = float(td["volume"].sum())
+    hist = m5[m5.index.date < today]
+    days = sorted(set(hist.index.date))[-20:]
+    cums = [float(hist[(hist.index.date == d) & (hist.index.time <= cutoff)]["volume"].sum())
+            for d in days]
+    cums = [x for x in cums if x > 0]
+    if not cums:
+        return None
+    avg = sum(cums) / len(cums)
+    return round(today_cum / avg, 2) if avg else None
+
+
 def stage_volume(conn, sym) -> tuple:
     df = _daily(conn, sym)
     if df is None:
         return GAP, {"src": "candles=null"}
-    rvol = df["volume"].iloc[-1] / df["volume"].iloc[-21:-1].mean() if df["volume"].iloc[-21:-1].mean() else 1
+    daily_rvol = (df["volume"].iloc[-1] / df["volume"].iloc[-21:-1].mean()
+                  if df["volume"].iloc[-21:-1].mean() else 1)
+    # TIME-OF-DAY normalised RVOL (today's pace vs the 20d avg at the SAME time) when the session is
+    # live — corrects the intraday U-shape and is usable from the open. Falls back to daily pre-open.
+    tod = _tod_rvol(conn, sym)
+    rvol = tod if tod is not None else daily_rvol
+    rvol_src = "time-of-day-normalised" if tod is not None else "daily 20d"
     sd = conn.execute("SELECT MAX(date) FROM raw_bhavcopy_cm WHERE symbol=?", (sym,)).fetchone()[0]
     dlv = compute_symbol_delivery(conn, sym, sd) if sd else None
     conv = (dlv or {}).get("delivery_conviction_score")
@@ -328,8 +364,9 @@ def stage_volume(conn, sym) -> tuple:
     # delivery conviction is the core (real money). RVOL amplifies its SIGN — high RVOL on LOW
     # delivery is distribution/churn (penalise), not accumulation. (Fixes RVOL-only over-reward.)
     s = cv * 10 + (cv - 0.5) * (min(rvol, 4) - 1) * 2 if rvol > 1.5 else cv * 10
-    return round(max(0.0, min(10.0, s)), 1), {"src": "delivery-conviction × rvol",
-            "rvol": round(float(rvol), 2), "delivery_conviction": conv,
+    return round(max(0.0, min(10.0, s)), 1), {"src": f"delivery-conviction × rvol ({rvol_src})",
+            "rvol": round(float(rvol), 2), "rvol_basis": rvol_src,
+            "daily_rvol": round(float(daily_rvol), 2), "delivery_conviction": conv,
             "delivery_trend": (dlv or {}).get("delivery_trend")}
 
 
