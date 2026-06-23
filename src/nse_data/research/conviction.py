@@ -668,8 +668,23 @@ def trade_plan(close, atr, stages, macro, iep=None, stock_gap=None) -> dict:
     pos = st.get("range_pos_pct", 50)
     hi20, lo20 = st.get("20d_high"), st.get("20d_low")
     rs = stages.get("rel_strength", {}).get("rel_strength", 0) or 0
-    bull = (mp_drift > 0) + (rs > 0) + (pos < 55)
-    bear = (mp_drift < 0) + (rs < 0) + (pos > 75)
+    # TREND-AWARE range position. The old logic was pure mean-reversion (pos>75 → fade short), which
+    # shorts a name making new highs WITH momentum (PRESTIGE: +2.7% RS, 1H↑, amplifying γ, range-high
+    # → wrongly faded into a +2% rally). A range extreme means CONTINUATION in a trend and REVERSION
+    # in a range — so let the name's own trend (1H ⨉ RS agreement) decide which. Amplifying γ (moves
+    # extend, pin doesn't bind) also flips a range-high to continuation.
+    h1 = st.get("h1_trend")
+    amp = opt.get("gamma_regime") == "amplifying"
+    trending_up = (h1 == 1 and rs > 0) or (amp and h1 == 1 and rs >= 0)
+    trending_dn = (h1 == -1 and rs < 0) or (amp and h1 == -1 and rs <= 0)
+    if trending_up:
+        pos_bull, pos_bear = pos > 55, False         # range-high in an uptrend = breakout, not fade
+    elif trending_dn:
+        pos_bull, pos_bear = False, pos < 45
+    else:
+        pos_bull, pos_bear = pos < 55, pos > 75       # ranging → mean-reversion (fade the extreme)
+    bull = (mp_drift > 0) + (rs > 0) + pos_bull
+    bear = (mp_drift < 0) + (rs < 0) + pos_bear
     direction = "LONG" if bull > bear else "SHORT" if bear > bull else ("LONG" if rs >= 0 else "SHORT")
     # consistent ATR-based risk (1.3·ATR) → sane R:R; walls/max-pain/20d levels used as targets
     # ONLY when they sit the correct side of entry (else fall back to ATR multiples).
@@ -782,18 +797,18 @@ def confluence(stages, direction) -> dict:
             "confirm": confirm, "against": against, "flags": flags}
 
 
-def _conviction_band(conv_adj, conf_label) -> str | None:
+def _conviction_band(conv_adj, conf_label, counter_trend=False) -> str | None:
     """RELATIVE conviction band — NOT a calibrated win probability. We deliberately do NOT emit a
     percentage: a number like '61.3%' implies a calibration against realized outcomes we do not have
     (the engine has no forward track record yet). The band is magnitude (conviction_adj) gated by
-    confluence (a high score that's CONTRADICTED is not high conviction). Once conviction_factor_log
-    + the paper-trade accumulate enough closed outcomes, we'll attach the *realized* hit-rate per band
-    (scripts/conviction_attribution.py) — THEN it becomes a calibrated number, not before."""
+    confluence (a high score that's CONTRADICTED is not high conviction) AND by trend agreement (a
+    call fighting its own 1H trend can't be High). Once conviction_factor_log + the paper-trade
+    accumulate closed outcomes, we attach the *realized* hit-rate per band — THEN it's a number."""
     if conv_adj is None:
         return None
     if conf_label == "CONTRADICTED" or conv_adj < 4.0:
         return "Low"
-    if conv_adj >= 5.0 and conf_label == "ALIGNED":
+    if conv_adj >= 5.0 and conf_label == "ALIGNED" and not counter_trend:
         return "High"
     return "Medium"
 
@@ -824,7 +839,10 @@ def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None, divergence=None, 
     conv_adj = comp
     if comp is not None:
         conv_adj = round(max(0.0, comp + conf["agreement"] * 0.25 + conf["vol_confirm"] * 0.4), 2)
-    band = _conviction_band(conv_adj, conf.get("label"))
+    _h1 = stages.get("structure", {}).get("h1_trend")
+    _dir = plan.get("direction")
+    counter = (_dir == "LONG" and _h1 == -1) or (_dir == "SHORT" and _h1 == 1)
+    band = _conviction_band(conv_adj, conf.get("label"), counter)
     return {"symbol": sym, "composite": comp, "conviction_adj": conv_adj,
             "tier": tier_of(conv_adj, scores, veto_flag), "renorm_weights": renorm,
             "data_gaps": gaps, "trade": plan, "conviction_band": band, "news_flag": veto_flag,
