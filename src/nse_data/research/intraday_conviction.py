@@ -66,17 +66,23 @@ def run_intraday_conviction(conn, limit: int = 30) -> list:
         if direction is None:
             continue                                     # only show names with a clear intraday lean
         rvol = r.get("rvol_5m") or 1.0
-        # conviction = alignment strength + a participation BONUS (rvol>1 adds, low rvol doesn't
-        # punish — the move may already have happened). gamma-amplifying = momentum-friendly bonus.
-        conv = 5 + abs(net) * 0.9 + min(1.0, max(0.0, rvol - 1) * 0.5)
-        if gamma.get(r["symbol"]) == "negative":         # amplifying regime → trends extend
+        ltp = r["ltp"]
+        vs_vwap = round((ltp - r["vwap"]) / r["vwap"] * 100, 2) if r["vwap"] else 0.0
+        adx = r.get("adx") or 0
+        # Conviction must DIFFERENTIATE, not saturate: alignment is the GATE, but the rank is driven
+        # by MAGNITUDE (stretch from VWAP = real move) + PARTICIPATION (RVOL) + trend strength (ADX).
+        # A flat name on no volume that happens to be aligned should sink below a +3% mover on 3× vol.
+        conv = (4.0
+                + abs(net) * 0.5                                  # alignment (gate, up to ~2.25)
+                + min(3.0, abs(vs_vwap) * 1.0)                    # magnitude — how far it's run
+                + min(2.0, max(0.0, rvol - 1) * 0.7)             # participation — real volume
+                + min(0.6, adx / 60.0))                           # trend strength
+        if gamma.get(r["symbol"]) == "negative":                 # amplifying regime → trends extend
             conv += 0.3
         conv = round(min(10.0, conv), 2)
-        ltp = r["ltp"]
         atr = r.get("atr_14_daily") or (ltp * 0.02)
         sign = 1 if direction == "LONG" else -1
         entry = round(ltp, 1)
-        vs_vwap = round((ltp - r["vwap"]) / r["vwap"] * 100, 2) if r["vwap"] else None
         out.append({
             "symbol": r["symbol"], "direction": direction, "conviction": conv,
             "ltp": ltp, "vs_vwap_pct": vs_vwap, "rvol": round(float(rvol), 2),
