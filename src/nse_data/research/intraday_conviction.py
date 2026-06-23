@@ -58,9 +58,15 @@ def run_intraday_conviction(conn, limit: int = 30) -> list:
     gamma = {r[0]: r[1] for r in conn.execute(
         "SELECT symbol, gex_sign FROM options_metrics WHERE as_of=(SELECT MAX(as_of) FROM "
         "options_metrics o2 WHERE o2.symbol=options_metrics.symbol)")}
+    # F&O universe only — these are the OPTIONABLE, liquid names. Filters out illiquid small-/SME-caps
+    # whose big %-moves on thin volume would otherwise dominate (and which you can't trade with options).
+    fno = {r[0] for r in conn.execute("SELECT DISTINCT symbol FROM options_metrics "
+                                       "WHERE symbol NOT IN ('NIFTY','BANKNIFTY','FINNIFTY')")}
     out = []
     for row in rows:
         r = dict(zip(_COLS, row))
+        if r["symbol"] not in fno:
+            continue
         net, det = _dir_score(r)
         direction = "LONG" if net > 0.75 else "SHORT" if net < -0.75 else None
         if direction is None:
