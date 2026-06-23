@@ -9,6 +9,7 @@ const NAV = [
   ["Rankings", "/rankings"],          // weekly positional book
   ["Research", "/research"],           // per-stock catalyst study
   ["Conviction", "/conviction"],       // 13-stage swing synthesis
+  ["Intraday ⚡", "/intraday-conviction"],  // live momentum scanner (ranked)
   ["Intraday", "/intraday"],           // live VWAP/ORB/rvol board
   ["Backtest", "/backtest"],
   ["Trades", "/trades"],

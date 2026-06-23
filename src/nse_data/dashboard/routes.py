@@ -76,6 +76,11 @@ def intraday() -> FileResponse:
     return _page("intraday.html")
 
 
+@router.get("/intraday-conviction", include_in_schema=False)
+def intraday_conviction() -> FileResponse:
+    return _page("intraday_conviction.html")
+
+
 @router.get("/market", include_in_schema=False)
 def market() -> FileResponse:
     return _page("market.html")

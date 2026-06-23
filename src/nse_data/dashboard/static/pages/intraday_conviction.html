@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intraday Conviction — NSE Data Service</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/theme.css">
+<link rel="stylesheet" href="/static/css/backtest.css">
+<style>
+  .up { color:#16a34a; } .down { color:#dc2626; } .flat { color:#9aa; }
+  td.num.hi { color:#16a34a; font-weight:600; }
+  .pill { padding:1px 6px; border-radius:4px; font-size:11px; font-weight:600; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Intraday Conviction <span style="font-size:13px;font-weight:400;opacity:.65">live momentum scanner · same-day</span></h1>
+    <span class="meta" id="meta">loading…</span>
+    <div class="hdr-right"></div>
+  </header>
+
+  <div class="hint" style="margin:6px 0;padding:8px 10px;background:rgba(245,158,11,.10);border-left:3px solid #f59e0b">
+    <b>⚠ DISCRETIONARY SCANNER — not a validated edge.</b> Intraday round-trips have tested <b>net-negative after costs</b> on this universe (ORB+VWAP, 11,648 trades, PF 0.67). This board ranks the cleanest <b>aligned-momentum</b> setups from the live stack (VWAP · ORB · 5M-supertrend · RVOL · RSI) so <b>you</b> can act selectively — e.g. options leverage on the strongest one or two. It makes <b>no</b> claim of a backtested edge. The swing <a href="/conviction" style="color:#60a5fa">/conviction</a> board is the 1–5 day tool; this is its same-day complement.
+  </div>
+
+  <div class="tablewrap" style="margin-top:6px">
+    <table id="tbl"><thead><tr>
+      <th class="num">#</th><th>Symbol</th><th class="num">Conv</th><th>Dir</th>
+      <th class="num">LTP</th><th class="num">vs VWAP</th><th>ORB</th><th>5M ST</th><th class="num">RSI</th><th class="num">RVOL</th><th>γ</th>
+      <th class="num">Entry</th><th class="num">Stop</th><th class="num">T1</th><th class="num">T2</th><th class="num">T3</th>
+    </tr></thead><tbody id="body"></tbody></table>
+  </div>
+  <div class="hint" style="margin-top:8px">
+    <b>Conv</b> = strength of intraday signal alignment (VWAP control + ORB break + 5M supertrend + structure + RSI + VWAP slope), with a participation bonus for high RVOL and a γ-amplifying bonus. <b>Dir</b> follows the alignment. Entry = live LTP; stop/targets = 0.6/0.6/1.2/1.8 × daily-ATR (same-day). Only names with a clear lean (|net|&gt;0.75) are shown. Updates live every minute server-side; page auto-refreshes every 30s.
+  </div>
+
+  <script type="module" src="/static/js/components/nav.js"></script>
+  <script type="module" src="/static/js/pages/intraday_conviction.js"></script>
+</body>
+</html>
