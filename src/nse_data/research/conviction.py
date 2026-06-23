@@ -813,7 +813,62 @@ def _conviction_band(conv_adj, conf_label, counter_trend=False) -> str | None:
     return "Medium"
 
 
-def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None, divergence=None, rs_rank=None) -> dict:
+def _age_seconds(val, now):
+    if val is None:
+        return None
+    try:
+        f = float(val)
+        if f > 1e9:
+            return (now - dt.datetime.fromtimestamp(f, IST)).total_seconds()
+    except (ValueError, TypeError):
+        pass
+    s = str(val)[:19].replace("T", " ")
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return (now - dt.datetime.strptime(s, fmt).replace(tzinfo=IST)).total_seconds()
+        except ValueError:
+            continue
+    return None
+
+
+def data_freshness(conn) -> tuple:
+    """Per-factor source freshness — the GIFT-bug lesson generalized: a stale feed should self-declare
+    DATA_GAP, not silently emit a confident wrong signal. Returns (report, set-of-stale-STAGE-names).
+    Intraday sources are only checked during market hours (off-market their last snapshot is expectedly
+    old). Daily/T+1 thresholds carry a weekend/holiday buffer so a normal Monvalue isn't false-flagged."""
+    now = dt.datetime.now(IST)
+    mkt = now.weekday() < 5 and dt.time(9, 15) <= now.time() <= dt.time(15, 30)
+    CH = [   # (stages it feeds, query, max_age_seconds, market_hours_only)
+        (["options"], "SELECT MAX(as_of) FROM options_metrics", 45 * 60, True),
+        (["vol_expansion"], "SELECT MAX(as_of_date) FROM iv_daily", 5 * 86400, False),
+        (["positioning"], "SELECT MAX(report_date) FROM raw_participant_oi", 6 * 86400, False),
+        (["volume"], "SELECT MAX(date) FROM raw_bhavcopy_cm", 5 * 86400, False),
+        (["catalyst"], "SELECT MAX(as_of_date) FROM news_daily", 5 * 86400, False),
+        (["structure", "rel_strength"],   # daily bars; global MAX(ts) is a 59M-row scan → one symbol
+         "SELECT MAX(ts) FROM raw_intraday_candles WHERE symbol='RELIANCE' AND interval='day'",
+         5 * 86400, False),
+    ]
+    report, stale = {}, set()
+    for stages, sql, maxs, market_only in CH:
+        key = "/".join(stages)
+        if market_only and not mkt:
+            report[key] = {"fresh": True, "note": "off-market (not checked)"}
+            continue
+        try:
+            v = conn.execute(sql).fetchone()[0]
+        except Exception as e:
+            report[key] = {"fresh": True, "note": f"check-failed: {e}"}
+            continue
+        age = _age_seconds(v, now)
+        fresh = age is None or age <= maxs            # unparseable → don't block
+        report[key] = {"fresh": fresh, "age_min": round(age / 60) if age else None, "latest": str(v)}
+        if not fresh:
+            stale.update(stages)
+    return report, stale
+
+
+def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None, divergence=None, rs_rank=None,
+                stale=None) -> dict:
     scores = {
         "catalyst": stage_catalyst(conn, sym),
         "positioning": stage_positioning(conn, sym, sm_score, divergence),
@@ -823,6 +878,11 @@ def score_stock(conn, sym, *, sm_score, nifty_pct, macro=None, divergence=None, 
         "rel_strength": stage_rel_strength(conn, sym, nifty_pct, rs_rank),
         "vol_expansion": stage_vol_expansion(conn, sym),
     }
+    if stale:                                         # FRESHNESS GUARD: stale feed → DATA_GAP
+        for st in stale:
+            if st in scores and scores[st][0] is not GAP:
+                d = dict(scores[st][1]); d["note"] = "STALE source → DATA_GAP (freshness guard)"
+                scores[st] = (GAP, d)
     comp, renorm = composite(scores)
     gaps = [s for s, (v, _) in scores.items() if v is GAP]
     stages = {s: {"score": ("DATA_GAP" if v is GAP else v), **d} for s, (v, d) in scores.items()}
@@ -856,12 +916,16 @@ def run_conviction(conn, symbols=None) -> dict:
     sm_score = sm[0] if sm else None
     divergence = participant_divergence(conn)            # FII-vs-retail, once for the whole book
     macro["participant_divergence"] = divergence          # surface it in the market bias
+    fresh_report, stale = data_freshness(conn)            # freshness guard — once for the whole book
+    macro["data_freshness"] = fresh_report
+    if stale:
+        macro["stale_factors"] = sorted(stale)
     if symbols is None:
         symbols = [r[0] for r in conn.execute("SELECT DISTINCT symbol FROM options_metrics "
                    "WHERE symbol NOT IN ('NIFTY','BANKNIFTY','FINNIFTY')")]
     rs_ranks = rel_strength_ranks(conn, symbols, nifty_pct)   # cross-sectional RS percentile, once
     scored = [score_stock(conn, s, sm_score=sm_score, nifty_pct=nifty_pct, macro=macro,
-                          divergence=divergence, rs_rank=rs_ranks.get(s)) for s in symbols]
+                          divergence=divergence, rs_rank=rs_ranks.get(s), stale=stale) for s in symbols]
     scored = [x for x in scored if x["composite"] is not None]
     scored.sort(key=lambda x: -(x.get("conviction_adj") or x["composite"]))   # confluence-ranked
     return {"macro": macro, "smart_money_score": sm_score, "n": len(scored), "ranked": scored}
