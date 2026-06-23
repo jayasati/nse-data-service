@@ -83,10 +83,13 @@ async function init() {
     const divLine = (pd && pd.status === "ok")
       ? `<div style="margin-top:4px;font-size:12px"><b>Participant OI:</b> FII <b style="color:${pd.fii_long_pct >= 50 ? "#16a34a" : "#dc2626"}">${pd.fii_long_pct}% long</b> · Retail <b style="color:${pd.client_long_pct >= 50 ? "#16a34a" : "#dc2626"}">${pd.client_long_pct}% long</b> · DII ${pd.dii_long_pct}% · Pro ${pd.pro_long_pct}% → <b>${pd.read}</b></div>`
       : "";
+    const staleLine = (m.stale_factors && m.stale_factors.length)
+      ? `<div style="margin-top:4px;color:#dc2626;font-weight:700">⚠ STALE DATA — these factors DATA_GAP'd (not scored on old data): ${m.stale_factors.join(", ")}</div>`
+      : "";
     $("macro").innerHTML =
       `<b>Market bias: ${m.regime}</b> · gap <b>${m.gap_bias}</b> ${gapnum} <span style="opacity:.7">(src: ${m.gap_source})</span> · ` +
       `US S&P ${m.us_spx_pct}% · US VIX ${m.us_vix} (${m.us_vix_pct}%) · India VIX ${m.india_vix} · ` +
-      `Nifty ${m.nifty_last} (${m.nifty_pct}%) · Smart-money ${r.smart_money}` + divLine;
+      `Nifty ${m.nifty_last} (${m.nifty_pct}%) · Smart-money ${r.smart_money}` + divLine + staleLine;
   } else {
     $("macro").innerHTML = `Macro regime: <b>DATA_GAP</b> — ${m.note || "global macro collector not active"}`;
   }
