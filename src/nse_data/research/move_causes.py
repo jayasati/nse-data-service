@@ -57,11 +57,12 @@ def ensure_table(conn) -> None:
             n_articles INTEGER, searched_at TEXT DEFAULT (datetime('now')),
             PRIMARY KEY (symbol, date)
         )""")
-    # additive migration for DBs created before `regime` existed
-    try:
-        conn.execute("ALTER TABLE move_causes ADD COLUMN regime TEXT")
-    except Exception:  # noqa: BLE001 — column already present
-        pass
+    # additive migrations for DBs created before these columns existed
+    for col in ("regime TEXT", "cause_label TEXT"):
+        try:
+            conn.execute(f"ALTER TABLE move_causes ADD COLUMN {col}")
+        except Exception:  # noqa: BLE001 — column already present
+            pass
 
 
 def _company_name(conn, symbol: str) -> str:
@@ -230,6 +231,15 @@ def find_cause(conn, llm, client, *, symbol: str, date: str, direction: str,
         return None
     cause["n_articles"] = len(candidates)
     cause["regime"] = regime
+    # Task 5C — make "searched but empty" auditable and distinct from "couldn't explain".
+    n_news = sum(1 for c in candidates if c.get("cause_type") in ("news", "regulatory")
+                 or c.get("source") in ("news", "sebi", "bse"))
+    if cause["category"] != "unknown":
+        cause["cause_label"] = cause["category"]
+    elif n_news == 0:
+        cause["cause_label"] = "no_news_found"   # attribution ran, news search returned nothing
+    else:
+        cause["cause_label"] = "unknown"         # news existed, none explained the move
     store(conn, symbol=symbol, date=date, direction=direction, move_pct=move_pct, cause=cause)
     return cause
 
@@ -239,11 +249,12 @@ def store(conn, *, symbol, date, direction, move_pct, cause: dict) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO move_causes "
         "(symbol, date, direction, move_pct, category, cause_summary, source_url, "
-        " source_date, confidence, idiosyncratic, regime, n_articles) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        " source_date, confidence, idiosyncratic, regime, n_articles, cause_label) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (symbol, date, direction, move_pct, cause["category"], cause["cause_summary"],
          cause["source_url"], cause.get("source_date"), cause["confidence"],
-         cause["idiosyncratic"], cause.get("regime"), cause.get("n_articles")))
+         cause["idiosyncratic"], cause.get("regime"), cause.get("n_articles"),
+         cause.get("cause_label")))
     conn.commit()
 
 

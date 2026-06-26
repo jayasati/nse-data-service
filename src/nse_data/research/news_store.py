@@ -176,9 +176,10 @@ def resolve_symbol(headline: str, name_map: dict[str, str]) -> str | None:
     return best[1] if best else None
 
 
-def store_news(conn, rows: list[dict]) -> int:
+def store_news(conn, rows: list[dict], *, trigger_source: str = "scheduled") -> int:
     """INSERT OR IGNORE; returns new rows. Each row: symbol, headline, url, source,
-    published_raw, snippet, article_text, text_status."""
+    published_raw, snippet, article_text, text_status. `trigger_source` tags HOW the article
+    entered the corpus ('scheduled' sweep vs 'move_triggered' retroactive fetch)."""
     import time
     now = int(time.time())
     n = 0
@@ -186,11 +187,79 @@ def store_news(conn, rows: list[dict]) -> int:
         fp = fingerprint(r.get("symbol"), r.get("url"), r["headline"])
         cur = conn.execute(
             "INSERT OR IGNORE INTO raw_news (fingerprint, symbol, headline, url, source, "
-            "published_epoch, published_raw, snippet, article_text, text_status, fetched_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "published_epoch, published_raw, snippet, article_text, text_status, fetched_at, "
+            "trigger_source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (fp, r.get("symbol"), r["headline"], r.get("url"), r.get("source"),
              news_epoch(r.get("published_raw")), r.get("published_raw"), r.get("snippet"),
-             r.get("article_text"), r.get("text_status", "headline_only"), now))
+             r.get("article_text"), r.get("text_status", "headline_only"), now,
+             r.get("trigger_source", trigger_source)))
         n += cur.rowcount
     conn.commit()
     return n
+
+
+def fetch_move_triggered_news(conn, *, min_move: float = 5.0, per_symbol_limit: int = 10) -> dict:
+    """Task 5B — retroactive context fetch. For TODAY's intraday moves >= ``min_move`` % that
+    don't yet have move-triggered news, pull Google-News headlines into raw_news tagged
+    trigger_source='move_triggered'. This is the path that finally covers long-tail names
+    (RELAXO/PIXTRANS) the scheduled sweep misses. NO LLM here — pure corpus population; the
+    cost-bounded cause attribution reads this corpus afterwards."""
+    import time as _time
+
+    from ..scheduler import market_hours
+    from .move_causes import _company_name
+    today = market_hours.now_ist().date().isoformat()
+    movers = [r[0] for r in conn.execute(
+        "SELECT DISTINCT symbol FROM intraday_move_events WHERE date=? "
+        "AND (ABS(net_pct) >= ? OR move_pct >= ?)", (today, min_move, min_move))]
+    if not movers:
+        return {"movers": 0, "stored": 0}
+    cutoff = int(_time.time()) - 24 * 3600
+    have = {r[0] for r in conn.execute(
+        "SELECT DISTINCT symbol FROM raw_news WHERE trigger_source='move_triggered' "
+        "AND fetched_at >= ?", (cutoff,))}
+    todo = [s for s in movers if s not in have]
+    if not todo:
+        return {"movers": len(movers), "stored": 0, "already_covered": len(movers)}
+    client = make_client()
+    stored = 0
+    try:
+        for sym in todo:
+            company = _company_name(conn, sym) or sym
+            arts = fetch_google_news(client, f"{company} share price", limit=per_symbol_limit)
+            for a in arts:
+                a["symbol"], a["source"] = sym, "gnews_move"
+            stored += store_news(conn, arts, trigger_source="move_triggered")
+    finally:
+        client.close()
+    log.info("move_triggered_news", movers=len(movers), fetched_for=len(todo), stored=stored)
+    return {"movers": len(movers), "fetched_for": len(todo), "stored": stored}
+
+
+def register_move_news_job(scheduler, db_path: str) -> str:
+    """Every 15 min during market hours: retroactively fetch news for the day's >5% movers
+    (within ~15 min of detection). Trading-day + toggle gated."""
+    from apscheduler.triggers.cron import CronTrigger
+
+    from ..events.calendar import _feature_enabled
+    from ..scheduler import market_hours
+    from ..storage.db import open_db
+    job_id = "move_triggered_news"
+
+    def _tick():
+        if not market_hours.is_trading_day(market_hours.now_ist().date()):
+            return
+        if not _feature_enabled("move_triggered_news", True):
+            return
+        conn = open_db(db_path)
+        try:
+            fetch_move_triggered_news(conn)
+        except Exception:
+            log.exception("move_triggered_news_failed")
+        finally:
+            conn.close()
+
+    scheduler.add_job(
+        _tick, trigger=CronTrigger(hour="9-15", minute="*/15", timezone=market_hours.IST),
+        id=job_id, max_instances=1, coalesce=True, replace_existing=True)
+    return job_id
