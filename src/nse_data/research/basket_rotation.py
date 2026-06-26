@@ -93,14 +93,20 @@ def _driver_pct(conn: sqlite3.Connection, cfg: dict) -> float | None:
 
 
 def _member_returns_live(conn: sqlite3.Connection, members: list[str]) -> dict[str, float]:
-    """Each member's intraday % vs prior close: indicator_live.ltp vs latest bhavcopy close."""
+    """Each member's intraday % vs prior close, from the fresh per-minute quote feed
+    (raw_equity_quotes — broad coverage, refreshed market-wide, unlike indicator_live which
+    only refreshes watchlist names). Uses the feed's own pct_change; falls back to last/prev."""
     out: dict[str, float] = {}
     for sym in members:
-        lt = conn.execute("SELECT ltp FROM indicator_live WHERE symbol=?", (sym,)).fetchone()
-        pc = conn.execute("SELECT close FROM raw_bhavcopy_cm WHERE symbol=? AND series='EQ' "
-                          "ORDER BY date DESC LIMIT 1", (sym,)).fetchone()
-        if lt and lt[0] and pc and pc[0]:
-            out[sym] = (lt[0] - pc[0]) / pc[0] * 100.0
+        r = conn.execute(
+            "SELECT pct_change, last_price, prev_close FROM raw_equity_quotes "
+            "WHERE symbol=? ORDER BY as_of DESC LIMIT 1", (sym,)).fetchone()
+        if not r:
+            continue
+        if r[0] is not None:
+            out[sym] = float(r[0])
+        elif r[1] and r[2]:
+            out[sym] = (r[1] - r[2]) / r[2] * 100.0
     return out
 
 
