@@ -3,10 +3,7 @@
 -- universe sweep) vs 'move_triggered' (a >5% intraday move pulled it in retroactively).
 ALTER TABLE raw_news ADD COLUMN trigger_source TEXT DEFAULT 'scheduled';
 
--- move_causes.cause_label: makes the "we looked and found nothing" case auditable and
--- distinct from "we never looked". Populated by find_cause:
---   <category>       — a dated catalyst explained the move (company/sector/macro/...)
---   'no_news_found'  — attribution ran, news search returned ZERO articles (genuine catalyst-less)
---   'unknown'        — news existed but none plausibly explained the move
--- (Absence of a move_causes row entirely = attribution was never attempted.)
-ALTER TABLE move_causes ADD COLUMN cause_label TEXT;
+-- NOTE: move_causes.cause_label is NOT added here. `move_causes` is created lazily at runtime
+-- by move_causes.ensure_table() (no migration creates it), so an ALTER here fails on a fresh DB
+-- ("no such table: move_causes"). ensure_table() adds cause_label idempotently instead — see the
+-- additive-migration loop there. (Adding it here broke the migration runner on clean DBs/tests.)

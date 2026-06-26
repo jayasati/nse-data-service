@@ -18,7 +18,8 @@ CREATE TABLE paper_book (
   status TEXT NOT NULL DEFAULT 'open',
   exit_date TEXT, exit_px REAL, exit_reason TEXT, net_pct REAL,
   updated_at INTEGER, strategy TEXT NOT NULL DEFAULT 'qvm',
-  stop_px REAL, qty INTEGER, risk_rupees REAL, net_pnl REAL, r_multiple REAL, trail_stop REAL
+  stop_px REAL, qty INTEGER, risk_rupees REAL, net_pnl REAL, r_multiple REAL, trail_stop REAL,
+  direction TEXT DEFAULT 'long'
 );
 """
 
@@ -35,7 +36,7 @@ def _run(conn, score, today, prices, atr=None, sectors=None, chand=None, **overr
                             price_now=lambda s: prices.get(s),
                             risk_tag=lambda s: "", atr_of=lambda s: atr,
                             sector_of=lambda s: (sectors or {}).get(s, "x"),
-                            chand_of=lambda s: chand)
+                            chand_of=lambda s, d="long": chand)
 
 
 def test_buy_opens_and_sizes():
