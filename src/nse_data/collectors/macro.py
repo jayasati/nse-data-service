@@ -43,6 +43,11 @@ TICKERS: dict[str, str] = {
     "SP500":  "^GSPC",
     "NASDAQ": "^IXIC",
     "DOW":    "^DJI",
+    # P4 — base metals (context driver for the metals_base basket). COPPER/ALUMINIUM have Yahoo
+    # futures; ZINC has no reliable free feed so it is deliberately OMITTED (no fabrication) — a
+    # row is only written when Yahoo returns data, else nothing (normalize() returns []).
+    "COPPER":    "HG=F",
+    "ALUMINIUM": "ALI=F",
 }
 
 
