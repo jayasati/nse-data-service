@@ -23,7 +23,8 @@ from .notify import ntfy_send
 
 log = structlog.get_logger(__name__)
 
-HELP = "📋 Commands:\n/prebuy SYMBOL — full signal card + read\n/help — this list"
+HELP = ("📋 Commands:\n/prebuy SYMBOL — full signal card + LLM read\n"
+        "/score SYMBOL — quick quantitative scoreboard\n/help — this list")
 
 
 def _do_prebuy(db_path: str, symbol: str) -> str:
@@ -39,6 +40,16 @@ def _do_prebuy(db_path: str, symbol: str) -> str:
     return f"📋 {r['symbol']}\n\n{r['synthesis']}\n\n— {r['n_signals']} signals · ${r['cost_usd']:.4f}"
 
 
+def _do_score(db_path: str, symbol: str) -> str:
+    from ..research.prebuy_card import score_card
+    from ..storage.db import open_db
+    conn = open_db(db_path)
+    try:
+        return score_card(conn, symbol)
+    finally:
+        conn.close()
+
+
 def handle_command(text: str, db_path: str) -> str | None:
     """Parse + dispatch one command. None → ignore (don't reply to unknown/non-commands)."""
     parts = text.strip().split()
@@ -47,6 +58,8 @@ def handle_command(text: str, db_path: str) -> str | None:
     cmd = parts[0].lstrip("/").lower()
     if cmd == "prebuy":
         return _do_prebuy(db_path, parts[1]) if len(parts) >= 2 else "Usage: /prebuy SYMBOL"
+    if cmd == "score":
+        return _do_score(db_path, parts[1]) if len(parts) >= 2 else "Usage: /score SYMBOL"
     if cmd in ("help", "start"):
         return HELP
     return None

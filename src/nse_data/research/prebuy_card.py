@@ -123,6 +123,48 @@ def format_block(d: dict) -> tuple[str, int]:
     return "\n".join(L), n
 
 
+def score_card(conn: sqlite3.Connection, symbol: str) -> str:
+    """Terse quantitative scoreboard for a symbol — factor grades, conviction, financial strength.
+    No LLM (instant, free); the numeric counterpart to the narrative pre-buy card."""
+    sym = symbol.upper()
+
+    def one(sql):
+        try:
+            cur = conn.execute(sql, (sym,))
+            cols = [d[0] for d in cur.description]
+            row = cur.fetchone()
+            return dict(zip(cols, row)) if row else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    f = one("SELECT grade, composite, sector_rank, sector_n, sector, quality, valuation, momentum, "
+            "liquidity, risk, regime FROM factor_snapshot WHERE symbol=? ORDER BY snapshot_date DESC LIMIT 1")
+    c = one("SELECT conf_label, direction, conviction_adj, rr, setup FROM conviction_daily "
+            "WHERE symbol=? ORDER BY as_of_date DESC LIMIT 1")
+    s = one("SELECT f_score, bs_score, debt_equity, distress FROM stock_strength WHERE symbol=? "
+            "ORDER BY updated_date DESC LIMIT 1")
+    if not (f or c or s):
+        return f"📊 {sym}: no scores on this name."
+    L = [f"📊 {sym} scores"]
+
+    def r0(v):
+        return round(v) if isinstance(v, (int, float)) else "–"
+
+    if f:
+        L.append(f"Factor: {f.get('grade')} · composite {r0(f.get('composite'))} · "
+                 f"rank {f.get('sector_rank')}/{f.get('sector_n')} ({f.get('sector')}, {f.get('regime')})")
+        L.append(f"  Q{r0(f.get('quality'))} V{r0(f.get('valuation'))} M{r0(f.get('momentum'))} "
+                 f"Liq{r0(f.get('liquidity'))} Risk{r0(f.get('risk'))}")
+    if c:
+        L.append(f"Conviction: {c.get('conf_label')} {c.get('direction')} "
+                 f"adj={c.get('conviction_adj')} RR={c.get('rr')} [{c.get('setup')}]")
+    if s:
+        dist = " · ⚠️DISTRESS" if s.get("distress") else ""
+        L.append(f"Strength: Piotroski {s.get('f_score')}/9 · BS {s.get('bs_score')} · "
+                 f"D/E {s.get('debt_equity')}{dist}")
+    return "\n".join(L)
+
+
 def synthesize(conn: sqlite3.Connection, symbol: str) -> dict:
     """Build the grounded card + LLM read. Returns {symbol, signals, block, n_signals, synthesis, cost_usd}."""
     data = gather(conn, symbol)
