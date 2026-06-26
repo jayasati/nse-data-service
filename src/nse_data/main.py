@@ -245,6 +245,10 @@ def main() -> int:
     # + balance-sheet score (interest coverage / current ratio / D-E / debt trend) +
     # distress flags, for the pre-buy conviction card (PROFITABILITY_PLAN R7+R8).
     registered.append(register_strength_job(scheduler, db_path))
+    # Annual financials (21:40) — parse audited annual filings (full-year P&L + cash flow + year-end
+    # balance sheet) into annual_financials, the clean basis for the Piotroski F (R7).
+    from .fundamentals.annual_financials import register_annual_financials_job
+    registered.append(register_annual_financials_job(scheduler, db_path))
     # Daily 18:45 factor snapshot → factor_snapshot feature store: every ranking
     # engine's score + composite + sector rank + regime, point-in-time, plus a
     # top-up of matured forward-return labels (P8 — the ML/factor-research matrix).

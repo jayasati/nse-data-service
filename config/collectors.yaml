@@ -20,3 +20,4 @@ features:
   fpi_sector:           true   # true FPI SECTOR rotation from NSDL fortnightly sector report
   fpi_short_paper:      true   # forward-paper: short FPI-headwind names with uptrend still intact
   paper_review:         true   # weekly per-strategy realized-stats review (alerts only when >=20 closed)
+  annual_financials:    true   # parse audited annual filings → annual_financials (Piotroski basis)

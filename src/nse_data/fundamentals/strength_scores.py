@@ -222,8 +222,38 @@ def _has(conn, name) -> bool:
     ).fetchone() is not None
 
 
+def _load_annual_periods(conn, symbol):
+    """(now, prior) from annual_financials — the clean full-year basis (P&L + CFO + year-end BS) the
+    Piotroski needs. Prefer consolidated; prior must be a different fiscal year. None if no annual."""
+    if not _has(conn, "annual_financials"):
+        return None, None
+    rows = conn.execute(
+        f"SELECT scope, fy_ending, {','.join(_FIELDS)} FROM annual_financials WHERE symbol=? "
+        "ORDER BY fy_ending DESC", (symbol,)).fetchall()
+    if not rows:
+        return None, None
+    by_scope: dict[str, list] = {}
+    for r in rows:
+        by_scope.setdefault(r[0], []).append(r)
+    srows = by_scope.get("consolidated") or by_scope.get("standalone") or []
+    if not srows:
+        return None, None
+    now = dict(zip(_FIELDS, srows[0][2:]))
+    now_fy = srows[0][1]
+    prior = None
+    for r in srows[1:]:
+        if r[1] < now_fy:                       # any earlier fiscal year
+            prior = dict(zip(_FIELDS, r[2:]))
+            break
+    return now, prior
+
+
 def load_periods(conn: sqlite3.Connection, symbol: str) -> tuple[dict | None, dict | None]:
-    """(now, prior≈1yr-ago) financial dicts for a symbol, consistent scope (consol>standalone)."""
+    """(now, prior≈1yr-ago) financial dicts for a symbol, consistent scope (consol>standalone).
+    Prefer clean annual_financials (full-year P&L + CFO + BS); fall back to quarterly extracted."""
+    a_now, a_prior = _load_annual_periods(conn, symbol)
+    if a_now:
+        return a_now, a_prior
     if not _has(conn, "extracted_financials"):
         return None, None
     rows = conn.execute(
