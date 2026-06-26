@@ -189,6 +189,14 @@ def distress_flags(now: dict) -> list[str]:
     return flags
 
 
+# A Piotroski F needs the 9 signals to mean anything. With current data (quarterly P&L only — no
+# cash flow for ~94% of names, balance sheet spotty, prior-year usually absent) most stocks compute
+# only 2-3, so reporting "X/9" is misleading (paints quality names as weak). Require a real minimum;
+# below it f_score is None (the bs_score below stays the reliable strength proxy). Lifts automatically
+# once annual balance-sheet + cash-flow + prior-year coverage improves.
+MIN_F_SIGNALS = 5
+
+
 def compute_strength(now: dict | None, prior: dict | None) -> dict:
     """Bundle the R7+R8 screens for one symbol. All None/empty when no financials."""
     if not now:
@@ -196,7 +204,7 @@ def compute_strength(now: dict | None, prior: dict | None) -> dict:
                 "current_ratio": None, "debt_equity": None, "bs_score": None, "distress": []}
     f = piotroski_f(now, prior)
     return {
-        "f_score": f["f_score"] if f["n_signals"] else None,
+        "f_score": f["f_score"] if f["n_signals"] >= MIN_F_SIGNALS else None,
         "f_signals": f["n_signals"] or None,
         "interest_coverage": interest_coverage(now),
         "current_ratio": current_ratio(now),

@@ -159,9 +159,17 @@ def score_card(conn: sqlite3.Connection, symbol: str) -> str:
         L.append(f"Conviction: {c.get('conf_label')} {c.get('direction')} "
                  f"adj={c.get('conviction_adj')} RR={c.get('rr')} [{c.get('setup')}]")
     if s:
-        dist = " · ⚠️DISTRESS" if s.get("distress") else ""
-        L.append(f"Strength: Piotroski {s.get('f_score')}/9 · BS {s.get('bs_score')} · "
-                 f"D/E {s.get('debt_equity')}{dist}")
+        parts = []
+        if s.get("f_score") is not None:
+            parts.append(f"Piotroski {s['f_score']}/{s.get('f_signals')}")
+        if s.get("bs_score") is not None:
+            parts.append(f"BS {r0(s.get('bs_score'))}")
+        if s.get("debt_equity") is not None:
+            parts.append(f"D/E {s['debt_equity']}")
+        if s.get("distress"):
+            parts.append("⚠️DISTRESS")
+        if parts:
+            L.append("Strength: " + " · ".join(parts))
     return "\n".join(L)
 
 
