@@ -221,6 +221,55 @@ def _events_in_3d(conn: sqlite3.Connection, today: date) -> str:
     return f"Events ≤3d: {items}\n"
 
 
+def _basket_rotation(conn: sqlite3.Connection) -> str:
+    """Latest macro-theme basket signals (auto-ancillary, metals…) — context, not a trade call."""
+    try:
+        d = conn.execute("SELECT MAX(signal_date) FROM basket_signals").fetchone()
+        if not d or not d[0]:
+            return ""
+        rows = conn.execute(
+            "SELECT basket_name, signal_type, confidence FROM basket_signals "
+            "WHERE signal_date=? ORDER BY confidence DESC", (d[0],)).fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    if not rows:
+        return ""
+    items = ", ".join(f"{b.replace('_', ' ')} {t.replace('BASKET_', '')}({c:.2f})"
+                      for b, t, c in rows)
+    return f"Baskets: {items}\n"
+
+
+def _inst_deals(conn: sqlite3.Connection) -> str:
+    """Recent institutional (FII/MF/insurance) bulk-block buys — disclosed accumulation."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol, entity_type, value_cr FROM large_deal_signals "
+            "WHERE signal_type IN ('INSTITUTIONAL_BUY','INSTITUTIONAL_BUY_LARGE') "
+            "AND created_at >= datetime('now','-2 day') ORDER BY value_cr DESC LIMIT 6").fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    if not rows:
+        return ""
+    items = ", ".join(f"{s}({e}{f' ₹{v:.0f}cr' if v else ''})" for s, e, v in rows)
+    return f"Inst buys: {items}\n"
+
+
+def _promoter_buys(conn: sqlite3.Connection) -> str:
+    """Recent promoter accumulation (buy/strong/sustained) — swing signal, not intraday."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol, signal_type, holding_change_pct FROM promoter_signals "
+            "WHERE signal_type IN ('PROMOTER_BUY','PROMOTER_BUY_STRONG','PROMOTER_SUSTAINED') "
+            "AND created_at >= datetime('now','-2 day') "
+            "ORDER BY ABS(COALESCE(holding_change_pct,0)) DESC LIMIT 6").fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    if not rows:
+        return ""
+    items = ", ".join(f"{s}({c:+.2f}%)" if c is not None else s for s, st, c in rows)
+    return f"Promoter buys: {items}\n"
+
+
 def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
     now = now or market_hours.now_ist()
     today = now.date()
@@ -274,6 +323,9 @@ def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
         f"{_psych_watch(conn)}\n"
         f"{_results_today(conn, today)}"
         f"{_events_in_3d(conn, today)}"
+        f"{_basket_rotation(conn)}"
+        f"{_inst_deals(conn)}"
+        f"{_promoter_buys(conn)}"
         f"Expiry: {expiry_note}\n"
         f"Nifty support: {s1} | Resistance: {r1}\n"
         "━━━━━━━━━━━━━━━━━━━"
