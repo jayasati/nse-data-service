@@ -275,6 +275,18 @@ def _promoter_buys(conn: sqlite3.Connection) -> str:
     return f"Promoter buys: {items}\n"
 
 
+def _fpi_flow(conn: sqlite3.Connection) -> str:
+    """Market-level FPI flow regime (5-session cumulative equity net) — risk-on/off context."""
+    try:
+        r = conn.execute("SELECT net_5d_cr, regime FROM fpi_flow "
+                         "ORDER BY as_of_date DESC LIMIT 1").fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    if not r or r[1] is None:
+        return ""
+    return f"FPI flow (5d): ₹{r[0]:+,.0f}cr → {r[1].replace('FPI_', '')}\n"
+
+
 def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
     now = now or market_hours.now_ist()
     today = now.date()
@@ -322,6 +334,7 @@ def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
         f"{(' ' + warnings) if warnings else ''}\n"
         f"→ {posture}\n"
         f"{_gex_line(conn)}"
+        f"{_fpi_flow(conn)}"
         f"{_smart_money(conn)}\n"
         f"Overnight events:\n{ev_lines}\n"
         f"{_overnight_ratings(conn, now)}"

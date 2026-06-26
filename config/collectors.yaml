@@ -16,3 +16,4 @@ features:
   promoter_signals:     true   # P3: insider/promoter buy-strong/sustained/pledge classification
   signal_paper:         true   # forward-validation paper tracks for deal_flow + promoter_flow
   desk_note:            true   # LLM daily desk-analyst note over the signal tables (cap-bounded)
+  fpi_flow:             true   # market-level FPI flow-regime (risk-on/off) from NSDL custody feed

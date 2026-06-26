@@ -48,6 +48,8 @@ def gather_signals(conn: sqlite3.Connection) -> dict:
                      "ORDER BY snapshot_date DESC LIMIT 1")
     return {
         "macro": pm[0] if pm else {},
+        "fpi": _rows(conn, "SELECT net_5d_cr, regime FROM fpi_flow "
+                           "ORDER BY as_of_date DESC LIMIT 1"),
         "baskets": _rows(conn, "SELECT basket_name, signal_type, confidence, advancing, declining "
                                "FROM basket_signals WHERE signal_date=(SELECT MAX(signal_date) "
                                "FROM basket_signals) ORDER BY confidence DESC"),
@@ -86,6 +88,9 @@ def _fmt_signals(sig: dict) -> tuple[str, int]:
                  f"crude=${m.get('brent')}({m.get('brent_pct')}%) "
                  f"VIX={m.get('india_vix')}({m.get('india_vix_signal')}) "
                  f"copper={m.get('copper_pct')}% S&P={m.get('sp500_pct')}%")
+    fpi = sig.get("fpi")
+    if fpi:
+        L.append(f"FPI FLOW (5d equity net): ₹{fpi[0]['net_5d_cr']:+.0f}cr → {fpi[0]['regime']}")
     def add(title, rows, render):
         nonlocal n
         if rows:
