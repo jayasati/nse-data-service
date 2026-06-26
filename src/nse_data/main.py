@@ -68,6 +68,7 @@ from .research.desk_note import register_desk_note_job
 from .research.fpi_flow import register_fpi_flow_job
 from .research.fpi_sector import register_fpi_sector_job
 from .research.fpi_short_paper import register_fpi_short_paper_job
+from .research.paper_review import register_paper_review_job
 from .research.promoter_signals import register_promoter_signals_job
 from .research.signal_paper import register_signal_paper_job
 from .research.smallcap_momentum import register_smallcap_job
@@ -212,6 +213,8 @@ def main() -> int:
     registered.append(register_fpi_sector_job(scheduler, db_path))
     # Forward-paper the refined FPI signal: short headwind names with uptrend still intact (19:50).
     registered.append(register_fpi_short_paper_job(scheduler, db_path))
+    # Weekly paper-track review — alerts only when a strategy reaches >=20 closed trades (Sun 09:00).
+    registered.append(register_paper_review_job(scheduler, db_path))
     # LLM desk-analyst note — grounded daily synthesis over the signal tables (22:45, cap-bounded).
     registered.append(register_desk_note_job(scheduler, db_path))
     # Intraday high-conviction synthesis engine — 09:10 IST (post pre-open) → conviction_daily.
