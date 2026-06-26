@@ -65,10 +65,10 @@ def build(conn: sqlite3.Connection, symbols=None, *, throttle: float = 0.4, limi
                 f"{','.join(_FIELDS)}, xbrl_url, captured_at) "
                 f"VALUES (?,?,?,{','.join('?' * len(_FIELDS))},?,datetime('now'))",
                 (sym, rec["scope"], rec["period_ending"], *[f.get(k) for k in _FIELDS], url))
+            conn.commit()                       # per-row: short locks, partial progress saved
             written += 1
             if throttle:
                 time.sleep(throttle)
-        conn.commit()
     rep = {"filings": len(filings), "written": written, "empty": empty, "failed": failed}
     log.info("annual_financials_build", **rep)
     return rep
