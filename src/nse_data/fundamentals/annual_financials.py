@@ -84,9 +84,13 @@ def build(conn: sqlite3.Connection, symbols=None, *, throttle: float = 0.4, limi
         filings = _pending_filings(conn, symbols)
     if limit:
         filings = filings[:limit]
-    written = failed = empty = 0
+    written = failed = empty = skipped = 0
+    done_urls = {r[0] for r in conn.execute("SELECT xbrl_url FROM annual_financials")}
     with httpx.Client(timeout=30, follow_redirects=True, headers=_UA) as client:
         for sym, _cons, url, _qe in filings:
+            if url in done_urls:                # resumable: don't re-fetch what we have
+                skipped += 1
+                continue
             try:
                 rec = parse_annual(client.get(url).content)
             except Exception:  # noqa: BLE001
@@ -114,7 +118,8 @@ def build(conn: sqlite3.Connection, symbols=None, *, throttle: float = 0.4, limi
                     break
             if throttle:
                 time.sleep(throttle)
-    rep = {"filings": len(filings), "written": written, "empty": empty, "failed": failed}
+    rep = {"filings": len(filings), "written": written, "skipped": skipped,
+           "empty": empty, "failed": failed}
     log.info("annual_financials_build", **rep)
     return rep
 
