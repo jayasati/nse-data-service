@@ -52,12 +52,34 @@ def _num(s: str) -> float | None:
         return None
 
 
-def _parse_label_date(label: str) -> str | None:
-    """'JUNE 15, 2026' -> '2026-06-15'."""
-    try:
-        return _dt.datetime.strptime(label.strip().title(), "%B %d, %Y").date().isoformat()
-    except ValueError:
+_FN_DATE = re.compile(r"FIIInvestSector_([A-Za-z]+)(\d{2})(\d{4})\.html", re.I)
+
+
+def _parse_filename_date(rel: str) -> str | None:
+    """'~/.../FIIInvestSector_June152026.html' -> '2026-06-15'. The filename month is consistent;
+    the dropdown LABELS mix abbreviations (JUN/MAR vs JUNE/MAY), so the filename is the reliable
+    source. Tries abbreviated (%b) then full (%B) month names."""
+    m = _FN_DATE.search(rel or "")
+    if not m:
         return None
+    mon, dd, yyyy = m.groups()
+    for fmt in ("%b", "%B"):
+        try:
+            month = _dt.datetime.strptime(mon.title(), fmt).month
+            return _dt.date(int(yyyy), month, int(dd)).isoformat()
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_label_date(label: str) -> str | None:
+    """Fallback: 'JUNE 15, 2026' / 'JUN 15, 2026' -> '2026-06-15' (tries full + abbrev month)."""
+    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+        try:
+            return _dt.datetime.strptime(label.strip().title(), fmt).date().isoformat()
+        except ValueError:
+            continue
+    return None
 
 
 def latest_report(client: httpx.Client) -> tuple[str, str, str]:
@@ -68,7 +90,7 @@ def latest_report(client: httpx.Client) -> tuple[str, str, str]:
         raise FpiSectorParseError("no fortnightly report options on selection page")
     rel, label = opts[0]                       # newest first
     url = _BASE + rel.lstrip("~/").removeprefix("web/")
-    return url, (_parse_label_date(label) or label), label.strip()
+    return url, (_parse_filename_date(rel) or _parse_label_date(label) or label), label.strip()
 
 
 def parse_sector_table(html: str) -> list[dict]:
@@ -110,7 +132,7 @@ def backfill(conn: sqlite3.Connection, since: str = "2025-05-01", throttle: floa
     with httpx.Client(timeout=40, follow_redirects=True) as client:
         opts = _OPT.findall(client.get(_SELECTION, headers=_UA).text)
         for rel, label in opts:
-            as_of = _parse_label_date(label.strip())
+            as_of = _parse_filename_date(rel) or _parse_label_date(label.strip())
             if not as_of or as_of < since:
                 continue
             if conn.execute("SELECT 1 FROM raw_fpi_sector WHERE as_of_date=? LIMIT 1",
