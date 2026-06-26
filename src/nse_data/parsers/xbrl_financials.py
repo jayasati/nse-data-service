@@ -111,6 +111,27 @@ _RATIO_TAGS = {
 _ANNUAL_MIN_DAYS = 350
 
 
+# Cash-flow statement (full-year/half-year DURATION facts) — present only in audited annual and
+# half-yearly filings, NOT quarterlies. The net operating line is the Piotroski's CFO input.
+_CASHFLOW_TAGS = {
+    "cfo_cr": ["CashFlowsFromUsedInOperatingActivities", "CashFlowsFromUsedInOperations"],
+    "cf_investing_cr": ["CashFlowsFromUsedInInvestingActivities"],
+    "cf_financing_cr": ["CashFlowsFromUsedInFinancingActivities"],
+}
+# Balance-sheet (period-end INSTANT) tags — mirrors parse_xbrl's inline map.
+_BS_FIRST_TAGS = {
+    "equity_cr": ("EquityAttributableToOwnersOfParent", "Equity"),
+    "total_assets_cr": ("Assets", "EquityAndLiabilities"),
+    "current_assets_cr": ("CurrentAssets",),
+    "current_liabilities_cr": ("CurrentLiabilities",),
+    "total_liabilities_cr": ("Liabilities",),
+}
+_BS_SUM_TAGS = {
+    "borrowings_cr": ("BorrowingsNoncurrent", "BorrowingsCurrent", "Borrowings",
+                      "NoncurrentBorrowings", "CurrentBorrowings"),
+}
+
+
 def _local(tag: str) -> str:
     """Strip the XML namespace from an element tag."""
     return tag.rsplit("}", 1)[-1]
@@ -195,6 +216,82 @@ def _current_instant_context(contexts: dict[str, dict], period_end: str | None) 
             if inst[:10] == period_end[:10]:
                 return cid
     return max(cands, key=lambda c: c[1])[0]
+
+
+def _ytd_context(contexts: dict[str, dict]) -> tuple[str | None, str | None]:
+    """The undimensioned FULL-YEAR (YTD ≥350d) duration context at the latest end date — where the
+    annual P&L and cash-flow statement hang (vs the quarter context parse_xbrl uses). (cid, end)."""
+    cands = [(cid, ctx, d) for cid, ctx in contexts.items()
+             if not ctx["has_dim"] and (d := _quarter_days(ctx)) is not None and d >= _ANNUAL_MIN_DAYS]
+    if not cands:
+        return None, None
+    latest_end = max(c[1]["end"] for c in cands)
+    at_latest = [c for c in cands if c[1]["end"] == latest_end]
+    cid = max(at_latest, key=lambda c: c[2])[0]      # longest at latest end = the full year
+    return cid, latest_end
+
+
+def parse_annual(data: bytes | str) -> dict | None:
+    """Parse an audited-annual / half-yearly XBRL into a consistent FULL-YEAR record: full-year P&L +
+    cash flow (CFO) from the YTD duration context + year-end balance sheet from the instant context.
+    Returns None when there's no full-year context (e.g. a plain quarterly filing). This is the clean
+    annual basis the Piotroski F-score needs (vs parse_xbrl, which reads the lead quarter)."""
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        return None
+    contexts = _parse_contexts(root)
+    yid, fy_end = _ytd_context(contexts)
+    if yid is None:
+        return None
+    inst_id = _current_instant_context(contexts, fy_end)
+
+    scope = None
+    raw_d: dict[str, float] = {}
+    raw_i: dict[str, float] = {}
+    for el in root.iter():
+        lt = _local(el.tag)
+        if lt == "NatureOfReportStandaloneConsolidated" and scope is None:
+            scope = (el.text or "").strip().lower()
+        ref = el.get("contextRef")
+        if ref == yid:
+            v = _to_float(el.text)
+            if v is not None and lt not in raw_d:
+                raw_d[lt] = v
+        elif ref == inst_id:
+            v = _to_float(el.text)
+            if v is not None and lt not in raw_i:
+                raw_i[lt] = v
+
+    fields: dict[str, float] = {}
+    for canon, tags in {**_AMOUNT_TAGS, **_CASHFLOW_TAGS}.items():   # full-year P&L + cash flow
+        for tag in tags:
+            if tag in raw_d:
+                fields[canon] = round(raw_d[tag] / _RUPEES_TO_CRORE, 2)
+                break
+    for canon, tags in _EPS_TAGS.items():
+        for tag in tags:
+            if tag in raw_d:
+                fields[canon] = raw_d[tag]
+                break
+    for canon, tags in _BS_FIRST_TAGS.items():       # year-end balance sheet (instant)
+        for tag in tags:
+            if tag in raw_i:
+                fields[canon] = round(raw_i[tag] / _RUPEES_TO_CRORE, 2)
+                break
+    for canon, tags in _BS_SUM_TAGS.items():
+        present = [raw_i[t] for t in tags if t in raw_i]
+        if present:
+            fields[canon] = round(sum(present) / _RUPEES_TO_CRORE, 2)
+    if "total_assets_cr" not in fields:
+        present = [raw_i[t] for t in ("CurrentAssets", "NoncurrentAssets") if t in raw_i]
+        if present:
+            fields["total_assets_cr"] = round(sum(present) / _RUPEES_TO_CRORE, 2)
+    return {
+        "scope": "consolidated" if scope and "consolid" in scope else "standalone",
+        "period_ending": fy_end[:10] if fy_end else None,
+        "fields": fields,
+    }
 
 
 def parse_xbrl(data: bytes | str) -> dict | None:
