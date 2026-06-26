@@ -17,3 +17,4 @@ features:
   signal_paper:         true   # forward-validation paper tracks for deal_flow + promoter_flow
   desk_note:            true   # LLM daily desk-analyst note over the signal tables (cap-bounded)
   fpi_flow:             true   # market-level FPI flow-regime (risk-on/off) from NSDL custody feed
+  fpi_sector:           true   # true FPI SECTOR rotation from NSDL fortnightly sector report

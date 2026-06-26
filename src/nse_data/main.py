@@ -66,6 +66,7 @@ from .research.basket_rotation import register_basket_job
 from .research.large_deal_signals import register_large_deal_signals_job
 from .research.desk_note import register_desk_note_job
 from .research.fpi_flow import register_fpi_flow_job
+from .research.fpi_sector import register_fpi_sector_job
 from .research.promoter_signals import register_promoter_signals_job
 from .research.signal_paper import register_signal_paper_job
 from .research.smallcap_momentum import register_smallcap_job
@@ -206,6 +207,8 @@ def main() -> int:
     registered.append(register_signal_paper_job(scheduler, db_path))
     # FPI flow-regime signal from the NSDL custody feed (18:30, after the EOD FPI collector).
     registered.append(register_fpi_flow_job(scheduler, db_path))
+    # FPI SECTOR rotation from NSDL's fortnightly sector report (Mon & Thu 18:45).
+    registered.append(register_fpi_sector_job(scheduler, db_path))
     # LLM desk-analyst note — grounded daily synthesis over the signal tables (22:45, cap-bounded).
     registered.append(register_desk_note_job(scheduler, db_path))
     # Intraday high-conviction synthesis engine — 09:10 IST (post pre-open) → conviction_daily.

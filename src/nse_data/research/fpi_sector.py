@@ -1,0 +1,141 @@
+"""NSDL fortnightly Sector-wise FPI Investment collector + sector-rotation read.
+
+This is the TRUE per-sector FPI rotation the daily feed can't give. NSDL publishes a fortnightly
+static HTML report per sector (net investment + AUC). We read the selection page to find the latest
+report's static-file URL, fetch + parse it (34 sectors), and store the latest fortnight's net
+equity flow per sector in raw_fpi_sector. rotation() ranks sectors into/out-of → surfaced in the
+brief + desk note. Not auto-scored into conviction (validation discipline).
+
+Markup-drift guard: the wide table has a fixed 98-col shape (2 + 4 periods x 2 currencies x 12
+asset cols); the latest-fortnight net-equity is col 50. If the shape changes we raise rather than
+silently mis-parse.
+"""
+from __future__ import annotations
+
+import datetime as _dt
+import re
+import sqlite3
+
+import httpx
+import structlog
+
+log = structlog.get_logger(__name__)
+
+_BASE = "https://www.fpi.nsdl.co.in/web/"
+_SELECTION = _BASE + "Reports/FPI_Fortnightly_Selection.aspx"
+_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+_TR = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S | re.I)
+_CELL = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.S | re.I)
+_OPT = re.compile(r"<option[^>]*value=['\"]([^'\"]+FIIInvestSector[^'\"]+)['\"][^>]*>([^<]+)</option>", re.I)
+
+# column indices in a sector data row (validated against len==98)
+_C_SECTOR, _C_NET_EQ, _C_NET_TOT, _C_AUC_EQ, _ROW_LEN = 1, 50, 61, 74, 98
+
+
+class FpiSectorParseError(Exception):
+    """NSDL fortnightly sector report markup didn't match the expected shape."""
+
+
+def _cells(tr: str) -> list[str]:
+    return [re.sub(r"<[^>]+>", "", x).replace("&nbsp;", " ").strip() for x in _CELL.findall(tr)]
+
+
+def _num(s: str) -> float | None:
+    s = (s or "").replace(",", "").strip()
+    if s in ("", "-", "NA"):
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _parse_label_date(label: str) -> str | None:
+    """'JUNE 15, 2026' -> '2026-06-15'."""
+    try:
+        return _dt.datetime.strptime(label.strip().title(), "%B %d, %Y").date().isoformat()
+    except ValueError:
+        return None
+
+
+def latest_report(client: httpx.Client) -> tuple[str, str, str]:
+    """(static_url, as_of_date_iso, period_label) for the most recent fortnight."""
+    h = client.get(_SELECTION, headers=_UA).text
+    opts = _OPT.findall(h)
+    if not opts:
+        raise FpiSectorParseError("no fortnightly report options on selection page")
+    rel, label = opts[0]                       # newest first
+    url = _BASE + rel.lstrip("~/").removeprefix("web/")
+    return url, (_parse_label_date(label) or label), label.strip()
+
+
+def parse_sector_table(html: str) -> list[dict]:
+    rows = [_cells(tr) for tr in _TR.findall(html)]
+    out = []
+    for r in rows:
+        if len(r) >= 3 and r[0].strip().isdigit() and r[_C_SECTOR].strip():
+            if len(r) != _ROW_LEN:
+                raise FpiSectorParseError(f"sector row has {len(r)} cols, expected {_ROW_LEN} "
+                                          "(NSDL markup drift)")
+            out.append({"sector": r[_C_SECTOR].strip(), "net_equity_cr": _num(r[_C_NET_EQ]),
+                        "net_total_cr": _num(r[_C_NET_TOT]), "auc_equity_cr": _num(r[_C_AUC_EQ])})
+    if len(out) < 10:
+        raise FpiSectorParseError(f"parsed only {len(out)} sectors (expected ~34)")
+    return out
+
+
+def fetch_and_store(conn: sqlite3.Connection) -> dict:
+    with httpx.Client(timeout=40, follow_redirects=True) as client:
+        url, as_of, label = latest_report(client)
+        if conn.execute("SELECT 1 FROM raw_fpi_sector WHERE as_of_date=? LIMIT 1", (as_of,)).fetchone():
+            return {"as_of_date": as_of, "skipped": "already collected"}
+        sectors = parse_sector_table(client.get(url, headers=_UA).text)
+    for s in sectors:
+        conn.execute(
+            "INSERT OR REPLACE INTO raw_fpi_sector (as_of_date, period_label, sector, net_equity_cr, "
+            "net_total_cr, auc_equity_cr, captured_at) VALUES (?,?,?,?,?,?,datetime('now'))",
+            (as_of, label, s["sector"], s["net_equity_cr"], s["net_total_cr"], s["auc_equity_cr"]))
+    conn.commit()
+    rep = {"as_of_date": as_of, "label": label, "sectors": len(sectors)}
+    log.info("fpi_sector", **rep)
+    return rep
+
+
+def rotation(conn: sqlite3.Connection, n: int = 4) -> dict:
+    """Top sectors FPI rotated INTO / OUT OF in the latest fortnight (by net equity ₹cr)."""
+    d = conn.execute("SELECT MAX(as_of_date) FROM raw_fpi_sector").fetchone()
+    if not d or not d[0]:
+        return {}
+    rows = [(s, v) for s, v in conn.execute(
+        "SELECT sector, net_equity_cr FROM raw_fpi_sector WHERE as_of_date=? "
+        "AND net_equity_cr IS NOT NULL ORDER BY net_equity_cr DESC", (d[0],))]
+    return {"as_of_date": d[0],
+            "into": [(s, v) for s, v in rows[:n] if v > 0],
+            "out_of": [(s, v) for s, v in rows[-n:] if v < 0][::-1]}
+
+
+def register_fpi_sector_job(scheduler, db_path: str) -> str:
+    """Mon & Thu 18:45 IST — fortnightly data updates ~twice monthly; idempotent on as_of_date."""
+    from apscheduler.triggers.cron import CronTrigger
+
+    from ..events.calendar import _feature_enabled
+    from ..scheduler import market_hours
+    from ..storage.db import open_db
+    job_id = "fpi_sector"
+
+    def _tick():
+        if not _feature_enabled("fpi_sector", True):
+            return
+        conn = open_db(db_path)
+        try:
+            fetch_and_store(conn)
+        except Exception:
+            log.exception("fpi_sector_failed")
+        finally:
+            conn.close()
+
+    scheduler.add_job(
+        _tick, trigger=CronTrigger(day_of_week="mon,thu", hour=18, minute=45,
+                                   timezone=market_hours.IST),
+        id=job_id, max_instances=1, coalesce=True, replace_existing=True)
+    return job_id

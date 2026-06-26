@@ -46,10 +46,16 @@ def gather_signals(conn: sqlite3.Connection) -> dict:
     pm = _rows(conn, "SELECT regime, macro_bias, gift_signal, gift_nifty_pct, brent, brent_pct, "
                      "india_vix, india_vix_signal, copper_pct, sp500_pct FROM premarket_snapshots "
                      "ORDER BY snapshot_date DESC LIMIT 1")
+    try:
+        from .fpi_sector import rotation
+        fpi_sector = rotation(conn, n=4)
+    except Exception:  # noqa: BLE001
+        fpi_sector = {}
     return {
         "macro": pm[0] if pm else {},
         "fpi": _rows(conn, "SELECT net_5d_cr, regime FROM fpi_flow "
                            "ORDER BY as_of_date DESC LIMIT 1"),
+        "fpi_sector": fpi_sector,
         "baskets": _rows(conn, "SELECT basket_name, signal_type, confidence, advancing, declining "
                                "FROM basket_signals WHERE signal_date=(SELECT MAX(signal_date) "
                                "FROM basket_signals) ORDER BY confidence DESC"),
@@ -91,6 +97,11 @@ def _fmt_signals(sig: dict) -> tuple[str, int]:
     fpi = sig.get("fpi")
     if fpi:
         L.append(f"FPI FLOW (5d equity net): ₹{fpi[0]['net_5d_cr']:+.0f}cr → {fpi[0]['regime']}")
+    fs = sig.get("fpi_sector") or {}
+    if fs.get("into") or fs.get("out_of"):
+        into = ", ".join(f"{s}(+{v:.0f})" for s, v in fs.get("into", []))
+        out = ", ".join(f"{s}({v:.0f})" for s, v in fs.get("out_of", []))
+        L.append(f"FPI SECTOR ROTATION ({fs['as_of_date']}): into [{into}] · out of [{out}]")
     def add(title, rows, render):
         nonlocal n
         if rows:

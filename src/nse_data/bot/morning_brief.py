@@ -287,6 +287,23 @@ def _fpi_flow(conn: sqlite3.Connection) -> str:
     return f"FPI flow (5d): ₹{r[0]:+,.0f}cr → {r[1].replace('FPI_', '')}\n"
 
 
+def _fpi_sector(conn: sqlite3.Connection) -> str:
+    """True FPI sector rotation (fortnightly) — which sectors foreign money moved into / out of."""
+    try:
+        from ..research.fpi_sector import rotation
+        r = rotation(conn, n=3)
+    except Exception:  # noqa: BLE001
+        return ""
+    if not r or not (r.get("into") or r.get("out_of")):
+        return ""
+    parts = []
+    if r.get("into"):
+        parts.append("into " + ", ".join(f"{s}(+{v:.0f})" for s, v in r["into"]))
+    if r.get("out_of"):
+        parts.append("out of " + ", ".join(f"{s}({v:.0f})" for s, v in r["out_of"]))
+    return f"FPI sector ({r['as_of_date'][5:]}): " + " · ".join(parts) + "\n"
+
+
 def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
     now = now or market_hours.now_ist()
     today = now.date()
@@ -335,6 +352,7 @@ def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
         f"→ {posture}\n"
         f"{_gex_line(conn)}"
         f"{_fpi_flow(conn)}"
+        f"{_fpi_sector(conn)}"
         f"{_smart_money(conn)}\n"
         f"Overnight events:\n{ev_lines}\n"
         f"{_overnight_ratings(conn, now)}"
