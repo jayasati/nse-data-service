@@ -15,3 +15,4 @@ features:
   large_deal_signals:   true   # P2: entity-classify bulk/block deals (FII/MF/insurance)
   promoter_signals:     true   # P3: insider/promoter buy-strong/sustained/pledge classification
   signal_paper:         true   # forward-validation paper tracks for deal_flow + promoter_flow
+  desk_note:            true   # LLM daily desk-analyst note over the signal tables (cap-bounded)

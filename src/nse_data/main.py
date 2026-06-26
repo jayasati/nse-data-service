@@ -64,6 +64,7 @@ from .research.weekly_positional import register_weekly_positional_job
 from .collectors.global_markets import register_global_markets_job
 from .research.basket_rotation import register_basket_job
 from .research.large_deal_signals import register_large_deal_signals_job
+from .research.desk_note import register_desk_note_job
 from .research.promoter_signals import register_promoter_signals_job
 from .research.signal_paper import register_signal_paper_job
 from .research.smallcap_momentum import register_smallcap_job
@@ -202,6 +203,8 @@ def main() -> int:
     registered.append(register_promoter_signals_job(scheduler, db_path))
     # Forward-validation paper tracks for the deal-flow + promoter signals (22:30).
     registered.append(register_signal_paper_job(scheduler, db_path))
+    # LLM desk-analyst note — grounded daily synthesis over the signal tables (22:45, cap-bounded).
+    registered.append(register_desk_note_job(scheduler, db_path))
     # Intraday high-conviction synthesis engine — 09:10 IST (post pre-open) → conviction_daily.
     registered.append(register_conviction_job(scheduler, db_path))
     # Keep the daily-candle table fresh from the official bhavcopy (19:30 IST, post-EOD).
