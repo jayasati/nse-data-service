@@ -111,8 +111,14 @@ def test_calendar_builds_and_reconciles(conn):
         "SELECT symbol, expected_date, source, status FROM pending_events ORDER BY symbol"
     ).fetchall()
     syms = {r[0] for r in rows}
-    assert "TCS" in syms          # future results meeting
-    assert "NOPE" not in syms     # not a results meeting
+    types = {r[0]: et for r in rows
+             for et in [conn.execute("SELECT event_type FROM pending_events WHERE symbol=?",
+                                      (r[0],)).fetchone()[0]]}
+    assert types.get("TCS") == "result"     # future results meeting
+    # Task 4: the calendar now tracks non-results catalysts too (buyback/dividend/fund-raise/...),
+    # each with its own event_type — so the future buyback meeting IS on the calendar now (it was
+    # deliberately excluded back when the calendar was results-only).
+    assert types.get("NOPE") == "buyback"
     # OLDCO meeting was in the past -> not added as upcoming
     assert "OLDCO" not in syms
 

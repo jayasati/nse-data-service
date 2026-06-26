@@ -16,7 +16,8 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 def conn():
     c = sqlite3.connect(":memory:")
     for m in ("035_indicator_live.sql", "043_indicator_eod_set.sql",
-              "044_intraday_supertrend_voldelta.sql", "070_pre_event_psychology.sql"):
+              "044_intraday_supertrend_voldelta.sql", "070_pre_event_psychology.sql",
+              "107_indicator_live_intraday_board.sql"):   # ltp, orb_*, rvol_5m, structure_5m
         c.executescript((MIGRATIONS_DIR / m).read_text())
     yield c
     c.close()

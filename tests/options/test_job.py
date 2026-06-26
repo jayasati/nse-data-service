@@ -17,9 +17,12 @@ def _db():
         "as_of INTEGER, underlying_value REAL, open_interest INTEGER, implied_volatility REAL);"
         "CREATE TABLE options_metrics (symbol TEXT, expiry TEXT, as_of INTEGER, spot REAL, "
         "max_pain REAL, pcr REAL, gex_total REAL, gex_sign TEXT, gex_flip_level REAL, "
+        "call_wall REAL, put_wall REAL, "          # migration 100_options_walls
         "computed_at INTEGER, PRIMARY KEY (symbol, expiry, as_of));"
         "CREATE TABLE market_state (as_of TEXT PRIMARY KEY, gex_total REAL, gex_sign TEXT, "
-        "gex_flip_level REAL);")
+        "gex_flip_level REAL);"
+        "CREATE TABLE iv_daily (as_of_date TEXT, symbol TEXT, atm_iv REAL, spot REAL, "   # migration 102
+        "updated_at INTEGER, PRIMARY KEY (as_of_date, symbol));")
     rows = []
     for strike in (90, 100, 110):
         # some rows carry underlying_value=0 (real-data quirk) — the job must still find spot

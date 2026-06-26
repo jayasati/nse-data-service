@@ -35,6 +35,9 @@ def test_run_intraday_pass_invokes_compute_when_market_open(tmp_path):
         "043_indicator_eod_set.sql", "044_intraday_supertrend_voldelta.sql",
         "066_indicator_expansion.sql", "067_indicator_adx_5m.sql",
         "068_indicator_ema_200.sql", "069_indicator_chop.sql",
+        "070_pre_event_psychology.sql",          # indicator_live psych/pre_event cols
+        "106_indicator_orb_5m.sql",              # indicator_orb_5m table
+        "107_indicator_live_intraday_board.sql", # indicator_live ltp/orb_*/rvol_5m/structure_5m
     ]:
         conn.executescript((migrations / m).read_text())
 

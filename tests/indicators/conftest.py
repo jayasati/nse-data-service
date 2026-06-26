@@ -36,6 +36,9 @@ _INDICATOR_MIGRATIONS = (
     MIGRATIONS_DIR / "067_indicator_adx_5m.sql",
     MIGRATIONS_DIR / "068_indicator_ema_200.sql",
     MIGRATIONS_DIR / "069_indicator_chop.sql",
+    # indicator_live column additions the snapshot writer depends on (both ALTER indicator_live only)
+    MIGRATIONS_DIR / "070_pre_event_psychology.sql",        # pre_event_run_5d/10d, days_to_event, psych_state
+    MIGRATIONS_DIR / "107_indicator_live_intraday_board.sql",  # ltp, orb_high/low/break, rvol_5m, structure_5m
 )
 
 
