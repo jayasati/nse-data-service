@@ -11,3 +11,6 @@ features:
   basket_rotation:      true   # detect correlated sector baskets + promote members (swing)
   # Task 3 — isolated small-cap EOD momentum track (paper-only)
   smallcap_momentum:    true   # EOD small-cap signals + universe_gaps logging (isolated)
+  # V2 signal expansion
+  large_deal_signals:   true   # P2: entity-classify bulk/block deals (FII/MF/insurance)
+  promoter_signals:     true   # P3: insider/promoter buy-strong/sustained/pledge classification
