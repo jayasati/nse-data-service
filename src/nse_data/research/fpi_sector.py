@@ -115,6 +115,48 @@ def rotation(conn: sqlite3.Connection, n: int = 4) -> dict:
             "out_of": [(s, v) for s, v in rows[-n:] if v < 0][::-1]}
 
 
+def _load_sector_map() -> dict:
+    """{NSDL sector name -> [NSE sectoral index names]} from config/fpi_sector_map.yaml."""
+    import pathlib
+    import yaml
+    p = pathlib.Path(__file__).resolve().parents[3] / "config" / "fpi_sector_map.yaml"
+    if not p.exists():
+        return {}
+    return (yaml.safe_load(p.read_text()) or {}).get("sector_to_indices", {})
+
+
+def tag_member_stocks(conn: sqlite3.Connection, min_flow_cr: float = 3000.0) -> dict:
+    """Map the latest fortnight's strong-flow sectors down to member stocks (via NSE sectoral-index
+    membership) and tag each TAILWIND/HEADWIND. Only sectors with |net equity| >= min_flow_cr and a
+    mapped index are tagged. Writes fpi_sector_stock."""
+    d = conn.execute("SELECT MAX(as_of_date) FROM raw_fpi_sector").fetchone()
+    if not d or not d[0]:
+        return {"tagged": 0}
+    as_of = d[0]
+    smap = _load_sector_map()
+    conn.execute("DELETE FROM fpi_sector_stock WHERE as_of_date=?", (as_of,))
+    tagged = 0
+    for sector, net in conn.execute(
+            "SELECT sector, net_equity_cr FROM raw_fpi_sector WHERE as_of_date=? "
+            "AND net_equity_cr IS NOT NULL", (as_of,)):
+        if abs(net) < min_flow_cr or sector not in smap:
+            continue
+        sig = "FPI_SECTOR_TAILWIND" if net > 0 else "FPI_SECTOR_HEADWIND"
+        members: set[str] = set()
+        for idx in smap[sector]:
+            members.update(r[0] for r in conn.execute(
+                "SELECT symbol FROM raw_index_members WHERE index_name=?", (idx,)))
+        for sym in members:
+            conn.execute(
+                "INSERT OR REPLACE INTO fpi_sector_stock (as_of_date, symbol, sector, "
+                "net_equity_cr, signal, created_at) VALUES (?,?,?,?,?,datetime('now'))",
+                (as_of, sym, sector, round(net, 1), sig))
+            tagged += 1
+    conn.commit()
+    log.info("fpi_sector_stock", as_of_date=as_of, tagged=tagged)
+    return {"as_of_date": as_of, "tagged": tagged}
+
+
 def register_fpi_sector_job(scheduler, db_path: str) -> str:
     """Mon & Thu 18:45 IST — fortnightly data updates ~twice monthly; idempotent on as_of_date."""
     from apscheduler.triggers.cron import CronTrigger
@@ -130,6 +172,7 @@ def register_fpi_sector_job(scheduler, db_path: str) -> str:
         conn = open_db(db_path)
         try:
             fetch_and_store(conn)
+            tag_member_stocks(conn)
         except Exception:
             log.exception("fpi_sector_failed")
         finally:

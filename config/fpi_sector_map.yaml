@@ -1,0 +1,16 @@
+# NSDL fortnightly-report sector name → NSE sectoral index/indices (members from raw_index_members).
+# Both sides are NSE taxonomy, so this aligns cleanly. Covers the major sectors (which is where the
+# big FPI flows concentrate); NSDL sectors with no NSE sectoral index (Telecom, Capital Goods,
+# Construction, Chemicals, Services, Media…) are left unmapped rather than force a bad mapping.
+# Member tagging only applies to the liquid index constituents — the tradeable set we'd act on.
+sector_to_indices:
+  "Financial Services":              ["NIFTY FINANCIAL SERVICES", "NIFTY BANK"]
+  "Information Technology":           ["NIFTY IT"]
+  "Automobile and Auto Components":   ["NIFTY AUTO"]
+  "Oil, Gas & Consumable Fuels":      ["NIFTY ENERGY"]
+  "Fast Moving Consumer Goods":       ["NIFTY FMCG"]
+  "Healthcare":                       ["NIFTY PHARMA"]
+  "Metals & Mining":                  ["NIFTY METAL"]
+  "Realty":                           ["NIFTY REALTY"]
+  "Power":                            ["NIFTY ENERGY"]
+  "Utilities":                        ["NIFTY ENERGY"]

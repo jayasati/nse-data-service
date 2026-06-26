@@ -56,6 +56,12 @@ def gather_signals(conn: sqlite3.Connection) -> dict:
         "fpi": _rows(conn, "SELECT net_5d_cr, regime FROM fpi_flow "
                            "ORDER BY as_of_date DESC LIMIT 1"),
         "fpi_sector": fpi_sector,
+        "fpi_headwind": _rows(conn, "SELECT DISTINCT symbol FROM fpi_sector_stock WHERE "
+                                    "as_of_date=(SELECT MAX(as_of_date) FROM fpi_sector_stock) "
+                                    "AND signal='FPI_SECTOR_HEADWIND' LIMIT 14"),
+        "fpi_tailwind": _rows(conn, "SELECT DISTINCT symbol FROM fpi_sector_stock WHERE "
+                                    "as_of_date=(SELECT MAX(as_of_date) FROM fpi_sector_stock) "
+                                    "AND signal='FPI_SECTOR_TAILWIND' LIMIT 14"),
         "baskets": _rows(conn, "SELECT basket_name, signal_type, confidence, advancing, declining "
                                "FROM basket_signals WHERE signal_date=(SELECT MAX(signal_date) "
                                "FROM basket_signals) ORDER BY confidence DESC"),
@@ -102,6 +108,11 @@ def _fmt_signals(sig: dict) -> tuple[str, int]:
         into = ", ".join(f"{s}(+{v:.0f})" for s, v in fs.get("into", []))
         out = ", ".join(f"{s}({v:.0f})" for s, v in fs.get("out_of", []))
         L.append(f"FPI SECTOR ROTATION ({fs['as_of_date']}): into [{into}] · out of [{out}]")
+    hw = [r["symbol"] for r in sig.get("fpi_headwind", [])]
+    tw = [r["symbol"] for r in sig.get("fpi_tailwind", [])]
+    if hw or tw:
+        L.append(f"FPI SECTOR-FLOW NAMES — headwind (outflow sector): {', '.join(hw) or '—'}"
+                 f"  |  tailwind: {', '.join(tw) or '—'}")
     def add(title, rows, render):
         nonlocal n
         if rows:

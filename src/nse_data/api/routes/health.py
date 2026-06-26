@@ -122,6 +122,10 @@ def api_health_signals_today(conn=Depends(get_conn)) -> JSONResponse:
         "universe_gaps": _rows(
             "SELECT symbol, move_pct, reason_out FROM universe_gaps WHERE gap_date=? "
             "ORDER BY ABS(move_pct) DESC LIMIT 20", (today,)),
+        "fpi_sector_stock": _rows(
+            "SELECT symbol, sector, signal FROM fpi_sector_stock "
+            "WHERE as_of_date=(SELECT MAX(as_of_date) FROM fpi_sector_stock) "
+            "ORDER BY signal, symbol LIMIT 60"),
     })
 
 
