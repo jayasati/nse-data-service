@@ -76,6 +76,55 @@ def api_health_paper_loop(conn=Depends(get_conn)) -> JSONResponse:
     })
 
 
+@router.get("/api/health/all_collectors")
+def api_health_all_collectors(conn=Depends(get_conn)) -> JSONResponse:
+    """Collector freshness across the board — same domain report as /api/health, surfaced under
+    the spec's expected path."""
+    endpoints = load_endpoints(ENDPOINTS_PATH)
+    return JSONResponse(health.build_report(conn, endpoints))
+
+
+@router.get("/api/health/signals_today")
+def api_health_signals_today(conn=Depends(get_conn)) -> JSONResponse:
+    """Everything the signal layers flagged today, in one place. Defensive — a table that
+    doesn't exist yet (e.g. before P2/P3 land) just yields an empty list, never a 500."""
+    def _rows(sql, args=()):
+        try:
+            cur = conn.execute(sql, args)
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+        except Exception:  # noqa: BLE001 — table missing / schema drift → empty
+            return []
+
+    import datetime as _dt
+    today = _dt.date.today().isoformat()
+    return JSONResponse({
+        "date": today,
+        "basket_rotation": _rows(
+            "SELECT basket_name, signal_type, confidence, advancing, declining "
+            "FROM basket_signals WHERE signal_date=? ORDER BY confidence DESC", (today,)),
+        "events_upcoming_3d": _rows(
+            "SELECT symbol, event_type, expected_date, confidence FROM pending_events "
+            "WHERE status='upcoming' AND expected_date>? AND expected_date<=date(?, '+3 day') "
+            "ORDER BY expected_date LIMIT 30", (today, today)),
+        "smallcap_signals": _rows(
+            "SELECT symbol, move_pct, vol_ratio, is_52w_breakout, signal FROM smallcap_signals "
+            "WHERE signal_date=? AND signal IS NOT NULL ORDER BY move_pct DESC", (today,)),
+        "options_notable": _rows(
+            "SELECT symbol, pcr, max_pain, gex_sign FROM options_metrics "
+            "WHERE as_of>=strftime('%s',?) ORDER BY symbol LIMIT 30", (today,)),
+        "large_deal_signals": _rows(            # P2 — empty until built
+            "SELECT symbol, entity_type, txn_type, value_cr, signal_type FROM large_deal_signals "
+            "WHERE deal_date=? AND signal_type IS NOT NULL ORDER BY value_cr DESC", (today,)),
+        "promoter_signals": _rows(              # P3 — empty until built
+            "SELECT symbol, signal_type, holding_change_pct, horizon_days FROM promoter_signals "
+            "WHERE filing_date=? AND signal_type NOT IN ('NEUTRAL','SKIP')", (today,)),
+        "universe_gaps": _rows(
+            "SELECT symbol, move_pct, reason_out FROM universe_gaps WHERE gap_date=? "
+            "ORDER BY ABS(move_pct) DESC LIMIT 20", (today,)),
+    })
+
+
 @router.get("/api/table/{name}")
 def api_table(name: str, limit: int = Query(50, ge=1, le=500),
               repo: StockRepository = Depends(get_repo)) -> JSONResponse:
