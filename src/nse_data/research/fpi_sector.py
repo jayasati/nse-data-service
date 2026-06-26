@@ -37,7 +37,9 @@ class FpiSectorParseError(Exception):
 
 
 def _cells(tr: str) -> list[str]:
-    return [re.sub(r"<[^>]+>", "", x).replace("&nbsp;", " ").strip() for x in _CELL.findall(tr)]
+    import html as _html
+    return [_html.unescape(re.sub(r"<[^>]+>", "", x)).replace("\xa0", " ").strip()
+            for x in _CELL.findall(tr)]
 
 
 def _num(s: str) -> float | None:
