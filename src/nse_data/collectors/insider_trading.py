@@ -29,13 +29,35 @@ class InsiderTrading(EventCollector):
     name = "insider_trading"
     table = "raw_insider_trading"
 
+    universe_path: str = "config/universe.yaml"
+
+    def _load_symbols(self) -> list[str]:
+        """Per-symbol fan-out. NSE's corporates-pit all-equities feed is DEAD (200 OK but
+        data=[]); only ?symbol=<SYM> returns rows. Query the F&O + watchlist universe."""
+        try:
+            import yaml
+            with open(self.universe_path) as f:
+                cfg = yaml.safe_load(f) or {}
+        except Exception:  # noqa: BLE001
+            return []
+        syms: set[str] = set()
+        oc = cfg.get("option_chain") or {}
+        if isinstance(oc, dict):
+            for v in oc.values():
+                if isinstance(v, list):
+                    syms.update(s for s in v if isinstance(s, str))
+        wl = cfg.get("watchlist")
+        if isinstance(wl, list):
+            syms.update(s for s in wl if isinstance(s, str))
+        return sorted(syms)
+
     def plan(self, context: Mapping[str, Any] | None = None) -> Sequence[Request]:
         return [Request(
             path_or_url="/api/corporates-pit",
-            params={"index": "equities"},
+            params={"index": "equities", "symbol": sym},
             referer=f"{NSE_BASE}/companies-listing/corporate-filings-insider-trading",
             response_type="json",
-        )]
+        ) for sym in self._load_symbols()]
 
     def normalize(self, data: Any, request: Request) -> list[Row]:
         # NSE wraps under 'data' key, but also returns a bare list sometimes
@@ -45,11 +67,12 @@ class InsiderTrading(EventCollector):
             return []
 
         now = int(time.time())
+        req_symbol = (request.params or {}).get("symbol")
         rows: list[Row] = []
         for item in data:
             if not isinstance(item, dict):
                 continue
-            symbol = (item.get("symbol") or "").strip()
+            symbol = (item.get("symbol") or req_symbol or "").strip()
             if not symbol:
                 continue
 
@@ -62,11 +85,13 @@ class InsiderTrading(EventCollector):
                 "transaction_type":    item.get("tdpTransactionType"),
                 "no_of_securities":    _i(item.get("secAcq")),
                 "value_in_rupees":     _f(item.get("secVal")),
-                "holding_before":      _i(item.get("befAcqSharesNo")),
-                "holding_after":       _i(item.get("afterAcqSharesNo")),
+                # holding_before/after carry the % of capital (befAcqSharesPer/afterAcqSharesPer),
+                # which is what the promoter-signal layer's %-thresholds need — NOT the share count.
+                "holding_before":      _f(item.get("befAcqSharesPer")),
+                "holding_after":       _f(item.get("afterAcqSharesPer")),
                 "period_from":         item.get("acquisitionFrom"),
                 "period_to":           item.get("acquisitionTo"),
-                "intimation_date":     item.get("tdpDate") or item.get("date"),
+                "intimation_date":     _nse_date(item.get("tdpDate") or item.get("date")),
                 "mode_of_acquisition": item.get("acquisitionMode"),
                 "derivative_contract": item.get("derivativeType"),
                 "attachment_url":      item.get("xbrl") or item.get("attchmntFile"),
@@ -81,6 +106,21 @@ class InsiderTrading(EventCollector):
             f"{row.get('no_of_securities') or ''}"
         )
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
+def _nse_date(s):
+    """NSE filing date ('18-Feb-2026 19:06' / '18-02-2026' / ISO) → 'YYYY-MM-DD' so the
+    promoter-signal layer's date math works. Returns the raw string if unparseable."""
+    if not s:
+        return None
+    import datetime as _dt
+    head = str(s).split(" ")[0].strip()
+    for fmt in ("%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d"):
+        try:
+            return _dt.datetime.strptime(head, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return head
 
 
 def _f(v):

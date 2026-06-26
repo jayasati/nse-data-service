@@ -174,7 +174,9 @@ def test_insider_trading_handles_empty_payload(db):
         "/api/corporates-pit": {"data": [], "acqNameList": []}
     })
     report = InsiderTrading().run(session, db)
-    assert report.succeeded == 1
+    # now per-symbol: one probe per universe symbol, all succeed with empty payloads
+    assert report.fetched > 0
+    assert report.succeeded == report.fetched
     assert report.rows_seen == 0
     assert report.persist.inserted == 0
     assert report.failed == 0
