@@ -103,13 +103,16 @@ def _fmt_signals(sig: dict) -> tuple[str, int]:
 
 def generate(conn: sqlite3.Connection, llm) -> dict:
     """Build the grounded prompt, call the LLM (bounded), return {note, cost_usd, n_signals}."""
+    from ..scheduler import market_hours
     sig = gather_signals(conn)
     block, n = _fmt_signals(sig)
     if n == 0:
         return {"note": None, "cost_usd": 0.0, "n_signals": 0, "skipped": "no signals"}
+    today = market_hours.now_ist().strftime("%A %d %B %Y")  # ground the date — don't let it invent one
     res = llm.chat_completion(
         messages=[{"role": "system", "content": SYSTEM_PROMPT},
-                  {"role": "user", "content": f"Today's structured signals:\n\n{block}"}],
+                  {"role": "user", "content": f"Date: {today} (IST). Use THIS date in the note "
+                   f"header — do not invent a date.\n\nToday's structured signals:\n\n{block}"}],
         max_tokens=900, temperature=0.3)
     if not res.success:
         log.info("desk_note_llm_failed", error=res.error)
