@@ -96,13 +96,22 @@ def build(conn: sqlite3.Connection, symbols=None, *, throttle: float = 0.4, limi
                 empty += 1
                 continue
             f = rec["fields"]
-            conn.execute(
-                f"INSERT OR REPLACE INTO annual_financials (symbol, scope, fy_ending, "
-                f"{','.join(_FIELDS)}, xbrl_url, captured_at) "
-                f"VALUES (?,?,?,{','.join('?' * len(_FIELDS))},?,datetime('now'))",
-                (sym, rec["scope"], rec["period_ending"], *[f.get(k) for k in _FIELDS], url))
-            conn.commit()                       # per-row: short locks, partial progress saved
-            written += 1
+            row = (sym, rec["scope"], rec["period_ending"], *[f.get(k) for k in _FIELDS], url)
+            sql = (f"INSERT OR REPLACE INTO annual_financials (symbol, scope, fy_ending, "
+                   f"{','.join(_FIELDS)}, xbrl_url, captured_at) "
+                   f"VALUES (?,?,?,{','.join('?' * len(_FIELDS))},?,datetime('now'))")
+            for attempt in range(5):            # ride out lock contention with the collector
+                try:
+                    conn.execute(sql, row)
+                    conn.commit()
+                    written += 1
+                    break
+                except sqlite3.OperationalError as e:
+                    if "locked" in str(e) and attempt < 4:
+                        time.sleep(2)
+                        continue
+                    failed += 1
+                    break
             if throttle:
                 time.sleep(throttle)
     rep = {"filings": len(filings), "written": written, "empty": empty, "failed": failed}
