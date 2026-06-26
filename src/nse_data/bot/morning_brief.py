@@ -243,9 +243,11 @@ def _inst_deals(conn: sqlite3.Connection) -> str:
     """Recent institutional (FII/MF/insurance) bulk-block buys — disclosed accumulation."""
     try:
         rows = conn.execute(
-            "SELECT symbol, entity_type, value_cr FROM large_deal_signals "
+            "SELECT symbol, GROUP_CONCAT(DISTINCT entity_type) ents, SUM(value_cr) v "
+            "FROM large_deal_signals "
             "WHERE signal_type IN ('INSTITUTIONAL_BUY','INSTITUTIONAL_BUY_LARGE') "
-            "AND created_at >= datetime('now','-2 day') ORDER BY value_cr DESC LIMIT 6").fetchall()
+            "AND created_at >= datetime('now','-2 day') "
+            "GROUP BY symbol ORDER BY v DESC LIMIT 6").fetchall()
     except sqlite3.OperationalError:
         return ""
     if not rows:
@@ -256,17 +258,20 @@ def _inst_deals(conn: sqlite3.Connection) -> str:
 
 def _promoter_buys(conn: sqlite3.Connection) -> str:
     """Recent promoter accumulation (buy/strong/sustained) — swing signal, not intraday."""
+    # Show the signal TIER, not the raw %: residual data-quality noise in NSE's holding fields
+    # still produces some implausible mid-teens % (e.g. CANBK), so a number here would mislead.
+    tier = {"PROMOTER_SUSTAINED": "sustained", "PROMOTER_BUY_STRONG": "strong", "PROMOTER_BUY": "buy"}
     try:
         rows = conn.execute(
-            "SELECT symbol, signal_type, holding_change_pct FROM promoter_signals "
+            "SELECT symbol, MIN(signal_type) FROM promoter_signals "
             "WHERE signal_type IN ('PROMOTER_BUY','PROMOTER_BUY_STRONG','PROMOTER_SUSTAINED') "
             "AND created_at >= datetime('now','-2 day') "
-            "ORDER BY ABS(COALESCE(holding_change_pct,0)) DESC LIMIT 6").fetchall()
+            "GROUP BY symbol ORDER BY symbol LIMIT 8").fetchall()
     except sqlite3.OperationalError:
         return ""
     if not rows:
         return ""
-    items = ", ".join(f"{s}({c:+.2f}%)" if c is not None else s for s, st, c in rows)
+    items = ", ".join(f"{s}({tier.get(st, '?')})" for s, st in rows)
     return f"Promoter buys: {items}\n"
 
 
