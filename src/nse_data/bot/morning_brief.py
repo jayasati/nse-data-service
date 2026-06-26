@@ -337,15 +337,66 @@ def _fmt(v: float | None) -> str:
 # Send + scheduling
 # ============================================================================
 
+def persist_premarket_snapshot(conn: sqlite3.Connection, now: datetime | None = None) -> bool:
+    """P5 — historize the pre-market macro state the brief assembles (reuses the same readers;
+    no new feeds). Best-effort: never raises. Returns True if a row was written."""
+    if not conn.execute("SELECT name FROM sqlite_master WHERE type='table' "
+                        "AND name='premarket_snapshots'").fetchone():
+        return False
+    now = now or market_hours.now_ist()
+    gift_pct, gift_val = _gift(conn)
+    gift_sig = ("GAP_UP" if (gift_pct or 0) > 0.4 else "GAP_DOWN" if (gift_pct or 0) < -0.4
+                else "FLAT") if gift_pct is not None else None
+    brent, brent_p = _macro(conn, "BRENT")
+    gold, gold_p = _macro(conn, "GOLD")
+    usdinr, usdinr_p = _macro(conn, "USDINR")
+    copper, copper_p = _macro(conn, "COPPER")
+    alu, alu_p = _macro(conn, "ALUMINIUM")
+    _, sp = _macro(conn, "SP500")
+    _, nq = _macro(conn, "NASDAQ")
+    _, dow = _macro(conn, "DOW")
+    vix_row = conn.execute("SELECT vix FROM raw_india_vix ORDER BY as_of DESC LIMIT 1").fetchone()
+    vix = vix_row[0] if vix_row else None
+    vix_sig = ("EXTREME_FEAR" if (vix or 0) > 28 else "FEAR" if (vix or 0) > 20 else "CALM") \
+        if vix is not None else None
+    regime = (latest_market_state(conn) or {}).get("overall_regime")
+    # simple macro bias from the few clean signals we have
+    bull = bear = 0
+    if gift_sig == "GAP_UP": bull += 2
+    if gift_sig == "GAP_DOWN": bear += 2
+    if (sp or 0) > 0.5: bull += 1
+    if (sp or 0) < -0.5: bear += 1
+    if vix_sig == "EXTREME_FEAR": bear += 3
+    elif vix_sig == "FEAR": bear += 1
+    elif vix_sig == "CALM": bull += 1
+    macro_bias = ("BULLISH" if bull > bear + 1 else "BEARISH" if bear > bull + 1
+                  else "MIXED" if bull and bear else "NEUTRAL")
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO premarket_snapshots (snapshot_date, captured_at, gift_nifty_pct, "
+            "gift_nifty_level, gift_signal, brent, brent_pct, gold, gold_pct, usdinr, usdinr_pct, "
+            "copper, copper_pct, aluminium, aluminium_pct, sp500_pct, nasdaq_pct, dow_pct, india_vix, "
+            "india_vix_signal, regime, macro_bias) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (now.date().isoformat(), now.isoformat(), gift_pct, gift_val, gift_sig, brent, brent_p,
+             gold, gold_p, usdinr, usdinr_p, copper, copper_p, alu, alu_p, sp, nq, dow, vix, vix_sig,
+             regime, macro_bias))
+        conn.commit()
+        return True
+    except Exception:  # noqa: BLE001
+        log.exception("premarket_snapshot_persist_failed")
+        return False
+
+
 def send_morning_brief(db_path: str, *, sender=send_telegram) -> dict:
     token, chat_id = load_telegram_config()
     conn = open_db(db_path)
     try:
         text = build_brief(conn)
+        persisted = persist_premarket_snapshot(conn)
     finally:
         conn.close()
     sent = sender(token, chat_id, text, channel="digest")
-    return {"sent": sent, "chars": len(text)}
+    return {"sent": sent, "chars": len(text), "premarket_persisted": persisted}
 
 
 def register_morning_brief(scheduler: BlockingScheduler, db_path: str) -> str:
