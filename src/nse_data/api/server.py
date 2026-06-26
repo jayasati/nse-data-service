@@ -51,6 +51,7 @@ from .routes import intraday as intraday_routes
 from .routes import intraday_conviction as intraday_conviction_routes
 from .routes import llm as llm_routes
 from .routes import market as market_routes
+from .routes import prebuy as prebuy_routes
 from .routes import rankings as rankings_routes
 from .routes import research as research_routes
 from .routes import stocks as stocks_routes
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(conviction_routes.router)      # /api/conviction (13-stage synthesis)
     app.include_router(intraday_routes.router)        # /api/intraday (live VWAP/ORB/rvol board)
     app.include_router(intraday_conviction_routes.router)  # /api/intraday-conviction (momentum scanner)
+    app.include_router(prebuy_routes.router)          # /api/prebuy/{symbol} (per-stock synthesis card)
     app.mount("/static", RevalidatingStatic(directory=str(STATIC_DIR)), name="static")
     return app
 
