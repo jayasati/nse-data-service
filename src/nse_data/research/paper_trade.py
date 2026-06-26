@@ -511,6 +511,45 @@ def run_paper_trade_db(db_path: str, *, strategies=None,
     return compact
 
 
+def _ops_alert(text: str) -> None:
+    """Fire an ops/monitoring alert (ntfy 'market' channel — reliable in India). Best-effort."""
+    try:
+        from ..bot.notify import ntfy_send
+        ntfy_send(text, channel="market", title="paper-loop monitor")
+    except Exception:
+        log.exception("paper_trade_ops_alert_failed")
+
+
+def _write_heartbeat(db_path: str, status: str, detail: str, items_booked: int | None) -> int:
+    """Upsert job_heartbeat for the paper-trade job. Maintains a consecutive-zero counter
+    over OK runs (reset by any run that books >0). Returns the new consecutive_zero value.
+    Best-effort: never raise (the heartbeat must not be able to break the job)."""
+    now = _dt.datetime.now(_dt.timezone.utc).isoformat()
+    try:
+        with open_db(db_path) as conn:
+            row = conn.execute(
+                "SELECT consecutive_zero FROM job_heartbeat WHERE job_id=?", (JOB_ID,)).fetchone()
+            prev_zero = (row[0] or 0) if row else 0
+            if status != "ok":
+                czero = prev_zero                       # don't advance on skip/fail
+            elif (items_booked or 0) > 0:
+                czero = 0
+            else:
+                czero = prev_zero + 1
+            conn.execute(
+                "INSERT INTO job_heartbeat (job_id, last_run_utc, status, detail, items_booked, "
+                "consecutive_zero, updated_at) VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(job_id) DO UPDATE SET last_run_utc=excluded.last_run_utc, "
+                "status=excluded.status, detail=excluded.detail, items_booked=excluded.items_booked, "
+                "consecutive_zero=excluded.consecutive_zero, updated_at=excluded.updated_at",
+                (JOB_ID, now, status, detail[:500], items_booked, czero, now))
+            conn.commit()
+            return czero
+    except Exception:
+        log.exception("paper_trade_heartbeat_failed")
+        return 0
+
+
 def register_paper_trade_job(scheduler: BlockingScheduler, db_path: str, *,
                              strategies=None, params: PaperTradeParams | None = None) -> str:
     """Attach the 19:15-IST daily paper-trade job. Trading-day gated.
@@ -518,16 +557,31 @@ def register_paper_trade_job(scheduler: BlockingScheduler, db_path: str, *,
     Runs after the 16:00 EOD candle cron and the 18:45 factor snapshot so each
     strategy's forward paper_book track record advances once per session with no
     human in the loop (P4 — accumulate a quarter, then promote).
+
+    Self-monitoring: every run stamps job_heartbeat (powers /api/health/paper_loop) and,
+    if the loop books 0 trades for 2 consecutive sessions OR throws, fires an ops alert —
+    so a silent stall (like the null-stop crash that froze 23-25 Jun) can't hide again.
     """
     def _tick():
         if not market_hours.is_trading_day(market_hours.now_ist().date()):
             log.info("paper_trade_skipped_non_trading_day")
+            _write_heartbeat(db_path, "skipped_non_trading_day", "non-trading day", None)
             return
         try:
             report = run_paper_trade_db(db_path, strategies=strategies, params=params)
             log.info("paper_trade", **report)
-        except Exception:
+            booked = sum(s.get("buys", 0) for s in report.get("strategies", {}).values())
+            detail = "  ".join(f"{k}:{v['buys']}b/{v['sells']}s/{v['open']}o"
+                               for k, v in report.get("strategies", {}).items()) or "no strategies"
+            czero = _write_heartbeat(db_path, "ok", detail, booked)
+            if czero >= 2:
+                _ops_alert(f"⚠️ Paper loop booked 0 trades for {czero} consecutive sessions. "
+                           f"Last run: {detail}. Check /api/health/paper_loop.")
+        except Exception as exc:
             log.exception("paper_trade_failed")
+            _write_heartbeat(db_path, "failed", f"{type(exc).__name__}: {exc}", None)
+            _ops_alert(f"🛑 Paper trade job FAILED: {type(exc).__name__}: {exc}. "
+                       f"Forward validation is dark until fixed.")
 
     scheduler.add_job(
         _tick,
