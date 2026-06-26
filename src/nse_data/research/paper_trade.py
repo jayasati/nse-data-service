@@ -271,8 +271,9 @@ def _run_strategy(conn, key, label, score, today, params: PaperTradeParams,
         chand = chand_of(sym, pdir)
         trails = [s for s in (trail_stop, chand) if s is not None]
         eff_trail = (max(trails) if pdir == "long" else min(trails)) if trails else None
-        adverse_stop = (px <= stop_px) if pdir == "long" else (px >= stop_px)
-        hit_init = (stop_px is not None and px is not None and adverse_stop) or gross <= params.stop
+        adverse_stop = (px is not None and stop_px is not None and
+                        ((px <= stop_px) if pdir == "long" else (px >= stop_px)))
+        hit_init = adverse_stop or gross <= params.stop
         hit_trail = (eff_trail is not None and px is not None and
                      ((px <= eff_trail) if pdir == "long" else (px >= eff_trail)))
         reason = ("dropped" if sc is None else "t_out" if sc < params.t_out
