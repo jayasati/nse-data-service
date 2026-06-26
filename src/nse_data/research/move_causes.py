@@ -200,6 +200,19 @@ def find_cause(conn, llm, client, *, symbol: str, date: str, direction: str,
     mkt_cand, regime = cause_engine.market_context(conn, symbol, date, move_pct)
     if mkt_cand:
         candidates.append(mkt_cand)
+    # Task 2 — if the symbol's macro-theme basket rotated this day, hand the LLM that context
+    # so a correlated move is attributed to the theme, not 'unknown'.
+    try:
+        from .basket_rotation import active_basket_for
+        b = active_basket_for(conn, symbol, date)
+        if b:
+            candidates.append({
+                "source": "basket", "cause_type": "sector", "event_date": date,
+                "summary": f"{b['basket']} basket {b['signal_type']} — driver {b['driver']} "
+                           f"{b['driver_move_pct']:+.1f}%, breadth-confidence {b['confidence']}",
+                "url": None, "weight": 7})
+    except Exception:  # noqa: BLE001
+        pass
     # Tier 2 — external, date-scoped (≤ move date). Two scoped news passes:
     #   general ("share price") + regulatory ("SEBI"), since SEBI's own site is
     #   not symbol-indexed. NSE direct API is Akamai-blocked → its data comes via

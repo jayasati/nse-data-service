@@ -7,3 +7,5 @@ features:
   pre_event_promotion:  true   # add stocks with an event in next 1-3 trading days to watchlist
   # Task 5 — news long-tail coverage
   move_triggered_news:  true   # >5% intraday move → retroactively pull news into the corpus
+  # Task 2 — macro-theme / basket-rotation detector
+  basket_rotation:      true   # detect correlated sector baskets + promote members (swing)

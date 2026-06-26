@@ -62,6 +62,7 @@ from .smart_money.short_squeeze import register_short_squeeze_job
 # from .strategy.daily_sweep.live import register_daily_sweep_job
 from .research.weekly_positional import register_weekly_positional_job
 from .collectors.global_markets import register_global_markets_job
+from .research.basket_rotation import register_basket_job
 from .research.news_engine import register_news_score_job
 from .research.news_store import register_move_news_job
 from .research.conviction import register_conviction_job
@@ -187,6 +188,8 @@ def main() -> int:
     registered.append(register_news_score_job(scheduler, db_path))
     # Task 5B — retroactively fetch news for the day's >5% movers (every 15 min, mkt hours).
     registered.append(register_move_news_job(scheduler, db_path))
+    # Task 2 — macro-theme / basket-rotation detector (every 15 min, mkt hours).
+    registered.append(register_basket_job(scheduler, db_path))
     # Intraday high-conviction synthesis engine — 09:10 IST (post pre-open) → conviction_daily.
     registered.append(register_conviction_job(scheduler, db_path))
     # Keep the daily-candle table fresh from the official bhavcopy (19:30 IST, post-EOD).

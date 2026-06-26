@@ -1,0 +1,36 @@
+# Macro-theme baskets for the basket-rotation detector (Task 2). On 25-Jun the alpha was
+# CORRELATED baskets moving on one macro driver, not 17 independent stories. This declares
+# the baskets + their driver so the detector can say "the auto-ancillary basket is moving as
+# one regime" and flag members for SWING (1-5 day) positioning — NOT intraday scalping.
+#
+# driver: exactly one of
+#   driver_index: <raw_indices name>   — intraday (~10-min), the preferred/reliable driver
+#   driver_macro: brent | usdinr       — DAILY only (raw_macro_market); coarser, fires less often
+# direction:
+#   co-directional — members move WITH the driver (basket up when driver up)
+#   inverse        — members move AGAINST the driver (e.g. airlines up when crude down)
+baskets:
+  auto_ancillary:
+    driver_index: "NIFTY AUTO"
+    direction: co-directional
+    members: [MSUMI, MOTHERSON, TVSMOTOR, BOSCHLTD, BHARATFORG, SONACOMS, UNOMINDA, ENDURANCE]
+
+  metals_base:
+    driver_index: "NIFTY METAL"
+    direction: co-directional
+    members: [HINDZINC, VEDL, HINDALCO, JINDALSTEL, JSWSTEEL, TATASTEEL, NATIONALUM, SAIL, NMDC]
+
+  metals_inverse_dxy:
+    driver_macro: usdinr        # gold financiers fall when the rupee weakens / USD strengthens
+    direction: inverse
+    members: [MUTHOOTFIN, MANAPPURAM]
+
+  aviation:
+    driver_macro: brent         # airlines benefit when crude falls (ATF is the biggest cost)
+    direction: inverse
+    members: [INDIGO, SPICEJET]
+
+  energy_upstream:
+    driver_macro: brent         # upstream producers' realisations fall with crude
+    direction: co-directional
+    members: [ONGC, OIL]
