@@ -1,0 +1,7 @@
+# Per-feature on/off toggles for collectors/jobs added during the 25-Jun post-mortem build.
+# Missing file or missing key → feature defaults ON (see _feature_enabled / loaders).
+# Flip to false to disable without a code change + redeploy.
+features:
+  # Task 4 — forward events calendar
+  events_extended:      true   # ingest non-results board catalysts, ex-dates, manual overrides
+  pre_event_promotion:  true   # add stocks with an event in next 1-3 trading days to watchlist

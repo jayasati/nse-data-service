@@ -1,0 +1,17 @@
+# Manually-curated scheduled catalysts the structured NSE/BSE feeds don't carry a clean
+# forward date for — chiefly investor days, capital-markets days, analyst meets, and
+# management guidance events. These feed the forward events calendar (events/calendar.py
+# build_from_overrides) and the pre-event watchlist promotion.
+#
+# RULES (non-negotiable): only enter events with a real, sourced date. Never invent one.
+# Remove rows after the event has passed (the calendar expires them automatically anyway).
+#
+# event_type: investor_day | analyst_meet | capital_markets_day | guidance | agm | other
+# confidence: confirmed (sourced exact date) | estimated (approximate)
+events:
+  - symbol: TMCV
+    event_date: 2026-06-23
+    event_type: investor_day
+    title: "Tata Motors Commercial Vehicles — first standalone Investor Day (FY28 targets)"
+    confidence: confirmed
+    source: "company filing / broker notes (JM Financial 24-Jun)"

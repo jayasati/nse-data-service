@@ -203,6 +203,24 @@ def _results_today(conn: sqlite3.Connection, today: date) -> str:
     return f"Results today: {', '.join(r[0] for r in rows)}\n" if rows else ""
 
 
+def _events_in_3d(conn: sqlite3.Connection, today: date) -> str:
+    """Scheduled non-results catalysts (investor days, ex-dates, buybacks, fund-raises) in the
+    next 3 days — pre-event flags for human review (no conviction direction implied)."""
+    try:
+        rows = conn.execute(
+            "SELECT symbol, event_type, expected_date FROM pending_events "
+            "WHERE status='upcoming' AND event_type != 'result' "
+            "AND expected_date > ? AND expected_date <= date(?, '+3 day') "
+            "ORDER BY expected_date, symbol LIMIT 15",
+            (today.isoformat(), today.isoformat())).fetchall()
+    except sqlite3.OperationalError:
+        return ""
+    if not rows:
+        return ""
+    items = ", ".join(f"{s} ({et} {ed[5:]})" for s, et, ed in rows)
+    return f"Events ≤3d: {items}\n"
+
+
 def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
     now = now or market_hours.now_ist()
     today = now.date()
@@ -255,6 +273,7 @@ def build_brief(conn: sqlite3.Connection, now: datetime | None = None) -> str:
         f"{_overnight_ratings(conn, now)}"
         f"{_psych_watch(conn)}\n"
         f"{_results_today(conn, today)}"
+        f"{_events_in_3d(conn, today)}"
         f"Expiry: {expiry_note}\n"
         f"Nifty support: {s1} | Resistance: {r1}\n"
         "━━━━━━━━━━━━━━━━━━━"
