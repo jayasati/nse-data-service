@@ -44,8 +44,44 @@ def _pending_filings(conn, symbols=None) -> list[tuple]:
     return list(best.values())
 
 
-def build(conn: sqlite3.Connection, symbols=None, *, throttle: float = 0.4, limit=None) -> dict:
-    filings = _pending_filings(conn, symbols)
+_INTEGRATED_PATH = "/api/integrated-filing-results"
+_INTEGRATED_REF = ("https://www.nseindia.com/companies-listing/"
+                   "corporate-filings-integrated-filing")
+# FY2025 audited annuals are filed within ~60d of the 31-Mar-2025 year-end; these windows (on the
+# 500-row-capped API) cover that season. Historical prior-year basis for the Piotroski.
+FY2025_WINDOWS = [("01-04-2025", "15-05-2025"), ("16-05-2025", "31-05-2025"),
+                  ("01-06-2025", "20-06-2025"), ("21-06-2025", "15-07-2025")]
+
+
+def fetch_api_filings(sm, windows, qe_date: str) -> list[tuple]:
+    """Scan integrated-filing API date windows → [(symbol, is_consolidated, xbrl_url, qe)] for the
+    given period-end, audited, deduped per symbol (prefer consolidated). For historical backfill."""
+    best: dict[str, tuple] = {}
+    for fd, td in windows:
+        try:
+            r = sm.get_json("integrated_filings", _INTEGRATED_PATH, _INTEGRATED_REF,
+                            {"type": "Integrated Filing- Financials", "size": "500",
+                             "from_date": fd, "to_date": td})
+        except Exception:  # noqa: BLE001
+            continue
+        for d in (r.get("data") if isinstance(r, dict) else r) or []:
+            if not isinstance(d, dict) or str(d.get("qe_Date")) != qe_date:
+                continue
+            if str(d.get("audited")).lower() != "audited":
+                continue
+            sym, url = (d.get("symbol") or "").strip(), d.get("xbrl")
+            if not sym or not url:
+                continue
+            is_cons = str(d.get("consolidated")).lower() in ("yes", "true", "1", "consolidated")
+            if sym not in best or (is_cons and not best[sym][1]):
+                best[sym] = (sym, is_cons, url, qe_date)
+    return list(best.values())
+
+
+def build(conn: sqlite3.Connection, symbols=None, *, throttle: float = 0.4, limit=None,
+          filings=None) -> dict:
+    if filings is None:
+        filings = _pending_filings(conn, symbols)
     if limit:
         filings = filings[:limit]
     written = failed = empty = 0
