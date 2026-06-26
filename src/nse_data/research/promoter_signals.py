@@ -90,14 +90,14 @@ def _cumulative_buy_30d(conn, symbol: str, upto: str) -> float:
     """Sum of promoter BUY holding-change% for the symbol over the trailing 30 days."""
     since = (_dt.date.fromisoformat(upto[:10]) - _dt.timedelta(days=30)).isoformat()
     rows = conn.execute(
-        "SELECT acquirer_category, transaction_type, mode_of_acquisition, "
-        "holding_before, holding_after FROM raw_insider_trading "
+        "SELECT acquirer_category, transaction_type, mode_of_acquisition, holding_change_pct "
+        "FROM raw_insider_trading "
         "WHERE symbol=? AND intimation_date>=? AND intimation_date<=?", (symbol, since, upto)).fetchall()
     total = 0.0
-    for cat, txn, mode, hb, ha in rows:
+    for cat, txn, mode, change in rows:
         if _acquirer_type(cat) in ("PROMOTER", "PROMOTER_GROUP") and _txn_kind(txn, mode) == "BUY":
-            if hb is not None and ha is not None:
-                total += max(0.0, ha - hb)
+            if change is not None and abs(change) <= SANITY_MAX_CHANGE_PCT:
+                total += max(0.0, change)
     return round(total, 4)
 
 
@@ -113,15 +113,15 @@ def run_pass(conn: sqlite3.Connection, date: str | None = None) -> dict:
         return {"filings": 0, "signals": 0, "note": "no insider data (feed empty)"}
     rows = conn.execute(
         "SELECT symbol, acquirer_name, acquirer_category, transaction_type, mode_of_acquisition, "
-        "holding_before, holding_after FROM raw_insider_trading WHERE intimation_date=?",
+        "holding_change_pct FROM raw_insider_trading WHERE intimation_date=?",
         (date,)).fetchall()
     signals = 0
-    for sym, acq, cat, txn, mode, hb, ha in rows:
+    for sym, acq, cat, txn, mode, change in rows:
         if (mode or "").lower() in SKIP_MODES:
             continue
         atype = _acquirer_type(cat)
         tkind = _txn_kind(txn, mode)
-        change = round((ha - hb), 4) if (hb is not None and ha is not None) else 0.0
+        change = change if change is not None else 0.0   # calibrated % move (count-based)
         cum = _cumulative_buy_30d(conn, sym, date) if tkind == "BUY" else 0.0
         sig = classify(atype, tkind, change, cum)
         conn.execute(

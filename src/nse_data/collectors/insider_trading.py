@@ -85,10 +85,13 @@ class InsiderTrading(EventCollector):
                 "transaction_type":    item.get("tdpTransactionType"),
                 "no_of_securities":    _i(item.get("secAcq")),
                 "value_in_rupees":     _f(item.get("secVal")),
-                # holding_before/after carry the % of capital (befAcqSharesPer/afterAcqSharesPer),
-                # which is what the promoter-signal layer's %-thresholds need — NOT the share count.
+                # holding_before/after = % of capital (befAcqSharesPer/afterAcqSharesPer) for
+                # reference; holding_change_pct is the CALIBRATED move (count-delta scaled by the
+                # reliable before-%) — afterAcqSharesPer is often a data-entry 0, so don't difference
+                # the Per fields directly. See _holding_change_pct.
                 "holding_before":      _f(item.get("befAcqSharesPer")),
                 "holding_after":       _f(item.get("afterAcqSharesPer")),
+                "holding_change_pct":  _holding_change_pct(item),
                 "period_from":         item.get("acquisitionFrom"),
                 "period_to":           item.get("acquisitionTo"),
                 "intimation_date":     _nse_date(item.get("tdpDate") or item.get("date")),
@@ -106,6 +109,22 @@ class InsiderTrading(EventCollector):
             f"{row.get('no_of_securities') or ''}"
         )
         return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
+def _holding_change_pct(item):
+    """True % move in promoter holding. NSE's afterAcqSharesPer is often a data-entry 0/blank, so
+    we scale the reliable share-count delta by the before-% of capital:
+        change% = (afterNo - befNo) / befNo * befPer
+    Falls back to the after-side ratio, then to (aftPer - befPer), else None."""
+    befNo, aftNo = _f(item.get("befAcqSharesNo")), _f(item.get("afterAcqSharesNo"))
+    befPer, aftPer = _f(item.get("befAcqSharesPer")), _f(item.get("afterAcqSharesPer"))
+    if befNo and befPer and aftNo is not None:        # befNo>0, befPer>0
+        return round((aftNo - befNo) / befNo * befPer, 4)
+    if aftNo and aftPer and befNo is not None:        # new/zero-before holder: use after-side
+        return round((aftNo - befNo) / aftNo * aftPer, 4)
+    if befPer is not None and aftPer is not None:
+        return round(aftPer - befPer, 4)
+    return None
 
 
 def _nse_date(s):
