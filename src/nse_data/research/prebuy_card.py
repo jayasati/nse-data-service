@@ -59,7 +59,8 @@ def gather(conn: sqlite3.Connection, symbol: str) -> dict:
         (sym,))
     out["promoter"] = rows(
         "SELECT filing_date, signal_type, holding_change_pct FROM promoter_signals WHERE symbol=? "
-        "AND signal_type NOT IN ('NEUTRAL','SKIP') ORDER BY filing_date DESC LIMIT 4", (sym,))
+        "AND signal_type NOT IN ('NEUTRAL','SKIP') AND filing_date>=date('now','-120 day') "
+        "ORDER BY filing_date DESC LIMIT 4", (sym,))
     out["events"] = rows(
         "SELECT event_type, expected_date FROM pending_events WHERE symbol=? AND status='upcoming' "
         "AND expected_date>=date('now') ORDER BY expected_date LIMIT 5", (sym,))
@@ -93,8 +94,10 @@ def format_block(d: dict) -> tuple[str, int]:
     p = d.get("profile")
     if p:
         n += 1
+        rsi = p.get("rsi_14")
         L.append(f"TECHNICALS: trend={p.get('trend_regime')} momentum={p.get('momentum_state')} "
-                 f"RSI={p.get('rsi_14')} vs50DMA={'above' if (p.get('sma_50') or 0) and p.get('sma_50') else '?'} "
+                 f"RSI={round(rsi, 1) if rsi is not None else '?'} "
+                 f"SMA50={p.get('sma_50')} SMA200={p.get('sma_200')} "
                  f"52w[{p.get('low_52w')}-{p.get('high_52w')}] deliv={p.get('delivery_ratio')} PE={p.get('pe_ratio')}")
     add("CONVICTION", d.get("conviction"),
         lambda c: f"{c.get('conf_label')} {c.get('direction')} adj={c.get('conviction_adj')} ({c.get('as_of_date')})")
