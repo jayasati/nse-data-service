@@ -50,10 +50,20 @@ def _txn_kind(transaction_type: str | None, mode: str | None) -> str:
     return "OTHER"
 
 
+# NSE's befAcqSharesPer/afterAcqSharesPer are not cleanly "% of capital held" for every filing
+# type (pledge/encumbrance rows, multi-class securities) → some implausible single-filing deltas
+# (e.g. NTPC −71%). Guard the BUY/SELL holding-% path against obvious artifacts pending a proper
+# semantics calibration. Pledge signals don't use this magnitude.
+SANITY_MAX_CHANGE_PCT = 25.0
+
+
 def classify(acquirer_type: str, txn_kind: str, holding_change_pct: float,
              cumulative_buy_30d: float = 0.0) -> dict:
     """Promoter-grade signal. Non-promoter/KMP and tiny moves → NEUTRAL."""
     promoterish = acquirer_type in ("PROMOTER", "PROMOTER_GROUP")
+    if txn_kind in ("BUY", "SELL") and abs(holding_change_pct) > SANITY_MAX_CHANGE_PCT:
+        return dict(signal_type="NEUTRAL", signal_strength=0.0, horizon_days=None,
+                    conviction_add=0)  # implausible single-filing % → data artifact, don't trust
     if txn_kind == "BUY" and promoterish:
         if cumulative_buy_30d >= SUSTAINED_CUM_PCT:
             return dict(signal_type="PROMOTER_SUSTAINED", signal_strength=0.95,
