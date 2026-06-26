@@ -102,6 +102,43 @@ def fetch_and_store(conn: sqlite3.Connection) -> dict:
     return rep
 
 
+def backfill(conn: sqlite3.Connection, since: str = "2025-05-01", throttle: float = 3.0) -> dict:
+    """Fetch + store historical fortnightly sector reports with as_of_date >= `since` (for the
+    backtest). Throttled — NSDL rate-limits the heavy static-file fetches."""
+    import time
+    fetched = skipped = failed = 0
+    with httpx.Client(timeout=40, follow_redirects=True) as client:
+        opts = _OPT.findall(client.get(_SELECTION, headers=_UA).text)
+        for rel, label in opts:
+            as_of = _parse_label_date(label.strip())
+            if not as_of or as_of < since:
+                continue
+            if conn.execute("SELECT 1 FROM raw_fpi_sector WHERE as_of_date=? LIMIT 1",
+                            (as_of,)).fetchone():
+                skipped += 1
+                continue
+            url = _BASE + rel.lstrip("~/").removeprefix("web/")
+            try:
+                sectors = parse_sector_table(client.get(url, headers=_UA).text)
+            except Exception as e:  # noqa: BLE001
+                log.warning("fpi_backfill_failed", as_of=as_of, err=str(e))
+                failed += 1
+                continue
+            for s in sectors:
+                conn.execute(
+                    "INSERT OR REPLACE INTO raw_fpi_sector (as_of_date, period_label, sector, "
+                    "net_equity_cr, net_total_cr, auc_equity_cr, captured_at) "
+                    "VALUES (?,?,?,?,?,?,datetime('now'))",
+                    (as_of, label.strip(), s["sector"], s["net_equity_cr"], s["net_total_cr"],
+                     s["auc_equity_cr"]))
+            conn.commit()
+            fetched += 1
+            time.sleep(throttle)
+    rep = {"fetched": fetched, "skipped": skipped, "failed": failed}
+    log.info("fpi_sector_backfill", **rep)
+    return rep
+
+
 def rotation(conn: sqlite3.Connection, n: int = 4) -> dict:
     """Top sectors FPI rotated INTO / OUT OF in the latest fortnight (by net equity ₹cr)."""
     d = conn.execute("SELECT MAX(as_of_date) FROM raw_fpi_sector").fetchone()
