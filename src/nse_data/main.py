@@ -303,6 +303,12 @@ def main() -> int:
     registered.append(register_fast_result_lane(scheduler, db_path, session))
     registered.append(register_intraday_extract_runner(scheduler, db_path))
     registered.append(register_extract_runner(scheduler, db_path))
+    # ntfy command listener (daemon thread) — two-way phone control: publish '/prebuy SYMBOL'
+    # to the secret NTFY_TOPIC_CMD topic, get the synthesis card back. No-op if the topic is unset.
+    from .bot.command_listener import register_command_listener
+    cmd_listener = register_command_listener(db_path)
+    if cmd_listener:
+        registered.append(cmd_listener)
     log.info("scheduler_starting", jobs=registered)
 
     try:
