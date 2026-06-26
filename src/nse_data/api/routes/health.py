@@ -48,6 +48,9 @@ def api_health_paper_loop(conn=Depends(get_conn)) -> JSONResponse:
         else None
 
     last_booked = _scalar("SELECT MAX(updated_at) FROM paper_book")
+    if isinstance(last_booked, (int, float)) or (isinstance(last_booked, str) and last_booked.isdigit()):
+        import datetime as _dt
+        last_booked = _dt.datetime.fromtimestamp(int(last_booked), _dt.timezone.utc).isoformat()
     trades_7d = _scalar(
         "SELECT COUNT(*) FROM paper_book WHERE entry_date >= date('now','-7 day')") or 0
     by_strategy = {
