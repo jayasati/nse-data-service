@@ -1,0 +1,24 @@
+# Small-cap momentum track (Task 3) — DELIBERATE, ISOLATED, paper-only.
+# RESHAPED from the spec's intraday design to EOD/swing: RELAXO/PIXTRANS et al. have NO intraday
+# candle data (audit 26-Jun), so intraday signals would read nothing. They DO have EOD bhavcopy
+# (OHLCV + delivery), so this track runs on EOD bars — which also fits the validated swing edge.
+#
+# HARD CONSTRAINTS (non-negotiable): completely isolated from the F&O conviction engine; paper
+# only for the first 30 sessions; go live only after Sharpe > 0.8 on paper; position <= 0.5% of
+# capital per name; 3% hard stop; no F&O hedge (non-optionable) so size accordingly.
+rules:
+  market_cap_min_cr:   500      # >= ₹500 Cr
+  market_cap_max_cr:   10000    # < ₹10,000 Cr
+  avg_daily_vol_min:   50000    # >= 50k shares/day (20-session avg)
+  avg_daily_value_cr:  1        # >= ₹1 Cr daily traded value
+  circuit_limit_pct:   20       # only <=20% circuit names (not 5%-locked)
+
+sizing:
+  capital_base_rs:     1000000  # notional capital for paper R-tracking
+  max_position_pct:    0.5      # <= 0.5% of capital per name
+  hard_stop_pct:       3.0      # 3% hard stop, no exceptions
+  max_hold_days:       5        # swing horizon
+
+# Curated starting universe (BSE SmallCap movers from the 25-Jun post-mortem). Expand quarterly
+# after a liquidity review (the rules above are the gate).
+members: [PIXTRANS, RELAXO, RAMCOSYS, TMCV, AEGISLOG]

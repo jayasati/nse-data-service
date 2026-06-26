@@ -9,3 +9,5 @@ features:
   move_triggered_news:  true   # >5% intraday move → retroactively pull news into the corpus
   # Task 2 — macro-theme / basket-rotation detector
   basket_rotation:      true   # detect correlated sector baskets + promote members (swing)
+  # Task 3 — isolated small-cap EOD momentum track (paper-only)
+  smallcap_momentum:    true   # EOD small-cap signals + universe_gaps logging (isolated)
