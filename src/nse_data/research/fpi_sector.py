@@ -70,17 +70,16 @@ def latest_report(client: httpx.Client) -> tuple[str, str, str]:
 
 
 def parse_sector_table(html: str) -> list[dict]:
-    rows = [_cells(tr) for tr in _TR.findall(html)]
+    # The page has several tables; the sector table's data rows have the fixed 98-col shape with a
+    # numeric Sr.No. Match only those (other tables / header rows are skipped). If NSDL shifts the
+    # shape, we parse <10 sectors and raise — the drift guard.
     out = []
-    for r in rows:
-        if len(r) >= 3 and r[0].strip().isdigit() and r[_C_SECTOR].strip():
-            if len(r) != _ROW_LEN:
-                raise FpiSectorParseError(f"sector row has {len(r)} cols, expected {_ROW_LEN} "
-                                          "(NSDL markup drift)")
+    for r in (_cells(tr) for tr in _TR.findall(html)):
+        if len(r) == _ROW_LEN and r[0].strip().isdigit() and r[_C_SECTOR].strip():
             out.append({"sector": r[_C_SECTOR].strip(), "net_equity_cr": _num(r[_C_NET_EQ]),
                         "net_total_cr": _num(r[_C_NET_TOT]), "auc_equity_cr": _num(r[_C_AUC_EQ])})
     if len(out) < 10:
-        raise FpiSectorParseError(f"parsed only {len(out)} sectors (expected ~34)")
+        raise FpiSectorParseError(f"parsed only {len(out)} sectors (expected ~34) — NSDL drift")
     return out
 
 
