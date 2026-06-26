@@ -30,26 +30,41 @@ class InsiderTrading(EventCollector):
     table = "raw_insider_trading"
 
     universe_path: str = "config/universe.yaml"
+    top1000_path: str = "config/universe_top1000.txt"
 
     def _load_symbols(self) -> list[str]:
         """Per-symbol fan-out. NSE's corporates-pit all-equities feed is DEAD (200 OK but
-        data=[]); only ?symbol=<SYM> returns rows. Query the F&O + watchlist universe."""
+        data=[]); only ?symbol=<SYM> returns rows. Query the broad top-1000 focus universe —
+        which includes mid/small-caps, where the promoter-buying edge is strongest — falling
+        back to the F&O+watchlist set if that file is absent. Run DAILY (see endpoints.yaml):
+        1000 per-symbol probes is one polite evening burst, well inside the 2-working-day
+        insider-disclosure window."""
+        import os
+        if os.path.exists(self.top1000_path):
+            try:
+                with open(self.top1000_path) as f:
+                    syms = {ln.strip().upper() for ln in f if ln.strip()}
+                if syms:
+                    return sorted(syms)
+            except OSError:
+                pass
+        # fallback — F&O + watchlist from universe.yaml
         try:
             import yaml
             with open(self.universe_path) as f:
                 cfg = yaml.safe_load(f) or {}
         except Exception:  # noqa: BLE001
             return []
-        syms: set[str] = set()
+        out: set[str] = set()
         oc = cfg.get("option_chain") or {}
         if isinstance(oc, dict):
             for v in oc.values():
                 if isinstance(v, list):
-                    syms.update(s for s in v if isinstance(s, str))
+                    out.update(s for s in v if isinstance(s, str))
         wl = cfg.get("watchlist")
         if isinstance(wl, list):
-            syms.update(s for s in wl if isinstance(s, str))
-        return sorted(syms)
+            out.update(s for s in wl if isinstance(s, str))
+        return sorted(out)
 
     def plan(self, context: Mapping[str, Any] | None = None) -> Sequence[Request]:
         return [Request(

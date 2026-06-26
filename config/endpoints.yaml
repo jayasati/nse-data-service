@@ -304,8 +304,9 @@ endpoints:
   insider_trading:
     collector: nse_data.collectors.insider_trading:InsiderTrading
     response: json
-    cadence: 1h
-    active_hours: "08:00-19:00"
+    cadence: daily
+    run_at: "21:00"          # per-symbol over the top-1000 universe → one polite evening burst;
+                             # 2-working-day disclosure window means once-daily fully captures filings
     table: raw_insider_trading
     enabled: true
 
